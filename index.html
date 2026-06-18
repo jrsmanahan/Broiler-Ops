@@ -1,0 +1,2086 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beracah Farm — Supervisor</title>
+<meta name="theme-color" content="#F5F7FA">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; }
+  body { background: #F5F7FA; color: #1E293B; font-family: sans-serif; }
+  #status { padding: 20px; font-size: 14px; color: #64748B; }
+  #debug { position: fixed; bottom: 0; left: 0; right: 0; background: #fee2e2; color: #b91c1c; padding: 16px; font-size: 12px; max-height: 50vh; overflow: auto; z-index: 99999; white-space: pre-wrap; border-top: 2px solid #dc2626; display: none; }
+</style>
+</head>
+<body>
+<div id="status">Loading scripts...</div>
+<div id="root"></div>
+<div id="debug"></div>
+
+<script>
+function showDebug(msg) {
+  var d = document.getElementById('debug');
+  d.style.display = 'block';
+  d.textContent += msg + '\n';
+}
+window.onerror = function(msg, url, line, col, err) {
+  showDebug('ERROR: ' + msg);
+  if (err && err.stack) showDebug(err.stack);
+};
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.0/babel.min.js"></script>
+
+<script>
+window.addEventListener('load', function() {
+  var s = document.getElementById('status');
+  try {
+    if (typeof React === 'undefined') { showDebug('React not loaded — connect to internet and refresh'); s.textContent = 'React failed to load. Connect to internet and refresh.'; return; }
+    if (typeof Babel === 'undefined') { showDebug('Babel not loaded'); s.textContent = 'Babel failed to load. Connect to internet and refresh.'; return; }
+    s.textContent = 'Compiling app...';
+    var code = document.getElementById('app-code').textContent;
+    var transformed = Babel.transform(code, { presets: ['react'] }).code;
+    s.textContent = 'Starting...';
+    var sc = document.createElement('script');
+    sc.textContent = transformed;
+    document.body.appendChild(sc);
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(SupervisorApp));
+    s.style.display = 'none';
+  } catch(e) {
+    showDebug('COMPILE ERROR: ' + e.message);
+    if (e.loc) showDebug('Line ' + e.loc.line + ', column ' + e.loc.column);
+    s.textContent = 'App failed to start. See error below.';
+  }
+});
+</script>
+
+<script id="app-code" type="text/plain">
+const { useState, useMemo, useEffect } = React;
+// ─── HOUSE SELECTION ─────────────────────────────────────────────────────────
+const CURRENT_HOUSE = parseInt(localStorage.getItem("beracah_currentHouse")) || 1;
+// ─── PERSISTENT STATE HOOK ───────────────────────────────────────────────────
+// Drop-in replacement for useState that persists to localStorage.
+// Key is namespaced with cycle placement date to avoid collisions across cycles.
+function useLocalStorage(key, initialValue) {
+  const NS = "beracah_" + "2026_04_22_" + "h" + CURRENT_HOUSE + "_"; // cycle namespace per house
+  const fullKey = NS + key;
+  const [value, setValue] = useState(() => {
+    try {
+      const item = localStorage.getItem(fullKey);
+      return item !== null ? JSON.parse(item) : initialValue;
+    } catch (e) {
+      return initialValue;
+    }
+  });
+  const setPersistedValue = (newValue) => {
+    try {
+      const val = typeof newValue === "function" ? newValue(value) : newValue;
+      setValue(val);
+      localStorage.setItem(fullKey, JSON.stringify(val));
+    } catch (e) {
+      console.warn("localStorage write failed:", e);
+    }
+  };
+  return [value, setPersistedValue];
+}
+// ─── CYCLE CONFIG (manager-initialized) ──────────────────────────────────────
+const CYCLE_CONFIG = {
+  placementDate: new Date("2026-04-22T00:00:00+08:00"), // Day 0 = April 22, rolls at midnight PH time
+  flockSize: 36000,
+  building: "House " + (parseInt(localStorage.getItem("beracah_currentHouse")) || 1),
+  breed: "Ross 308",
+  flockman: {
+    names: ["Jerry Sta Rosa","Richard Magana","Rodel Bergonio","Jonard Bensurto"]
+  },
+  openingFloorStock: 20, // bags CBC placed before chicks arrived
+};
+// ─── FEED PROJECTION — bags/day target (50kg bags, from Beracah feeds ordering tab)
+const FEED_FC = [
+  {day:0,fc:0},{day:1,fc:10},{day:2,fc:12},{day:3,fc:14},{day:4,fc:18},
+  {day:5,fc:20},{day:6,fc:24},{day:7,fc:26},{day:8,fc:28},{day:9,fc:30},
+  {day:10,fc:36},{day:11,fc:38},{day:12,fc:40},{day:13,fc:44},{day:14,fc:48},
+  {day:15,fc:52},{day:16,fc:56},{day:17,fc:60},{day:18,fc:64},{day:19,fc:68},
+  {day:20,fc:72},{day:21,fc:76},{day:22,fc:80},{day:23,fc:84},{day:24,fc:88},
+  {day:25,fc:92},{day:26,fc:96},{day:27,fc:100},{day:28,fc:104},{day:29,fc:108},
+  {day:30,fc:112},{day:31,fc:116},{day:32,fc:120},{day:33,fc:124},{day:34,fc:100},
+];
+// ─── VENTILATION GUIDE — Dry Season (exact from image, 1 row per day D0–D35)
+const VENT_GUIDE = [
+  { day: 0, target:33.3, minVent:0.3,  maxVent:5   },
+  { day: 1, target:33.0, minVent:0.3,  maxVent:5   },
+  { day: 2, target:32.7, minVent:0.6,  maxVent:10  },
+  { day: 3, target:32.4, minVent:1.2,  maxVent:15  },
+  { day: 4, target:32.1, minVent:2.5,  maxVent:20  },
+  { day: 5, target:31.8, minVent:5,    maxVent:25  },
+  { day: 6, target:31.5, minVent:6,    maxVent:30  },
+  { day: 7, target:31.2, minVent:7,    maxVent:35  },
+  { day: 8, target:30.9, minVent:8,    maxVent:40  },
+  { day: 9, target:30.6, minVent:9,    maxVent:45  },
+  { day:10, target:30.3, minVent:10,   maxVent:50  },
+  { day:11, target:30.0, minVent:11,   maxVent:55  },
+  { day:12, target:29.7, minVent:12.5, maxVent:60  },
+  { day:13, target:29.4, minVent:15,   maxVent:65  },
+  { day:14, target:29.1, minVent:20,   maxVent:70  },
+  { day:15, target:28.8, minVent:30,   maxVent:75  },
+  { day:16, target:28.5, minVent:35,   maxVent:80  },
+  { day:17, target:28.2, minVent:40,   maxVent:85  },
+  { day:18, target:27.9, minVent:45,   maxVent:90  },
+  { day:19, target:27.6, minVent:50,   maxVent:95  },
+  { day:20, target:27.3, minVent:55,   maxVent:100 },
+  { day:21, target:27.0, minVent:60,   maxVent:100 },
+  { day:22, target:26.7, minVent:70,   maxVent:110 },
+  { day:23, target:26.4, minVent:75,   maxVent:100 },
+  { day:24, target:26.1, minVent:80,   maxVent:100 },
+  { day:25, target:25.8, minVent:85,   maxVent:100 },
+  { day:26, target:25.5, minVent:90,   maxVent:100 },
+  { day:27, target:25.2, minVent:95,   maxVent:100 },
+  { day:28, target:24.9, minVent:95,   maxVent:100 },
+  { day:29, target:24.6, minVent:95,   maxVent:100 },
+  { day:30, target:24.3, minVent:95,   maxVent:100 },
+  { day:31, target:24.0, minVent:95,   maxVent:100 },
+  { day:32, target:23.7, minVent:95,   maxVent:100 },
+  { day:33, target:23.4, minVent:95,   maxVent:100 },
+  { day:34, target:23.1, minVent:95,   maxVent:100 },
+  { day:35, target:22.8, minVent:95,   maxVent:100 },
+];
+// ─── ROSS 308 ALW STANDARD CURVE (g) — exact from ventilation_guide.xlsx ────
+const ALW_STANDARD = [
+  {day:0,std:44},{day:1,std:62},{day:2,std:81},{day:3,std:102},{day:4,std:125},
+  {day:5,std:151},{day:6,std:181},{day:7,std:213},{day:8,std:249},{day:9,std:288},
+  {day:10,std:330},{day:11,std:376},{day:12,std:425},{day:13,std:477},{day:14,std:533},
+  {day:15,std:592},{day:16,std:655},{day:17,std:720},{day:18,std:789},{day:19,std:860},
+  {day:20,std:935},{day:21,std:1012},{day:22,std:1092},{day:23,std:1174},{day:24,std:1258},
+  {day:25,std:1345},{day:26,std:1434},{day:27,std:1524},{day:28,std:1616},{day:29,std:1710},
+  {day:30,std:1805},{day:31,std:1901},{day:32,std:1999},{day:33,std:2097},{day:34,std:2196},
+  {day:35,std:2296},
+];
+// ─── MEDICINE PROGRAM (exact from medicine_program.xlsx) ────────────────────
+const MED_PROGRAM_DEFAULT = [
+  { day:0,  session:"PM", medicine:"Electrolytes",  dose:360,  unit:"ml",   waterL:5  },
+  { day:1,  session:"AM", medicine:"B Complex",     dose:720,  unit:"ml",   waterL:5  },
+  { day:1,  session:"PM", medicine:"Doxycycline",   dose:250,  unit:"ml",   waterL:5  },
+  { day:2,  session:"AM", medicine:"B Complex",     dose:720,  unit:"ml",   waterL:5  },
+  { day:2,  session:"PM", medicine:"Doxycycline",   dose:300,  unit:"ml",   waterL:5  },
+  { day:3,  session:"AM", medicine:"B Complex",     dose:720,  unit:"ml",   waterL:5  },
+  { day:3,  session:"PM", medicine:"Doxycycline",   dose:350,  unit:"ml",   waterL:5  },
+  { day:4,  session:"AM", medicine:"B Complex",     dose:720,  unit:"ml",   waterL:10 },
+  { day:4,  session:"PM", medicine:"Doxycycline",   dose:400,  unit:"ml",   waterL:10 },
+  { day:5,  session:"AM", medicine:"B Complex",     dose:720,  unit:"ml",   waterL:10 },
+  { day:5,  session:"PM", medicine:"Doxycycline",   dose:450,  unit:"ml",   waterL:10 },
+  { day:6,  session:"AM", medicine:"B Complex",     dose:720,  unit:"ml",   waterL:10 },
+  { day:6,  session:"PM", medicine:"Doxycycline",   dose:500,  unit:"ml",   waterL:10 },
+  { day:7,  session:"AM", medicine:"Biotin",        dose:360,  unit:"ml",   waterL:15 },
+  { day:7,  session:"AM", medicine:"Progastro",     dose:60,   unit:"ml",   waterL:0  },
+  { day:7,  session:"PM", medicine:"Multivit",      dose:1000, unit:"ml",   waterL:15 },
+  { day:7,  session:"PM", medicine:"Progastro",     dose:60,   unit:"ml",   waterL:0  },
+  { day:8,  session:"AM", medicine:"Biotin",        dose:360,  unit:"ml",   waterL:15 },
+  { day:8,  session:"AM", medicine:"Progastro",     dose:60,   unit:"ml",   waterL:0  },
+  { day:8,  session:"PM", medicine:"Multivit",      dose:1000, unit:"ml",   waterL:15 },
+  { day:8,  session:"PM", medicine:"Progastro",     dose:60,   unit:"ml",   waterL:0  },
+  { day:9,  session:"AM", medicine:"Biotin",        dose:360,  unit:"ml",   waterL:15 },
+  { day:9,  session:"AM", medicine:"Progastro",     dose:60,   unit:"ml",   waterL:0  },
+  { day:9,  session:"PM", medicine:"Multivit",      dose:1000, unit:"ml",   waterL:15 },
+  { day:9,  session:"PM", medicine:"Progastro",     dose:60,   unit:"ml",   waterL:0  },
+  { day:10, session:"AM", medicine:"Citric Acid",   dose:2,    unit:"tbsp", waterL:20 },
+  { day:10, session:"AM", medicine:"Progastro",     dose:80,   unit:"ml",   waterL:0  },
+  { day:10, session:"PM", medicine:"Vit ADE",       dose:1000, unit:"ml",   waterL:20 },
+  { day:10, session:"PM", medicine:"Progastro",     dose:80,   unit:"ml",   waterL:0  },
+  { day:11, session:"AM", medicine:"Citric Acid",   dose:2,    unit:"tbsp", waterL:20 },
+  { day:11, session:"AM", medicine:"Progastro",     dose:80,   unit:"ml",   waterL:0  },
+  { day:11, session:"PM", medicine:"Vit ADE",       dose:1000, unit:"ml",   waterL:20 },
+  { day:11, session:"PM", medicine:"Progastro",     dose:80,   unit:"ml",   waterL:0  },
+  { day:12, session:"AM", medicine:"Citric Acid",   dose:2,    unit:"tbsp", waterL:20 },
+  { day:12, session:"AM", medicine:"Progastro",     dose:80,   unit:"ml",   waterL:0  },
+  { day:12, session:"PM", medicine:"Vit ADE",       dose:1000, unit:"ml",   waterL:20 },
+  { day:12, session:"PM", medicine:"Progastro",     dose:80,   unit:"ml",   waterL:0  },
+  { day:13, session:"AM", medicine:"Citric Acid",   dose:3,    unit:"tbsp", waterL:25 },
+  { day:13, session:"AM", medicine:"Progastro",     dose:100,  unit:"ml",   waterL:0  },
+  { day:13, session:"PM", medicine:"Multivit",      dose:1000, unit:"ml",   waterL:25 },
+  { day:13, session:"PM", medicine:"Progastro",     dose:100,  unit:"ml",   waterL:0  },
+  { day:14, session:"AM", medicine:"Citric Acid",   dose:3,    unit:"tbsp", waterL:25 },
+  { day:14, session:"AM", medicine:"Progastro",     dose:100,  unit:"ml",   waterL:0  },
+  { day:14, session:"PM", medicine:"Multivit",      dose:1000, unit:"ml",   waterL:25 },
+  { day:14, session:"PM", medicine:"Progastro",     dose:100,  unit:"ml",   waterL:0  },
+  { day:15, session:"AM", medicine:"Citric Acid",   dose:3,    unit:"tbsp", waterL:25 },
+  { day:15, session:"AM", medicine:"Progastro",     dose:100,  unit:"ml",   waterL:0  },
+  { day:15, session:"PM", medicine:"Multivit",      dose:1000, unit:"ml",   waterL:25 },
+  { day:15, session:"PM", medicine:"Progastro",     dose:100,  unit:"ml",   waterL:0  },
+  { day:16, session:"AM", medicine:"Amprolium",     dose:1500, unit:"ml",   waterL:30 },
+  { day:17, session:"AM", medicine:"Amprolium",     dose:1750, unit:"ml",   waterL:30 },
+  { day:18, session:"AM", medicine:"Amprolium",     dose:2000, unit:"ml",   waterL:30 },
+  { day:19, session:"AM", medicine:"Ca+P+D3",       dose:1000, unit:"ml",   waterL:35 },
+  { day:19, session:"AM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:19, session:"PM", medicine:"Vit E",         dose:1000, unit:"ml",   waterL:35 },
+  { day:19, session:"PM", medicine:"Progastro",     dose:100,  unit:"ml",   waterL:0  },
+  { day:20, session:"AM", medicine:"Ca+P+D3",       dose:1000, unit:"ml",   waterL:35 },
+  { day:20, session:"AM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:20, session:"PM", medicine:"Vit E",         dose:1000, unit:"ml",   waterL:35 },
+  { day:20, session:"PM", medicine:"Progastro",     dose:100,  unit:"ml",   waterL:0  },
+  { day:21, session:"AM", medicine:"Ca+P+D3",       dose:1000, unit:"ml",   waterL:35 },
+  { day:21, session:"AM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:21, session:"PM", medicine:"Vit E",         dose:1000, unit:"ml",   waterL:35 },
+  { day:21, session:"PM", medicine:"Progastro",     dose:100,  unit:"ml",   waterL:0  },
+  { day:22, session:"AM", medicine:"Citric Acid",   dose:5,    unit:"tbsp", waterL:40 },
+  { day:22, session:"AM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:22, session:"PM", medicine:"Multivit",      dose:1500, unit:"ml",   waterL:40 },
+  { day:22, session:"PM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:23, session:"AM", medicine:"Citric Acid",   dose:5,    unit:"tbsp", waterL:40 },
+  { day:23, session:"AM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:23, session:"PM", medicine:"Multivit",      dose:1500, unit:"ml",   waterL:40 },
+  { day:23, session:"PM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:24, session:"AM", medicine:"Citric Acid",   dose:5,    unit:"tbsp", waterL:40 },
+  { day:24, session:"AM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:24, session:"PM", medicine:"Multivit",      dose:1500, unit:"ml",   waterL:40 },
+  { day:24, session:"PM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:25, session:"AM", medicine:"B Complex",     dose:1500, unit:"ml",   waterL:45 },
+  { day:25, session:"AM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:25, session:"PM", medicine:"Vit E",         dose:1500, unit:"ml",   waterL:45 },
+  { day:25, session:"PM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:26, session:"AM", medicine:"B Complex",     dose:1500, unit:"ml",   waterL:45 },
+  { day:26, session:"AM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:26, session:"PM", medicine:"Vit E",         dose:1500, unit:"ml",   waterL:45 },
+  { day:26, session:"PM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:27, session:"AM", medicine:"B Complex",     dose:1500, unit:"ml",   waterL:45 },
+  { day:27, session:"AM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:27, session:"PM", medicine:"Vit E",         dose:1500, unit:"ml",   waterL:45 },
+  { day:27, session:"PM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:28, session:"PM", medicine:"Multivit",      dose:1500, unit:"ml",   waterL:50 },
+  { day:28, session:"PM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:29, session:"PM", medicine:"Multivit",      dose:1500, unit:"ml",   waterL:50 },
+  { day:29, session:"PM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:30, session:"PM", medicine:"Multivit",      dose:1500, unit:"ml",   waterL:50 },
+  { day:30, session:"PM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:31, session:"PM", medicine:"Multivit",      dose:2000, unit:"ml",   waterL:55 },
+  { day:31, session:"PM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:32, session:"PM", medicine:"Multivit",      dose:2000, unit:"ml",   waterL:55 },
+  { day:32, session:"PM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+  { day:33, session:"PM", medicine:"Multivit",      dose:2000, unit:"ml",   waterL:55 },
+  { day:33, session:"PM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
+];
+const ALW_DAYS = [0, 3, 7, 10, 14, 18, 21, 25, 28, 32, 35];
+const BROODING_TASKS = {
+  "Day 0": [
+    "Set controller: target temp 34°C, min vent 20%, max vent 40%",
+    "Turn on all zone heaters — verify all sensor readings",
+    "Close brooding curtains fully",
+    "Deploy chick paper across entire brooding zone",
+    "Fill supplementary feeders and feed pans with CBC",
+    "Set water pressure: 0.5–1.0 PSI for day-olds",
+    "Flush all drinker lines — check for leaks",
+    "Check chick distribution — adjust heat zones as needed",
+    "Record truck arrivals, head count, and DOA",
+  ],
+  "Day 1–3": [
+    "Check curtain position — maintain full closure",
+    "Pick up and count mortality — record per shift",
+    "Check heater zones against sensor readings",
+    "Refill feed pans and supplementary feeders",
+    "Check water pressure and nipple flow",
+    "Log feed pulled from warehouse",
+    "Check for wet litter spots — top up rice hull",
+    "ALW weigh — Day 3 (1% of population)",
+  ],
+  "Day 4–6": [
+    "Reduce target temp to 32°C",
+    "Turn off perimeter heaters — keep center zone active",
+    "Raise curtains 30cm to allow passive airflow",
+    "Remove chick paper — transition fully to feeders and pans",
+    "Increase water pressure slightly",
+    "Check litter — top up rice hull in wet spots",
+    "Rake litter to aerate",
+    "Check feeder height — adjust to back height of birds",
+    "Pick up and count mortality — record per shift",
+  ],
+  "Day 7–9": [
+    "Reduce target temp to 30°C",
+    "Expand brooding area — open first curtain section",
+    "Turn off half of remaining heaters per sensor readings",
+    "Flush all drinker lines",
+    "Rake and top-up litter",
+    "Raise feeder height to back of birds",
+    "Pick up and count mortality — record per shift",
+    "ALW weigh — Day 7 (1% of population)",
+  ],
+  "Day 10–12": [
+    "ALW weigh — Day 10 (1% of population)",
+    "Day 11: Full expand cross-wise — open brooding curtains completely across width of building",
+    "Day 10: Feed mix 3 CBC : 1 BSC",
+    "Day 11: Feed mix 1 CBC : 1 BSC",
+    "Day 12: Feed mix 1 CBC : 1 BSC",
+    "Remove 1 row of bilao feeders per day (Day 10, 11, 12)",
+    "Physically reposition heaters evenly across expanded building area",
+    "Flush drinker lines — check nipple pressure",
+    "Rake litter across full building",
+    "Pick up and count mortality — record per shift",
+  ],
+  "Day 13–15": [
+    "Reduce target temp to 27°C",
+    "Expand brooding area to full building",
+    "Raise curtains to 3/4 position",
+    "Turn off standby heaters if ambient temp allows",
+    "Flush drinker lines",
+    "Rake litter full building",
+    "Pick up and count mortality — record per shift",
+    "ALW weigh — Day 14 — go/no-go for tunnel transition",
+    "Open all brooding curtains fully at Day 14",
+    "Activate tunnel fans at minimum speed — Day 14",
+    "Activate cooling pads — check water supply line — Day 14",
+    "Set controller to tunnel ventilation mode — Day 14",
+  ],
+  "Day 16–18": [
+    "Verify controller is in tunnel ventilation mode",
+    "Check all tunnel fan belts and operation",
+    "Check cooling pad water distribution — all sections flowing",
+    "Log temp and humidity per shift — target IN 27–30°C",
+    "Adjust min/max ventilation rate based on sensor readings",
+    "Pick up and count mortality — record per shift",
+    "Flush drinker lines",
+    "Rake litter",
+  ],
+  "Day 19–21": [
+    "Monitor temp per shift — alert if IN > 32°C",
+    "Adjust fan speed and pad usage based on outside temp",
+    "Check pad curtain levels — adjust for airflow balance",
+    "Pick up and count mortality — record per shift",
+    "Log feed pulled from warehouse",
+    "Flush drinker lines",
+    "ALW weigh — Day 21 (1% of population)",
+  ],
+  "Day 22–24": [
+    "Monitor temp per shift",
+    "Adjust ventilation rate — birds producing more heat",
+    "Check pad curtain levels",
+    "Pick up and count mortality — record per shift",
+    "Log feed pulled from warehouse",
+    "Flush drinker lines",
+    "Rake litter",
+  ],
+  "Day 25–27": [
+    "Monitor temp per shift — heat stress risk increases",
+    "Maximize cooling pad usage during hot hours",
+    "Check pad curtain levels",
+    "Pick up and count mortality — record per shift",
+    "Log feed pulled from warehouse",
+    "Flush drinker lines",
+    "ALW weigh — Day 25 (1% of population)",
+  ],
+  "Day 28–30": [
+    "Monitor temp per shift",
+    "Adjust ventilation for bird density and heat output",
+    "Check all fan operation — no belt slippage",
+    "Check cooling pad flow — all sections active",
+    "Pick up and count mortality — record per shift",
+    "Log feed pulled from warehouse",
+    "Flush drinker lines",
+    "ALW weigh — Day 28 (1% of population)",
+  ],
+  "Day 31–33": [
+    "Monitor temp per shift",
+    "Maintain maximum cooling during hot parts of day",
+    "Pick up and count mortality — record per shift",
+    "Log feed pulled from warehouse",
+    "Flush drinker lines",
+    "ALW weigh — Day 32 (harvest weight check)",
+  ],
+  "Day 34–36": [
+    "ALW weigh — Day 35 — harvest weight decision",
+    "Monitor temp per shift",
+    "Pick up and count mortality — record per shift",
+    "Log feed pulled from warehouse",
+    "Flush drinker lines",
+    "Prepare building for harvest crew access",
+    "Coordinate with manager on harvest truck schedule",
+  ],
+  "Day 37–39": [
+    "Harvest ongoing — assist harvest crew as needed",
+    "Monitor remaining population per shift",
+    "Continue mortality pickup and recording",
+    "Maintain ventilation for remaining birds",
+    "Log final feed pulls",
+    "Record final bird count after each harvest truck",
+  ],
+};
+function getCurrentDay() {
+  // Rolls at midnight Philippine time (UTC+8)
+  // Uses fixed PH offset to avoid browser timezone issues
+  const PH_OFFSET_MS = 8 * 60 * 60 * 1000;
+  const toPHDay = (date) => Math.floor((date.getTime() + PH_OFFSET_MS) / 86400000);
+  const placementPHDay = toPHDay(CYCLE_CONFIG.placementDate);
+  return Math.max(0, toPHDay(new Date()) - placementPHDay);
+}
+function getPhase(day) {
+  if (day === 0) return { label: "PLACEMENT", color: "#E5B80B", short: "PLACE" };
+  if (day <= 14)  return { label: "BROODING",  color: "#D4652A", short: "BROOD" };
+  if (day <= 35)  return { label: "TUNNEL",    color: "#2E86AB", short: "VENT"};
+  return              { label: "HARVEST",   color: "#5C4F8A", short: "HARV" };
+}
+function getBroodBracket(day) {
+  if (day === 0)  return "Day 0";
+  if (day <= 3)   return "Day 1–3";
+  if (day <= 6)   return "Day 4–6";
+  if (day <= 9)   return "Day 7–9";
+  if (day <= 12)  return "Day 10–12";
+  if (day <= 15)  return "Day 13–15";
+  if (day <= 18)  return "Day 16–18";
+  if (day <= 21)  return "Day 19–21";
+  if (day <= 24)  return "Day 22–24";
+  if (day <= 27)  return "Day 25–27";
+  if (day <= 30)  return "Day 28–30";
+  if (day <= 33)  return "Day 31–33";
+  if (day <= 36)  return "Day 34–36";
+  return "Day 37–39";
+}
+const TABS = [
+  { id:"today",      label:"TODAY",         icon:"◉" },
+  { id:"checks",     label:"SHIFT CHECKS",  icon:"◎" },
+  { id:"tunnel",     label:"VENTILATION",   icon:"≈" },
+  { id:"tasks",      label:"TASKS",         icon:"✓" },
+  { id:"records",    label:"DAILY LOG",     icon:"≡" },
+  { id:"placement",  label:"PLACEMENT",     icon:"🐥" },
+  { id:"fieldguide", label:"FIELD GUIDE",   icon:"◈" },
+];
+// ─── FEEDING GUIDE ────────────────────────────────────────────────────────────
+const FEEDING_GUIDE_DEFAULT = [
+  {day:0,  alw:44,   cbc:0,   bsc:0,   bfp:0,   fc:0,   cumm:0,    bt:0.0},
+  {day:1,  alw:62,   cbc:10,  bsc:0,   bfp:0,   fc:10,  cumm:10,   bt:0.3},
+  {day:2,  alw:81,   cbc:12,  bsc:0,   bfp:0,   fc:12,  cumm:22,   bt:0.6},
+  {day:3,  alw:102,  cbc:14,  bsc:0,   bfp:0,   fc:14,  cumm:36,   bt:1.0},
+  {day:4,  alw:125,  cbc:16,  bsc:0,   bfp:0,   fc:16,  cumm:52,   bt:1.4},
+  {day:5,  alw:151,  cbc:18,  bsc:0,   bfp:0,   fc:18,  cumm:70,   bt:1.9},
+  {day:6,  alw:181,  cbc:22,  bsc:0,   bfp:0,   fc:22,  cumm:92,   bt:2.6},
+  {day:7,  alw:213,  cbc:26,  bsc:0,   bfp:0,   fc:26,  cumm:118,  bt:3.3},
+  {day:8,  alw:249,  cbc:30,  bsc:0,   bfp:0,   fc:30,  cumm:148,  bt:4.1},
+  {day:9,  alw:288,  cbc:34,  bsc:0,   bfp:0,   fc:34,  cumm:182,  bt:5.1},
+  {day:10, alw:330,  cbc:38,  bsc:0,   bfp:0,   fc:38,  cumm:220,  bt:6.1},
+  {day:11, alw:376,  cbc:42,  bsc:0,   bfp:0,   fc:42,  cumm:262,  bt:7.3},
+  {day:12, alw:425,  cbc:35,  bsc:11,  bfp:0,   fc:46,  cumm:308,  bt:8.6},
+  {day:13, alw:477,  cbc:25,  bsc:25,  bfp:0,   fc:50,  cumm:358,  bt:9.9},
+  {day:14, alw:533,  cbc:27,  bsc:27,  bfp:0,   fc:54,  cumm:412,  bt:11.4},
+  {day:15, alw:592,  cbc:11,  bsc:47,  bfp:0,   fc:58,  cumm:470,  bt:13.1},
+  {day:16, alw:655,  cbc:0,   bsc:62,  bfp:0,   fc:62,  cumm:532,  bt:14.8},
+  {day:17, alw:720,  cbc:0,   bsc:66,  bfp:0,   fc:66,  cumm:598,  bt:16.6},
+  {day:18, alw:789,  cbc:0,   bsc:70,  bfp:0,   fc:70,  cumm:668,  bt:18.6},
+  {day:19, alw:860,  cbc:0,   bsc:74,  bfp:0,   fc:74,  cumm:742,  bt:20.6},
+  {day:20, alw:935,  cbc:0,   bsc:58,  bfp:20,  fc:78,  cumm:820,  bt:22.8},
+  {day:21, alw:1012, cbc:0,   bsc:41,  bfp:41,  fc:82,  cumm:902,  bt:25.1},
+  {day:22, alw:1092, cbc:0,   bsc:43,  bfp:43,  fc:86,  cumm:988,  bt:27.4},
+  {day:23, alw:1174, cbc:0,   bsc:16,  bfp:74,  fc:90,  cumm:1078, bt:29.9},
+  {day:24, alw:1258, cbc:0,   bsc:0,   bfp:94,  fc:94,  cumm:1172, bt:32.6},
+  {day:25, alw:1345, cbc:0,   bsc:0,   bfp:98,  fc:98,  cumm:1270, bt:35.3},
+  {day:26, alw:1434, cbc:0,   bsc:0,   bfp:102, fc:102, cumm:1372, bt:38.1},
+  {day:27, alw:1524, cbc:0,   bsc:0,   bfp:104, fc:106, cumm:1478, bt:41.1},
+  {day:28, alw:1616, cbc:0,   bsc:0,   bfp:110, fc:110, cumm:1588, bt:44.1},
+  {day:29, alw:1710, cbc:0,   bsc:0,   bfp:114, fc:114, cumm:1702, bt:47.3},
+  {day:30, alw:1805, cbc:0,   bsc:0,   bfp:118, fc:118, cumm:1820, bt:50.6},
+  {day:31, alw:1901, cbc:0,   bsc:0,   bfp:122, fc:122, cumm:1942, bt:53.9},
+  {day:32, alw:1999, cbc:0,   bsc:0,   bfp:126, fc:126, cumm:2068, bt:57.4},
+  {day:33, alw:2097, cbc:0,   bsc:0,   bfp:130, fc:130, cumm:2198, bt:61.1},
+  {day:34, alw:2196, cbc:0,   bsc:0,   bfp:134, fc:134, cumm:2332, bt:64.8},
+  {day:35, alw:2296, cbc:0,   bsc:0,   bfp:138, fc:138, cumm:2470, bt:68.6},
+];
+
+// ─── LIGHTING PROGRAM (default) ────────────────────────────────────────────
+const LIGHTING_DEFAULT = [
+  {d:18,t:"12:00 PM",r:"30 mins"},{d:19,t:"12:00 PM",r:"1 hr"},{d:20,t:"12:00 PM",r:"2 hrs"},
+  {d:21,t:"12:00 PM",r:"3 hrs"},{d:22,t:"12:00 PM",r:"4 hrs"},{d:23,t:"12:00 PM",r:"3 hrs"},
+  {d:24,t:"12:00 PM",r:"2 hrs"},{d:25,t:"12:00 PM",r:"1 hr"},{d:26,t:"12:00 PM",r:"30 mins"},
+];
+// ─── HELPER COMPONENTS ───────────────────────────────────────────────────────
+function CropFillRate({ filled, checked }) {
+  const pct = parseInt(filled) / parseInt(checked) * 100;
+  const c = pct>=80?"#2E7D52":pct>=60?"#C4960C":"#E91E63";
+  return <div style={{marginBottom:10,fontSize:13,color:c,fontWeight:600}}>Fill rate: {pct.toFixed(0)}% ({filled}/{checked})</div>;
+}
+function LitterAverage({ scores, zones }) {
+  const vals = zones.map(z=>parseInt(scores[z.id])||0).filter(n=>n>0);
+  if (!vals.length) return null;
+  const avg = (vals.reduce((s,v)=>s+v,0)/vals.length).toFixed(1);
+  const c = parseFloat(avg)>=8?"#2E7D52":parseFloat(avg)>=5?"#C4960C":parseFloat(avg)>=3?"#D4652A":"#E91E63";
+  return (
+    <div style={{marginTop:10,padding:"8px 12px",background:"#F5F7FA",borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <span style={{fontSize:11,color:"#64748B"}}>Overall average</span>
+      <span style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:c}}>{avg} / 10</span>
+    </div>
+  );
+}
+function LastFlushBanner({ log }) {
+  const hasIssue = log.flowRate!=="good" || log.issues;
+  return (
+    <div style={{background:hasIssue?"#E91E6310":"#2E7D5210",border:"1px solid "+(hasIssue?"#E91E6330":"#2E7D5230"),borderRadius:8,padding:"12px 16px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <div>
+        <div style={{fontSize:10,color:"#64748B",marginBottom:3}}>LAST FLUSH — Day {log.day} · {log.shift} · {log.time}</div>
+        <div style={{fontSize:12,color:hasIssue?"#DC2626":"#16A34A"}}>{log.linesFlushed.length} lines · flow: {log.flowRate.toUpperCase()}</div>
+        {log.issues && <div style={{fontSize:11,color:"#DC2626",marginTop:3}}>⚠ {log.issues}</div>}
+      </div>
+      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:24}}>{hasIssue?"⚠":"✓"}</div>
+    </div>
+  );
+}
+
+function VentGuideCallout({ currentDay, VENT_GUIDE, ALW_STANDARD }) {
+  const g = VENT_GUIDE.find(r=>r.day===currentDay);
+  const std = ALW_STANDARD.find(r=>r.day===currentDay);
+  if (!g) return null;
+  return (
+    <div style={{background:"#C4960C10",border:"1px solid #C4960C30",borderRadius:6,padding:"10px 16px",marginBottom:12,display:"flex",gap:24,flexWrap:"wrap",fontSize:11}}>
+      <span style={{color:"#C4960C",fontWeight:600}}>Day {currentDay} Guide:</span>
+      <span>Target <strong style={{color:"#C4960C"}}>{g.target}°C</strong></span>
+      <span>Min vent <strong style={{color:"#5B86E5"}}>{g.minVent}%</strong></span>
+      <span>Max vent <strong style={{color:"#5B86E5"}}>{g.maxVent}%</strong></span>
+      {std && <span>ALW standard <strong style={{color:"#2E7D52"}}>{std.std}g</strong></span>}
+    </div>
+  );
+}
+function TunnelLatest({ logs, VENT_GUIDE, currentDay }) {
+  if (!logs.length) return null;
+  const l = logs[logs.length-1];
+  const g = VENT_GUIDE.find(r=>r.day===currentDay);
+  return (
+    <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"12px 16px",marginBottom:14}}>
+      <div style={{fontSize:9,color:"#C4960C",letterSpacing:1.5,fontWeight:600,marginBottom:8}}>LATEST READING — Day {l.day}</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+        {[
+          {lbl:"TARGET TEMP",  v:(l.targetTemp)+"°C",  c:"#C4960C"},
+          {lbl:"MIN VENT",     v:(l.minVent)+"%",      c:"#5B86E5"},
+          {lbl:"MAX VENT",     v:(l.maxVent)+"%",      c:"#5B86E5"}, ].map(m=>(
+          <div key={m.lbl} style={{background:"#F5F7FA",borderRadius:6,padding:"8px 12px"}}>
+            <div style={{fontSize:8,color:"#64748B",letterSpacing:.8,marginBottom:4}}>{m.lbl}</div>
+            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:m.c}}>{m.v}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+function BracketProgress({ activeBracket, BROODING_TASKS, customTasks, taskChecks, deletedTasks }) {
+  const b = activeBracket;
+  const cust = customTasks[b]||[];
+  const stdVisible = (BROODING_TASKS[b]||[]).filter((_,i)=>!deletedTasks[(b)+"__"+(i)]);
+  const total = stdVisible.length + cust.length;
+  const done = stdVisible.filter((_,i)=>taskChecks[(b)+"__"+(i)]).length +
+               cust.filter((_,i)=>taskChecks[(b)+"__custom_"+(i)]).length;
+  return (
+    <div style={{ marginBottom:14 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:"#64748B", marginBottom:6 }}>
+        <span style={{ color:"#D4652A", fontWeight:600, letterSpacing:1 }}>{b}</span>
+        <span>{done} / {total} complete</span>
+      </div>
+      <div style={{ height:3, background:"#E2E8F0", borderRadius:2 }}>
+        <div style={{ width:(total?done/total*100:0)+"%", height:"100%", background:"#D4652A", borderRadius:2, transition:"width .3s" }}/>
+      </div>
+    </div>
+  );
+}
+function CropFillSummary({ logs, currentDay }) {
+  const latest = logs[logs.length-1];
+  const pct = (latest.filled/latest.checked*100).toFixed(0);
+  const latestColor = pct>=80?"#2E7D52":pct>=60?"#C4960C":"#E91E63";
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
+      <div style={{background:"#FFFFFF",border:"1px solid #2E7D5225",borderRadius:8,padding:"11px 13px"}}>
+        <div style={{fontSize:9,color:"#64748B",letterSpacing:1,marginBottom:3}}>LATEST CHECK</div>
+        <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:20,color:latestColor}}>{pct}%</div>
+        <div style={{fontSize:10,color:"#64748B",marginTop:2}}>{latest.filled}/{latest.checked} · {latest.pen}</div>
+      </div>
+      <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"11px 13px"}}>
+        <div style={{fontSize:9,color:"#64748B",letterSpacing:1,marginBottom:3}}>TODAY</div>
+        <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:20,color:"#C4960C"}}>{logs.filter(l=>l.day===currentDay).length}</div>
+      </div>
+      <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"11px 13px"}}>
+        <div style={{fontSize:9,color:"#64748B",letterSpacing:1,marginBottom:3}}>TOTAL LOGGED</div>
+        <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:20,color:"#64748B"}}>{logs.length}</div>
+      </div>
+    </div>
+  );
+}
+function DailyLogRows({ logs, currentDay, getPhase, CYCLE_CONFIG, FEED_FC, netPlacedBirds, setShiftLogs, setEditingLogId, setNewLog, setLogDay, editingLogId }) {
+  const days = [...new Set(logs.map(l=>l.day))].sort((a,b)=>a-b);
+  let cumMort = 0, cumFeed = 0;
+  const rows = [];
+  days.forEach(day => {
+    const am = logs.find(l=>l.day===day && l.shift==="DAY");
+    const pm = logs.find(l=>l.day===day && l.shift==="NIGHT");
+    const amMort = am ? am.mortality : null;
+    const pmMort = pm ? pm.mortality : null;
+    const dayMort = (amMort||0) + (pmMort||0);
+    const amFeed = am ? am.feedsConsumed : null;
+    const pmFeed = pm ? pm.feedsConsumed : null;
+    const dayFeed = (amFeed||0) + (pmFeed||0);
+    cumMort += dayMort;
+    cumFeed += dayFeed;
+    const waterEnd = (pm && pm.waterEnd) || (am && am.waterEnd) || null;
+    const feedBal = (pm && pm.feedBalance) || (am && am.feedBalance) || null;
+    const alw = (pm && pm.alw) || (am && am.alw) || null;
+    const notes = [am && am.notes, pm && pm.notes].filter(Boolean).join(" / ");
+    const isToday = day === currentDay;
+    const dp = getPhase(day);
+    const dateStr = new Date(CYCLE_CONFIG.placementDate.getTime()+day*86400000).toLocaleDateString("en-PH",{month:"short",day:"numeric"});
+    const fcRow = FEED_FC.find(r=>r.day===day);
+    const feedUnder = fcRow && dayFeed < fcRow.fc;
+    const mortTarget = Math.round(netPlacedBirds*0.001);
+    const mortOver = dayMort > mortTarget;
+    // water consumed = today's waterEnd minus previous day's waterEnd
+    let waterConsumed = null;
+    if (waterEnd !== null) {
+      const prevDay = days[days.indexOf(day)-1];
+      if (prevDay !== undefined) {
+        const prevPm = logs.find(l=>l.day===prevDay && l.shift==="NIGHT");
+        const prevAm = logs.find(l=>l.day===prevDay && l.shift==="DAY");
+        const prevWater = (prevPm && prevPm.waterEnd) || (prevAm && prevAm.waterEnd) || null;
+        if (prevWater !== null) waterConsumed = waterEnd - prevWater;
+      }
+    }
+    rows.push(
+      <tr key={day} style={{borderBottom:"1px solid #F0F2F5",background:isToday?"#C4960C08":"transparent"}}>
+        <td style={{padding:"7px 8px",color:"#64748B",whiteSpace:"nowrap"}}>{dateStr}</td>
+        <td style={{padding:"7px 8px",fontFamily:"'Inter',sans-serif",fontWeight:700,color:dp.color,textAlign:"center"}}>D{day}</td>
+        {/* Mortality AM/PM/Total/Cum */}
+        <td style={{padding:"7px 8px",textAlign:"center",color:"#334155",borderLeft:"1px solid #E2E8F0"}}>{amMort!==null?amMort:"—"}</td>
+        <td style={{padding:"7px 8px",textAlign:"center",color:"#334155"}}>{pmMort!==null?pmMort:"—"}</td>
+        <td style={{padding:"7px 8px",textAlign:"center",fontWeight:700,color:mortOver?"#E91E63":"#334155"}}>{dayMort||"—"}</td>
+        <td style={{padding:"7px 8px",textAlign:"center",color:"#D4652A",fontWeight:600,borderRight:"1px solid #E2E8F0"}}>{cumMort}</td>
+        {/* Feeds AM/PM/Total/Cum */}
+        <td style={{padding:"7px 8px",textAlign:"center",color:"#334155"}}>{amFeed!==null?amFeed:"—"}</td>
+        <td style={{padding:"7px 8px",textAlign:"center",color:"#334155"}}>{pmFeed!==null?pmFeed:"—"}</td>
+        <td style={{padding:"7px 8px",textAlign:"center",fontWeight:700,color:feedUnder?"#C4960C":"#2E7D52"}}>{dayFeed||"—"}</td>
+        <td style={{padding:"7px 8px",textAlign:"center",color:"#2E7D52",fontWeight:600,borderRight:"1px solid #E2E8F0"}}>{cumFeed}</td>
+        {/* Water */}
+        <td style={{padding:"7px 8px",textAlign:"center",color:"#5B86E5"}}>{waterEnd!==null?waterEnd:"—"}</td>
+        <td style={{padding:"7px 8px",textAlign:"center",color:"#5B86E5",fontWeight:600,borderRight:"1px solid #E2E8F0"}}>{waterConsumed!==null?waterConsumed:"—"}</td>
+        {/* Feed balance */}
+        <td style={{padding:"7px 8px",textAlign:"center",color:feedBal!==null?(feedBal<100?"#E91E63":feedBal<150?"#C4960C":"#334155"):"#CBD5E1",fontWeight:600}}>{feedBal!==null?feedBal:"—"}</td>
+        {/* ALW */}
+        <td style={{padding:"7px 8px",textAlign:"center",color:"#C4960C",fontWeight:600}}>{alw?(alw*1000).toFixed(0)+"g":"—"}</td>
+        {/* Notes */}
+        <td style={{padding:"7px 8px",color:"#94A3B8",fontSize:9,maxWidth:140}}>{notes||"—"}</td>
+        <td style={{padding:"7px 4px",textAlign:"center"}}>
+          <div style={{display:"flex",gap:4,justifyContent:"center"}}>
+            {am && <button onClick={()=>{ setEditingLogId(am.id); setLogDay(String(am.day)); setNewLog({shift:am.shift,flockman:am.flockman||"",mortality:String(am.mortality),feedsConsumed:String(am.feedsConsumed),feedBalance:String(am.feedBalance||""),waterEnd:String(am.waterEnd||""),alw:am.alw?String((am.alw*1000).toFixed(0)):"",notes:am.notes||""}); }} style={{background:"#C4960C15",border:"1px solid #C4960C40",color:"#C4960C",fontFamily:"'Inter',sans-serif",fontSize:8,padding:"2px 5px",cursor:"pointer",borderRadius:3}}>AM</button>}
+            {pm && <button onClick={()=>{ setEditingLogId(pm.id); setLogDay(String(pm.day)); setNewLog({shift:pm.shift,flockman:pm.flockman||"",mortality:String(pm.mortality),feedsConsumed:String(pm.feedsConsumed),feedBalance:String(pm.feedBalance||""),waterEnd:String(pm.waterEnd||""),alw:pm.alw?String((pm.alw*1000).toFixed(0)):"",notes:pm.notes||""}); }} style={{background:"#7B1FA215",border:"1px solid #7B1FA240",color:"#AB47BC",fontFamily:"'Inter',sans-serif",fontSize:8,padding:"2px 5px",cursor:"pointer",borderRadius:3}}>PM</button>}
+            <button onClick={()=>{ if(am) setShiftLogs(p=>p.filter(x=>x.id!==am.id)); if(pm) setShiftLogs(p=>p.filter(x=>x.id!==pm.id)); }} style={{background:"none",border:"1px solid #E91E6340",color:"#E91E6380",fontFamily:"'Inter',sans-serif",fontSize:11,width:22,height:22,cursor:"pointer",borderRadius:4,padding:0}}>×</button>
+          </div>
+        </td>
+      </tr>
+    );
+  });
+  return rows;
+}
+// ═════════════════════════════════════════════════════════════════════════════
+function SupervisorApp() {
+  const [activeTab, setActiveTab]   = useState("today");
+  const [dayOverride, setDayOverride] = useLocalStorage("dayOverride", null);
+  const [currentDay, setCurrentDay] = useState(dayOverride !== null ? dayOverride : getCurrentDay());
+  // Daily records — two shifts per day
+  const [shiftLogs, setShiftLogs] = useLocalStorage("shiftLogs", []);
+  const [newLog, setNewLog] = useState({ shift:"DAY", flockman:"", mortality:"", feedsConsumed:"", feedBalance:"", waterEnd:"", alw:"", notes:"" });
+  const [logDay, setLogDay] = useState(String(currentDay));
+  const [editingLogId, setEditingLogId] = useState(null);
+  // Feed receive log
+  // Brooding tasks — per bracket, per task
+  const [taskChecks, setTaskChecks] = useLocalStorage("taskChecks", {});
+  const [customTasks, setCustomTasks] = useLocalStorage("customTasks", {});
+  const [deletedTasks, setDeletedTasks] = useLocalStorage("deletedTasks", {}); // { "bracket__idx": true }
+  const [newTaskText, setNewTaskText] = useState("");
+  const [activeBracket, setActiveBracket] = useState(getBroodBracket(currentDay));
+  // Tunnel logs
+  const [tunnelLogs, setTunnelLogs] = useLocalStorage("tunnelLogs", []);
+  const [newTunnel, setNewTunnel] = useState({ shift:"04:00", targetTemp:"", actualTemp:"", outsideTemp:"", sensor1:"", sensor2:"", actualVent:"", minVent:"", maxVent:"", humidity:"", heatersOn:"", padCurtain1:"", padCurtain2:"", padsOn:false, notes:"" });
+  const [tunnelLogDay, setTunnelLogDay] = useState("");
+  // Placement
+  // Season for ventilation guide
+  // Crop fill log
+  const [cropLogs, setCropLogs] = useLocalStorage("cropLogs", []);
+  const [newCrop, setNewCrop] = useState({ time:"", shift:"DAY", pen:"", filled:"", checked:"10", notes:"" });
+  // Litter evaluation log
+  const LITTER_ZONES = [
+    { id:"A", label:"Zone A", desc:"Top Left (facing fans)" },
+    { id:"B", label:"Zone B", desc:"Top Right (facing fans)" },
+    { id:"C", label:"Zone C", desc:"Bottom Left" },
+    { id:"D", label:"Zone D", desc:"Bottom Right" }, ];
+  const [litterLogs, setLitterLogs] = useLocalStorage("litterLogs", []);
+  const [newLitter, setNewLitter] = useState({ bracket:"", pen:"", scores:{}, flags:[], flagInput:"", notes:"" });
+  const [litterScores, setLitterScores] = useLocalStorage("litterScores", {});
+  const [litterFlags, setLitterFlags] = useLocalStorage("litterFlags", []);
+  const [litterNotes, setLitterNotes] = useLocalStorage("litterNotes", "");
+  // Drinker flushing log
+  const DRINKER_LINES = ["Line 1","Line 2","Line 3","Line 4","Line 5"];
+  const [flushLogs, setFlushLogs] = useLocalStorage("flushLogs", []);
+  const [newFlush, setNewFlush] = useState({ time:"", shift:"DAY", linesFlushed:[], flowRate:"good", issues:"", notes:"" });
+  const [metricsOpen, setMetricsOpen] = useState(false);
+  // Field Guide state
+  const [incidents, setIncidents]     = useLocalStorage("incidents", []);
+  const [newIncident, setNewIncident] = useState({ shift:"DAY", category:"health", description:"", action:"", resolved:false });
+  const [incidentFilter, setIncidentFilter] = useState("all");
+  const [fgSection, setFgSection]         = useState("incidents"); // "incidents" | "kb" | "meds" | "lighting"
+  // Editable Field Guide data
+  const [medProgram, setMedProgram] = useLocalStorage("medProgram", MED_PROGRAM_DEFAULT);
+  const [editingMedIdx, setEditingMedIdx] = useState(null);
+  const [medDraft, setMedDraft] = useState(null);
+  const [lightingProgram, setLightingProgram] = useLocalStorage("lightingProgram", LIGHTING_DEFAULT);
+  const [editingLightIdx, setEditingLightIdx] = useState(null);
+  const [lightDraft, setLightDraft] = useState(null);
+  const [feedingGuide, setFeedingGuide] = useLocalStorage("feedingGuide", FEEDING_GUIDE_DEFAULT);
+  const [editingFeedIdx, setEditingFeedIdx] = useState(null);
+  const [feedDraft, setFeedDraft] = useState(null);
+  const [showReset, setShowReset] = useState(false);
+  const [showCrate, setShowCrate] = useState(false);
+  const [placementSection, setPlacementSection] = useState("placement");
+  const [feedDeliveries, setFeedDeliveries] = useLocalStorage("feedDeliveries", []);
+  const [newDelivery, setNewDelivery] = useState({ type:"CBC", qty:"", notes:"" });
+  const [checksSection, setChecksSection] = useState("cropfill");
+  const clearAllData = () => {
+    const NS = "beracah_2026_04_22_h" + CURRENT_HOUSE + "_";
+    ["shiftLogs","taskChecks","tunnelLogs", "cropLogs","litterLogs","flushLogs","crateEntries","placementTrucks", "crateWeight","chicksPerCrate","activeBracket",
+     "litterScores","litterFlags","litterNotes","incidents","feedDeliveries"].forEach(k => localStorage.removeItem(NS+k));
+    localStorage.setItem(NS+"dayOverride", JSON.stringify(0));
+    window.location.reload();
+  };
+  const [showVentGuide, setShowVentGuide] = useState(false);
+  // Crate weighing for chick ALW
+  const [crateWeight, setCrateWeight] = useLocalStorage("crateWeight", "1.8");   // kg per crate (tare)
+  const [chicksPerCrate, setChicksPerCrate] = useLocalStorage("chicksPerCrate", "100");
+  const [crateEntries, setCrateEntries] = useLocalStorage("crateEntries", []);
+  const [newCrate, setNewCrate] = useState({ grossWeight:"", numCrates:"3", notes:"" });
+  const [placementTrucks, setPlacementTrucks] = useLocalStorage("placementTrucks", []);
+  const [newTruck, setNewTruck] = useState({ arrivalTime:"", plate:"", qty:"", initWeight:"", doa:"", notes:"" });
+  // Tick current day every minute (only when no manual override)
+  useEffect(() => {
+    if (dayOverride !== null) return;
+    const t = setInterval(() => setCurrentDay(getCurrentDay()), 60000);
+    return () => clearInterval(t);
+  }, [dayOverride]);
+  const nextDay = () => {
+    const nd = currentDay + 1;
+    setDayOverride(nd);
+    setCurrentDay(nd);
+    setLogDay(String(nd));
+    setActiveBracket(getBroodBracket(nd));
+  };
+  const resetDayToAuto = () => {
+    setDayOverride(null);
+    const d = getCurrentDay();
+    setCurrentDay(d);
+    setLogDay(String(d));
+    setActiveBracket(getBroodBracket(d));
+  };
+  // ── Computed ─────────────────────────────────────────────────────────────
+  const phase      = getPhase(currentDay);
+  const todayMeds  = medProgram.filter(m => m.day === currentDay);
+  const todayAM    = todayMeds.filter(m => m.session === "AM");
+  const todayPM    = todayMeds.filter(m => m.session === "PM");
+  const isAlwDay   = ALW_DAYS.includes(currentDay);
+  const isTunnel   = currentDay >= 14;
+  const todayLogs  = shiftLogs.filter(l => l.day === currentDay);
+  const totalMort  = useMemo(() => shiftLogs.reduce((s,l) => s+l.mortality, 0), [shiftLogs]);
+  const totalFeed  = useMemo(() => shiftLogs.reduce((s,l) => s+l.feedsConsumed, 0), [shiftLogs]);
+  const latestAlw  = [...shiftLogs].sort((a,b) => b.day - a.day).find(l => l.alw);
+  const todayAlw   = shiftLogs.find(l => l.day === currentDay && l.alw) || null;
+  const latestBal  = (() => {
+    if (!shiftLogs.length) return CYCLE_CONFIG.openingFloorStock + 200;
+    const sorted = [...shiftLogs].sort((a,b) => a.day !== b.day ? b.day - a.day : (b.shift==="NIGHT"?1:-1));
+    return sorted[0].feedBalance;
+  })();
+  const todayFC    = (function(){ const r = FEED_FC.find(r => r.day === currentDay); return r ? r.fc : null; })();
+  const todayConsumed  = shiftLogs.filter(l => l.day === currentDay).reduce((s,l) => s + l.feedsConsumed, 0);
+  // Target ALW = 95% of Cobb standard for current day
+  const alwStdToday    = ALW_STANDARD.find(r => r.day === currentDay);
+  const targetALW      = alwStdToday ? Math.round(alwStdToday.std * 0.95) : null; // grams
+  const netPlacedBirds = (() => { const t=placementTrucks; return t.reduce((s,x)=>s+x.qty,0)-t.reduce((s,x)=>s+x.doa,0); })();
+  // ── ALW PROJECTION ENGINE (FCR regression method) ────────────────────────
+  // At each weigh day: FCR = cumulative feed kg ÷ (remaining pop × ALW kg)
+  // Fit linear regression on FCR vs day → project today's FCR
+  // Back-calculate: projected ALW = cumul feed kg today ÷ (remaining pop today × projected FCR)
+  const alwHistory = [...shiftLogs]
+    .filter(l => l.alw)
+    .sort((a,b) => a.day - b.day);
+  const projectedALW = (() => {
+    if (alwHistory.length < 1) return null;
+    if (todayAlw) return null;
+    // Build FCR data points at each weigh day
+    const fcrPoints = alwHistory.map(weighEntry => {
+      const day = weighEntry.day;
+      // Cumulative feed consumed up to this day (kg) — bags × 50kg/bag
+      const cumFeedKg = shiftLogs
+        .filter(l => l.day <= day)
+        .reduce((s,l) => s + l.feedsConsumed, 0) * 50;
+      // Cumulative mortality up to this day
+      const cumMortToDay = shiftLogs
+        .filter(l => l.day <= day)
+        .reduce((s,l) => s + l.mortality, 0);
+      // Remaining population
+      const remainingPop = netPlacedBirds - cumMortToDay;
+      // FCR = cumulative feed kg ÷ (remaining pop × ALW kg)
+      const fcr = remainingPop > 0 && weighEntry.alw > 0
+        ? cumFeedKg / (remainingPop * weighEntry.alw)
+        : null;
+      return { day, fcr, cumFeedKg, remainingPop };
+    }).filter(p => p.fcr !== null);
+    if (!fcrPoints.length) return null;
+    // Project today's FCR via linear regression (FCR vs day)
+    let projectedFCR;
+    if (fcrPoints.length === 1) {
+      // Single point — use it directly, no regression
+      projectedFCR = fcrPoints[0].fcr;
+    } else {
+      // Linear regression: FCR = a + b × day
+      const n     = fcrPoints.length;
+      const sumX  = fcrPoints.reduce((s,p) => s + p.day, 0);
+      const sumY  = fcrPoints.reduce((s,p) => s + p.fcr, 0);
+      const sumXY = fcrPoints.reduce((s,p) => s + p.day * p.fcr, 0);
+      const sumX2 = fcrPoints.reduce((s,p) => s + p.day * p.day, 0);
+      const denom = n * sumX2 - sumX * sumX;
+      if (denom === 0) return null;
+      const b = (n * sumXY - sumX * sumY) / denom;
+      const a = (sumY - b * sumX) / n;
+      projectedFCR = a + b * currentDay;
+    }
+    if (!projectedFCR || projectedFCR <= 0) return null;
+    // Today's cumulative feed consumed (kg)
+    const todayCumFeedKg = shiftLogs
+      .filter(l => l.day <= currentDay)
+      .reduce((s,l) => s + l.feedsConsumed, 0) * 50;
+    // Today's remaining population
+    const todayCumMort = shiftLogs
+      .filter(l => l.day <= currentDay)
+      .reduce((s,l) => s + l.mortality, 0);
+    const todayRemainingPop = netPlacedBirds - todayCumMort;
+    if (todayRemainingPop <= 0 || todayCumFeedKg <= 0) return null;
+    // Back-calculate projected ALW
+    // ALW (kg) = cumul feed kg ÷ (remaining pop × projected FCR)
+    const projALWkg = todayCumFeedKg / (todayRemainingPop * projectedFCR);
+    const projALWg  = Math.round(projALWkg * 1000);
+    const lastWeigh = alwHistory[alwHistory.length - 1];
+    return {
+      value:        projALWg, projectedFCR: projectedFCR.toFixed(3), fcrPoints:    fcrPoints.map(p => ({ day: p.day, fcr: p.fcr.toFixed(3) })), lastDay:      lastWeigh.day, lastActualG:  Math.round(lastWeigh.alw * 1000),
+      weighPoints:  fcrPoints.length, todayCumFeedKg, todayRemainingPop,
+    };
+  })();
+  // Running performance metrics
+  const cumulMortTotal = shiftLogs.reduce((s,l) => s+l.mortality, 0);
+  const cumulFeedKgTotal = cumulMortTotal >= 0 ? shiftLogs.reduce((s,l) => s+l.feedsConsumed, 0) * 50 : 0;
+  const remainingPopMetric = netPlacedBirds - cumulMortTotal;
+  const hrPct = netPlacedBirds > 0 ? (remainingPopMetric / netPlacedBirds * 100) : 100;
+  const daysElapsed = Math.max(currentDay, 1);
+  const mortRate       = totalMort > 0 ? (totalMort / daysElapsed).toFixed(1) : "0.0";
+  const runningHR      = netPlacedBirds > 0 ? (((netPlacedBirds - totalMort) / netPlacedBirds) * 100).toFixed(1) : null;
+  const cumFeedConsumed= shiftLogs.reduce((s,l) => s + l.feedsConsumed, 0);
+  const cumFCTarget    = FEED_FC.filter(r => r.day <= currentDay).reduce((s,r) => s + r.fc, 0);
+  const fcDiff         = cumFeedConsumed - cumFCTarget;
+  const btActual       = netPlacedBirds > 0 ? (cumFeedConsumed / (netPlacedBirds / 1000)).toFixed(2) : null;
+  const runningFCR     = (() => {
+    // Use projected ALW (or actual today if weighed), today's cumulative feed and mortality
+    const alwKg = (todayAlw && todayAlw.alw) || (projectedALW ? projectedALW.value / 1000 : null);
+    if (!alwKg || alwKg <= 0) return null;
+    const cumFeedKg    = cumFeedConsumed * 50;
+    const remainingPop = netPlacedBirds - totalMort;
+    if (remainingPop <= 0) return null;
+    return (cumFeedKg / (remainingPop * alwKg)).toFixed(3);
+  })();
+  const runningALWkg = projectedALW ? projectedALW.value / 1000 : null;
+  const bpiScore = runningALWkg && runningFCR && daysElapsed > 0
+    ? ((runningALWkg * hrPct) / (parseFloat(runningFCR) * daysElapsed) * 100)
+    : null;
+  const bpiColor = bpiScore === null ? "#CBD5E1"
+    : bpiScore >= 400 ? "#2E7D52"
+    : bpiScore >= 300 ? "#C4960C"
+    : bpiScore >= 250 ? "#D4652A"
+    : "#E91E63";
+  const btTarget       = FEED_FC.find(r => r.day === currentDay);
+  const addLog = () => {
+    if (!newLog.shift) return;
+    const parsed = { ...newLog, day:parseInt(logDay)||currentDay, mortality:parseInt(newLog.mortality)||0, feedsConsumed:parseInt(newLog.feedsConsumed)||0, feedBalance:parseInt(newLog.feedBalance)||0, waterStart:0, waterEnd:parseInt(newLog.waterEnd)||0, alw:newLog.alw?parseFloat(newLog.alw)/1000:null };
+    if (editingLogId) {
+      setShiftLogs(p => p.map(x => x.id===editingLogId ? { ...parsed, id:editingLogId } : x));
+      setEditingLogId(null);
+    } else {
+      setShiftLogs(p => [...p, { ...parsed, id:Date.now() }]);
+    }
+    setNewLog({ shift:"DAY", flockman:"", mortality:"", feedsConsumed:"", feedBalance:"", waterEnd:"", alw:"", notes:"" });
+    setLogDay(String(currentDay));
+  };
+
+  const toggleTask = (bracket, idx) => {
+    const key = (bracket)+"__"+(idx);
+    setTaskChecks(p => ({ ...p, [key]: !p[key] }));
+  };
+  const addCustomTask = (bracket) => {
+    if (!newTaskText.trim()) return;
+    setCustomTasks(p => ({ ...p, [bracket]: [...(p[bracket]||[]), { id:Date.now(), text:newTaskText.trim() }] }));
+    setNewTaskText("");
+  };
+  const addTunnelLog = () => {
+    if (!newTunnel.shift || !newTunnel.targetTemp) return;
+    const logDay = parseInt(tunnelLogDay) >= 0 ? parseInt(tunnelLogDay) : currentDay;
+    setTunnelLogs(p => [...p, { ...newTunnel, id:Date.now(), day:logDay, targetTemp:parseFloat(newTunnel.targetTemp)||0, actualTemp:parseFloat(newTunnel.actualTemp)||0, outsideTemp:parseFloat(newTunnel.outsideTemp)||0, sensor1:parseFloat(newTunnel.sensor1)||0, sensor2:parseFloat(newTunnel.sensor2)||0, actualVent:parseInt(newTunnel.actualVent)||0, minVent:parseInt(newTunnel.minVent)||0, maxVent:parseInt(newTunnel.maxVent)||0, humidity:parseInt(newTunnel.humidity)||0, heatersOn:parseInt(newTunnel.heatersOn)||0, padCurtain1:parseInt(newTunnel.padCurtain1)||0, padCurtain2:parseInt(newTunnel.padCurtain2)||0 }]);
+    setNewTunnel({ shift:"04:00", targetTemp:"", actualTemp:"", outsideTemp:"", sensor1:"", sensor2:"", actualVent:"", minVent:"", maxVent:"", humidity:"", heatersOn:"", padCurtain1:newTunnel.padCurtain1, padCurtain2:newTunnel.padCurtain2, padsOn:false, notes:"" });
+    setTunnelLogDay("");
+  };
+  // Crate ALW computed
+  const crateALW = (() => {
+    const tare = parseFloat(crateWeight)||1.8;
+    const perCrate = parseInt(chicksPerCrate)||100;
+    const entries = crateEntries.filter(e=>e.grossWeight>0&&e.numCrates>0);
+    if (!entries.length) return null;
+    const totalNetKg = entries.reduce((s,e)=>s+(e.grossWeight-(tare*e.numCrates)),0);
+    const totalBirds = entries.reduce((s,e)=>s+(e.numCrates*perCrate),0);
+    return totalBirds>0 ? (totalNetKg/totalBirds*1000) : null; // grams
+  })();
+  // Placement totals
+  const totalHeads  = placementTrucks.reduce((s,t)=>s+t.qty, 0);
+  const totalDOA    = placementTrucks.reduce((s,t)=>s+t.doa, 0);
+  const netPlaced   = totalHeads - totalDOA;
+  // Input style
+  const INP = { background:"#F5F7FA", border:"1px solid #E2E8F0", color:"#1E293B", fontFamily:"'Inter',sans-serif", fontSize:13, padding:"9px 12px", outline:"none", borderRadius:6, width:"100%" };
+  const SEL = { ...INP };
+  const LBL = { fontSize:10, color:"#64748B", letterSpacing:1.2, marginBottom:5, display:"block", fontWeight:600 };
+  return (
+    <div style={{ fontFamily:"'Inter',sans-serif", background:"#F5F7FA", minHeight:"100vh", color:"#1E293B", display:"flex", flexDirection:"column", maxWidth:1024, margin:"0 auto" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0;}
+        ::-webkit-scrollbar{width:3px;height:3px;}
+        ::-webkit-scrollbar-track{background:#FFFFFF;}
+        ::-webkit-scrollbar-thumb{background:#94A3B8;border-radius:2px;}
+        .row:hover{background:rgba(255,255,255,0.03)!important;}
+        .tab-btn{transition:all .15s;}
+        input::placeholder,textarea::placeholder{color:#CBD5E1;}
+        input:focus,textarea:focus,select:focus{border-color:#5B86E5!important;outline:none;}
+        textarea{resize:vertical;}
+        select option{background:#FFFFFF;}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+        @keyframes slideUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+        .su{animation:slideUp .2s ease;}
+        .pill{display:inline-flex;align-items:center;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;letter-spacing:.5px;}
+      `}</style>
+      {/* ── HEADER ── */}
+      <div style={{ background:"#FFFFFF", borderBottom:"1px solid #E2E8F0", padding:"14px 20px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:50 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+          <div style={{ background:phase.color, color:"#F5F7FA", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:10, padding:"3px 8px", letterSpacing:1.5, borderRadius:2 }}>
+            {phase.short}
+          </div>
+          <div>
+            <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:14, letterSpacing:.5, color:"#1E293B" }}>
+              {CYCLE_CONFIG.building} · Supervisor
+            </div>
+            <div style={{ fontSize:10, color:"#64748B" }}>{CYCLE_CONFIG.breed} · {CYCLE_CONFIG.flockSize.toLocaleString()} heads · House {CURRENT_HOUSE}</div>
+          </div>
+          <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+            {[1,2,3,4,5].map(h=>(
+              <button key={h} onClick={()=>{localStorage.setItem("beracah_currentHouse",String(h));window.location.reload();}} style={{
+                background:CURRENT_HOUSE===h?"#2E7D52":"none",
+                border:CURRENT_HOUSE===h?"1px solid #2E7D52":"1px solid #CBD5E1",
+                color:CURRENT_HOUSE===h?"#FFFFFF":"#94A3B8",
+                fontFamily:"'Inter',sans-serif",fontWeight:CURRENT_HOUSE===h?700:400,fontSize:11,
+                width:28,height:28,borderRadius:6,cursor:"pointer",padding:0,
+              }}>H{h}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+          <div style={{ textAlign:"right" }}>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:28, color:phase.color, lineHeight:1 }}>D{currentDay}</div>
+              <div style={{ fontSize:9, color:"#64748B", letterSpacing:1 }}>{dayOverride!==null?"MANUAL":"DAY ROLLS MIDNIGHT"}</div>
+              <div style={{ display:"flex", gap:6, justifyContent:"flex-end", marginTop:4 }}>
+                <button onClick={nextDay} style={{ background:"none", border:"1px solid "+phase.color+"40", color:phase.color, fontFamily:"'Inter',sans-serif", fontSize:8, padding:"3px 8px", cursor:"pointer", borderRadius:3 }}>NEXT DAY →</button>
+                {dayOverride!==null && <button onClick={resetDayToAuto} style={{ background:"none", border:"1px solid #CBD5E1", color:"#64748B", fontFamily:"'Inter',sans-serif", fontSize:8, padding:"3px 8px", cursor:"pointer", borderRadius:3 }}>AUTO</button>}
+              </div>
+            </div>
+          </div>
+          <div style={{ position:"relative" }}>
+            <button onClick={()=>setShowReset(v=>!v)} style={{
+              background:"none", border:"1px solid #CBD5E1", color:"#94A3B8", fontFamily:"'Inter',sans-serif", fontSize:9, padding:"4px 8px", cursor:"pointer", borderRadius:4, letterSpacing:.5,
+            }}>⚙</button>
+            {showReset && (
+              <div style={{ position:"absolute", right:0, top:32, background:"#FFFFFF", border:"1px solid #E91E6340", borderRadius:6, padding:12, zIndex:200, width:180 }}>
+                <div style={{ fontSize:10, color:"#64748B", marginBottom:8 }}>Reset all cycle data?</div>
+                <div style={{ fontSize:9, color:"#94A3B8", marginBottom:10 }}>This cannot be undone.</div>
+                <button onClick={clearAllData} style={{
+                  width:"100%", background:"#E91E6320", border:"1px solid #E91E6350", color:"#E91E63", fontFamily:"'Inter',sans-serif", fontSize:10, padding:"7px", cursor:"pointer", borderRadius:4, letterSpacing:.5,
+                }}>CLEAR ALL DATA</button>
+                <button onClick={()=>setShowReset(false)} style={{
+                  width:"100%", background:"none", border:"none", color:"#94A3B8", fontFamily:"'Inter',sans-serif", fontSize:10, padding:"7px", cursor:"pointer", marginTop:4,
+                }}>cancel</button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      {/* ── TAB BAR ── */}
+      <div style={{ background:"#EDF0F4", borderBottom:"1px solid #E2E8F0", display:"flex", overflowX:"auto", flexShrink:0, scrollbarWidth:"none" }}>
+        {TABS.map(t => (
+          <button key={t.id} className="tab-btn" onClick={() => setActiveTab(t.id)} style={{
+            background: activeTab===t.id ? "#2E7D52" : "none", border:"none", whiteSpace:"nowrap", borderRadius: activeTab===t.id ? 6 : 0, color: activeTab===t.id ? "#FFFFFF" : "#64748B",
+            fontFamily:"'Inter',sans-serif", fontSize:10, letterSpacing:1.5, padding:"8px 16px", cursor:"pointer", margin:"4px 2px", fontWeight:activeTab===t.id?700:400,
+          }}>
+            <span style={{ marginRight:5 }}>{t.icon}</span>{t.label}
+          </button>
+        ))}
+      </div>
+      {/* ── CONTENT ── */}
+      <div style={{ flex:1, overflow:"auto", padding:20 }}>
+        {/* ═══════════════════ TODAY ═══════════════════ */}
+        {activeTab==="today" && (
+          <div className="su">
+            {/* Phase banner */}
+            <div style={{ background:(phase.color)+"12", border:"1px solid "+(phase.color)+"30", borderRadius:8, padding:"16px 20px", marginBottom:16, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <div>
+                <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:20, color:phase.color }}>{phase.label} — Day {currentDay}</div>
+                <div style={{ fontSize:11, color:"#64748B", marginTop:2 }}>
+                  {currentDay===0 && "Chick placement day. Record truck arrivals, DOA, and controller setup."}
+                  {currentDay>=1 && currentDay<=14 && "Brooding stage · Bracket "+(getBroodBracket(currentDay))+" · "+(14-currentDay)+" days to tunnel transition"}
+                  {currentDay>14 && currentDay<=35 && "Tunnel stage · "+(35-currentDay)+" days to target harvest weight"}
+                  {currentDay>35 && "Harvest window. Contact supervisor for truck coordination."}
+                </div>
+              </div>
+              {isAlwDay && (
+                <div style={{ background:"#C4960C18", border:"1px solid #C4960C50", borderRadius:6, padding:"10px 14px", textAlign:"center" }}>
+                  <div style={{ fontSize:18 }}>⚖</div>
+                  <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:11, color:"#C4960C" }}>ALW WEIGH</div>
+                  <div style={{ fontSize:9, color:"#64748B" }}>1% population</div>
+                </div>
+              )}
+            </div>
+            {/* ── 3-card strip: Target ALW · Feed Target · Feed Balance ── */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:8 }}>
+              {/* Target ALW */}
+              <div style={{ background:"#FFFFFF", border:"1px solid #C4960C25", borderRadius:8, padding:"12px 14px" }}>
+                <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:6 }}>
+                  {isAlwDay ? "⚖ ALW WEIGH DAY" : "ALW — DAY "+(currentDay)}
+                </div>
+                {/* Target */}
+                <div style={{ display:"flex", alignItems:"baseline", gap:4, marginBottom:8 }}>
+                  <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:"#C4960C" }}>{targetALW || "—"}</span>
+                  <span style={{ fontSize:10, color:"#64748B" }}>g</span>
+                  <span style={{ fontSize:9, color:"#94A3B8" }}>target</span>
+                </div>
+                {/* Actual today — weigh days only */}
+                {todayAlw ? (
+                  <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>
+                    actual: <span style={{ color:(todayAlw.alw*1000)>=targetALW?"#2E7D52":"#E91E63", fontWeight:600 }}>{(todayAlw.alw*1000).toFixed(0)}g {(todayAlw.alw*1000)>=targetALW?"✓":"↓"}</span>
+                  </div>
+                ) : projectedALW ? (
+                  <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>projected: {projectedALW.value}g</div>
+                ) : (
+                  <div style={{ fontSize:9, color:"#94A3B8" }}>no weigh data yet</div>
+                )}
+              </div>
+              {/* Feed target */}
+              <div style={{ background:"#FFFFFF", border:"1px solid #5B86E525", borderRadius:8, padding:"12px 14px" }}>
+                <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:2 }}>TARGET FC — DAY {currentDay}</div>
+                <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
+                  <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:"#5B86E5" }}>{todayFC || "—"}</span>
+                  <span style={{ fontSize:10, color:"#64748B" }}>bags</span>
+                </div>
+                <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>
+                  cumul target: {cumFCTarget} bags
+                </div>
+              </div>
+              {/* Feed balance */}
+              <div style={{ background:"#FFFFFF", border:"1px solid "+(latestBal<100?"#E91E63":"#2E7D52")+"25", borderRadius:8, padding:"12px 14px", position:"relative" }}>
+                {latestBal < 100 && <div style={{ position:"absolute", top:8, right:10, width:6, height:6, borderRadius:"50%", background:"#E91E63", animation:"pulse 1.4s infinite" }} />}
+                <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:2 }}>FEED BALANCE</div>
+                <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
+                  <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color: latestBal<100?"#E91E63":latestBal<150?"#C4960C":"#2E7D52" }}>{latestBal}</span>
+                  <span style={{ fontSize:10, color:"#64748B" }}>bags</span>
+                </div>
+                <div style={{ fontSize:9, color: latestBal<100?"#E91E63":"#64748B", marginTop:2 }}>
+                  {latestBal<100 ? "below maintaining balance" : latestBal<150 ? "approaching minimum" : "warehouse balance"}
+                </div>
+              </div>
+            </div>
+            {/* Running Performance — compact cards matching ALW/FC/Balance style */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
+              {/* Harvest Rate */}
+              <div style={{ background:"#FFFFFF", border:"1px solid "+(hrPct>=99?"#2E7D52":hrPct>=97?"#C4960C":"#E91E63")+"25", borderRadius:8, padding:"12px 14px" }}>
+                <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:2 }}>HARVEST RATE</div>
+                <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
+                  <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:hrPct>=99?"#2E7D52":hrPct>=97?"#C4960C":"#E91E63" }}>{hrPct.toFixed(2)}</span>
+                  <span style={{ fontSize:10, color:"#64748B" }}>%</span>
+                </div>
+                <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>{remainingPopMetric.toLocaleString()} alive</div>
+              </div>
+              {/* Running FCR */}
+              <div style={{ background:"#FFFFFF", border:"1px solid "+(runningFCR?(parseFloat(runningFCR)<1.6?"#2E7D52":parseFloat(runningFCR)<1.8?"#C4960C":"#E91E63"):"#CBD5E1")+"25", borderRadius:8, padding:"12px 14px" }}>
+                <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:2 }}>RUNNING FCR</div>
+                <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
+                  <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:runningFCR?(parseFloat(runningFCR)<1.6?"#2E7D52":parseFloat(runningFCR)<1.8?"#C4960C":"#E91E63"):"#CBD5E1" }}>{runningFCR || "—"}</span>
+                </div>
+                <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>total weight: {runningALWkg ? (remainingPopMetric * runningALWkg).toFixed(0) : "—"} kg</div>
+              </div>
+              {/* BPI Score */}
+              <div style={{ background:"#FFFFFF", border:"1px solid "+bpiColor+"25", borderRadius:8, padding:"12px 14px" }}>
+                <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:2 }}>BPI SCORE</div>
+                <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
+                  <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:bpiColor }}>{bpiScore ? bpiScore.toFixed(0) : "—"}</span>
+                </div>
+              </div>
+            </div>
+            {/* Today's medicines */}
+            {(todayAM.length > 0 || todayPM.length > 0) && (
+              <div style={{ background:"#FFFFFF", border:"1px solid #E2E8F0", borderRadius:8, marginBottom:16, overflow:"hidden" }}>
+                <div style={{ padding:"10px 16px", borderBottom:"1px solid #E2E8F0", fontSize:10, color:"#64748B", letterSpacing:1.5, fontWeight:600 }}>TODAY'S MEDICINES — Day {currentDay}</div>
+                {[["AM","9:00 AM",todayAM,"#E5B80B"], ["PM","9:00 PM",todayPM,"#7B1FA2"]].map(([sess,time,meds,c]) => meds.length>0 && (
+                  <div key={sess} style={{ padding:"12px 16px", borderBottom:"1px solid #FFFFFF" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+                      <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:12, color:c }}>{sess}</div>
+                      <div style={{ fontSize:10, color:"#64748B" }}>{time}</div>
+                      {meds[0] && meds[0].waterL > 0 && <div style={{ fontSize:10, color:"#5B86E5" }}>{meds[0].waterL}L water</div>}
+                    </div>
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                      {meds.filter(m=>m.waterL>0||meds.indexOf(m)===0).map((m,i) => (
+                        <div key={i} style={{ background:(c)+"14", border:"1px solid "+(c)+"30", borderRadius:4, padding:"4px 10px", fontSize:11, color:c }}>
+                          {m.medicine} — {m.dose} {m.unit}{m.waterL>0?" / "+(m.waterL)+"L":""}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {todayMeds.length === 0 && (
+              <div style={{ background:"#FFFFFF", border:"1px solid #E2E8F0", borderRadius:8, padding:"14px 16px", marginBottom:16, fontSize:11, color:"#64748B" }}>
+                No medicines scheduled for Day {currentDay}
+              </div>
+            )}
+            {/* Today's task preview */}
+            {currentDay <= 14 && (
+              <div style={{ background:"#FFFFFF", border:"1px solid #E2E8F0", borderRadius:8, overflow:"hidden", marginBottom:16 }}>
+                <div style={{ padding:"10px 16px", borderBottom:"1px solid #E2E8F0", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <div style={{ fontSize:10, color:"#64748B", letterSpacing:1.5, fontWeight:600 }}>TASK BRACKET — {getBroodBracket(currentDay)}</div>
+                  <button onClick={() => { setActiveBracket(getBroodBracket(currentDay)); setActiveTab("tasks"); }} style={{ background:"none", border:"1px solid #CBD5E1", color:"#64748B", fontFamily:"'Inter',sans-serif", fontSize:9, padding:"3px 10px", cursor:"pointer", borderRadius:3 }}>
+                    OPEN TASKS →
+                  </button>
+                </div>
+                {(BROODING_TASKS[getBroodBracket(currentDay)]||[]).slice(0,4).map((t,i) => {
+                  const key = (getBroodBracket(currentDay))+"__"+(i);
+                  const done = taskChecks[key];
+                  return (
+                    <div key={i} onClick={() => toggleTask(getBroodBracket(currentDay), i)} className="row" style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 16px", borderBottom:"1px solid #F0F2F5", cursor:"pointer" }}>
+                      <div style={{ width:16, height:16, borderRadius:3, border:done?"2px solid #D4652A":"2px solid #CBD5E1", background:done?"#D4652A":"transparent", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                        {done && <span style={{ fontSize:9, color:"#F5F7FA" }}>✓</span>}
+                      </div>
+                      <div style={{ fontSize:11, color:done?"#64748B":"#334155", textDecoration:done?"line-through":"none" }}>{t}</div>
+                    </div>
+                  );
+                })}
+                <div style={{ padding:"8px 16px", fontSize:10, color:"#64748B" }}>+ {(BROODING_TASKS[getBroodBracket(currentDay)]||[]).length - 4} more tasks — tap to open full list</div>
+              </div>
+            )}
+            {/* Today's shift logs */}
+            <div style={{ background:"#FFFFFF", border:"1px solid #E2E8F0", borderRadius:8, overflow:"hidden" }}>
+              <div style={{ padding:"10px 16px", borderBottom:"1px solid #E2E8F0", fontSize:10, color:"#64748B", letterSpacing:1.5, fontWeight:600 }}>TODAY'S SHIFT RECORDS</div>
+              {todayLogs.length === 0 && (
+                <div style={{ padding:"20px 16px", fontSize:11, color:"#CBD5E1", textAlign:"center" }}>No records yet for Day {currentDay} — log from DAILY LOG tab</div>
+              )}
+              {todayLogs.map(l => (
+                <div key={l.id} style={{ padding:"12px 16px", borderBottom:"1px solid #F0F2F5" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
+                    <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                      <span className="pill" style={{ background:l.shift==="DAY"?"#E5B80B20":"#7B1FA220", color:l.shift==="DAY"?"#E5B80B":"#AB47BC" }}>{l.shift} SHIFT</span>
+                      <span style={{ fontSize:11, color:"#64748B" }}>{l.flockman}</span>
+                    </div>
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, fontSize:11 }}>
+                    <div><span style={{ color:"#64748B" }}>Mortality: </span><span style={{ color:l.mortality>15?"#E91E63":"#1E293B", fontWeight:600 }}>{l.mortality}</span></div>
+                    <div><span style={{ color:"#64748B" }}>Feed pulled: </span><span style={{ color:"#1E293B", fontWeight:600 }}>{l.feedsConsumed} bags</span></div>
+                    <div><span style={{ color:"#64748B" }}>Feed bal: </span><span style={{ color:l.feedBalance<100?"#E91E63":"#2E7D52", fontWeight:600 }}>{l.feedBalance} bags</span></div>
+                    <div><span style={{ color:"#64748B" }}>H₂O end: </span><span style={{ color:"#5B86E5", fontWeight:600 }}>{l.waterEnd} m³</span></div>
+                  </div>
+                  {l.notes && <div style={{ fontSize:10, color:"#64748B", marginTop:6, borderTop:"1px solid #E2E8F0", paddingTop:6 }}>{l.notes}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {/* ═══════════════════ DAILY LOG ═══════════════════ */}
+        {activeTab==="records" && (
+          <div className="su">
+            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Daily Shift Log</div>
+            <div style={{fontSize:11,color:"#64748B",marginBottom:16}}>One entry per shift · Day and Night · records feed pulled, mortality, water, ALW</div>
+            {/* Log form */}
+            <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16,marginBottom:16}}>
+              <div style={{display:"flex",gap:8,marginBottom:12}}>
+                <div style={{fontSize:10,color:"#64748B",letterSpacing:1,alignSelf:"center"}}>DAY #</div>
+                <input value={logDay} onChange={e=>setLogDay(e.target.value)} style={{...INP,width:70}} />
+                {["DAY","NIGHT"].map(s => (
+                  <button key={s} onClick={()=>setNewLog(p=>({...p,shift:s}))} style={{
+                    background:newLog.shift===s?(s==="DAY"?"#E5B80B20":"#7B1FA220"):"none",
+                    border:"1px solid "+(newLog.shift===s?(s==="DAY"?"#E5B80B50":"#AB47BC50"):"#CBD5E1"),
+                    color:newLog.shift===s?(s==="DAY"?"#E5B80B":"#AB47BC"):"#64748B",
+                    fontFamily:"'Inter',sans-serif",fontSize:10,letterSpacing:1,padding:"6px 16px",cursor:"pointer",borderRadius:4,
+                  }}>{s} SHIFT</button>
+                ))}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:10}}>
+                <div>
+                  <label style={LBL}>FLOCKMAN NAME</label>
+                  <select value={newLog.flockman} onChange={e=>setNewLog(p=>({...p,flockman:e.target.value}))} style={SEL}>
+                    <option value="">Select flockman...</option>
+                    {CYCLE_CONFIG.flockman.names.map(n=>(<option key={n}>{n}</option>))}
+                  </select>
+                </div>
+                <div><label style={LBL}>MORTALITY (birds)</label><input value={newLog.mortality} onChange={e=>setNewLog(p=>({...p,mortality:e.target.value}))} placeholder="dead birds this shift" style={{...INP,width:"100%"}} /></div>
+                <div><label style={LBL}>FEEDS CONSUMED (bags pulled)</label><input value={newLog.feedsConsumed} onChange={e=>setNewLog(p=>({...p,feedsConsumed:e.target.value}))} placeholder="bags pulled from warehouse" style={{...INP,width:"100%"}} /></div>
+                <div><label style={LBL}>FEED BALANCE (bags in warehouse)</label><input value={newLog.feedBalance} onChange={e=>setNewLog(p=>({...p,feedBalance:e.target.value}))} placeholder="bags remaining" style={{...INP,width:"100%"}} /></div>
+                <div><label style={LBL}>WATER METER END (m³)</label><input value={newLog.waterEnd} onChange={e=>setNewLog(p=>({...p,waterEnd:e.target.value}))} placeholder="end of shift reading" style={{...INP,width:"100%"}} /></div>
+              </div>
+              <div style={{marginBottom:10}}>
+                <label style={{...LBL,color:isAlwDay?"#C4960C":"#64748B"}}>{isAlwDay?"⚖ ALW (g) — weigh day":"ALW (g) — optional"}</label>
+                <input value={newLog.alw} onChange={e=>setNewLog(p=>({...p,alw:e.target.value}))} placeholder="e.g. 185" style={{...INP,width:"100%"}} />
+              </div>
+              <div style={{marginBottom:12}}>
+                <label style={LBL}>NOTES / OBSERVATIONS</label>
+                <textarea value={newLog.notes} onChange={e=>setNewLog(p=>({...p,notes:e.target.value}))} placeholder="anything unusual this shift" style={{...INP,width:"100%",height:60,resize:"none"}} />
+              </div>
+              <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                <button onClick={addLog} style={{background:editingLogId?"#C4960C":phase.color,border:"none",color:"#F5F7FA",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"10px 24px",cursor:"pointer",borderRadius:6}}>
+                  {editingLogId ? "UPDATE ENTRY" : "SUBMIT SHIFT RECORD"}
+                </button>
+                {editingLogId && <button onClick={()=>{setEditingLogId(null);setNewLog({shift:"DAY",flockman:"",mortality:"",feedsConsumed:"",feedBalance:"",waterEnd:"",alw:"",notes:""});setLogDay(String(currentDay));}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,padding:"9px 16px",cursor:"pointer",borderRadius:6}}>CANCEL</button>}
+              </div>
+            </div>
+            {/* TABLE VIEW */}
+            {shiftLogs.length > 0 && (
+              <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflow:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,minWidth:1100}}>
+                  <thead>
+                    <tr style={{background:"#F5F7FA",borderBottom:"1px solid #E2E8F0"}}>
+                      <th rowSpan={2} style={{padding:"7px 8px",textAlign:"left",color:"#64748B",fontSize:8,letterSpacing:1,fontWeight:600,whiteSpace:"nowrap",borderRight:"1px solid #E2E8F0"}}>DATE</th>
+                      <th rowSpan={2} style={{padding:"7px 8px",textAlign:"center",color:"#64748B",fontSize:8,letterSpacing:1,fontWeight:600,borderRight:"1px solid #E2E8F0"}}>DAY</th>
+                      <th colSpan={4} style={{padding:"5px 8px",textAlign:"center",color:"#D4652A",fontSize:8,letterSpacing:1,fontWeight:700,borderBottom:"1px solid #E2E8F0",borderRight:"1px solid #E2E8F0"}}>MORTALITY</th>
+                      <th colSpan={4} style={{padding:"5px 8px",textAlign:"center",color:"#2E7D52",fontSize:8,letterSpacing:1,fontWeight:700,borderBottom:"1px solid #E2E8F0",borderRight:"1px solid #E2E8F0"}}>FEEDS</th>
+                      <th colSpan={2} style={{padding:"5px 8px",textAlign:"center",color:"#5B86E5",fontSize:8,letterSpacing:1,fontWeight:700,borderBottom:"1px solid #E2E8F0",borderRight:"1px solid #E2E8F0"}}>WATER</th>
+                      <th rowSpan={2} style={{padding:"7px 8px",textAlign:"center",color:"#64748B",fontSize:8,letterSpacing:1,fontWeight:600}}>FEED BAL</th>
+                      <th rowSpan={2} style={{padding:"7px 8px",textAlign:"center",color:"#C4960C",fontSize:8,letterSpacing:1,fontWeight:600}}>ALW</th>
+                      <th rowSpan={2} style={{padding:"7px 8px",textAlign:"left",color:"#64748B",fontSize:8,letterSpacing:1,fontWeight:600}}>NOTES</th>
+                      <th rowSpan={2} style={{padding:"7px 4px"}}></th>
+                    </tr>
+                    <tr style={{background:"#F5F7FA",borderBottom:"1px solid #CBD5E1"}}>
+                      <th style={{padding:"5px 8px",textAlign:"center",color:"#94A3B8",fontSize:7,fontWeight:500}}>AM</th>
+                      <th style={{padding:"5px 8px",textAlign:"center",color:"#94A3B8",fontSize:7,fontWeight:500}}>PM</th>
+                      <th style={{padding:"5px 8px",textAlign:"center",color:"#94A3B8",fontSize:7,fontWeight:500}}>TOTAL</th>
+                      <th style={{padding:"5px 8px",textAlign:"center",color:"#94A3B8",fontSize:7,fontWeight:500,borderRight:"1px solid #E2E8F0"}}>CUM</th>
+                      <th style={{padding:"5px 8px",textAlign:"center",color:"#94A3B8",fontSize:7,fontWeight:500}}>AM</th>
+                      <th style={{padding:"5px 8px",textAlign:"center",color:"#94A3B8",fontSize:7,fontWeight:500}}>PM</th>
+                      <th style={{padding:"5px 8px",textAlign:"center",color:"#94A3B8",fontSize:7,fontWeight:500}}>TOTAL</th>
+                      <th style={{padding:"5px 8px",textAlign:"center",color:"#94A3B8",fontSize:7,fontWeight:500,borderRight:"1px solid #E2E8F0"}}>CUM</th>
+                      <th style={{padding:"5px 8px",textAlign:"center",color:"#94A3B8",fontSize:7,fontWeight:500}}>METER END</th>
+                      <th style={{padding:"5px 8px",textAlign:"center",color:"#94A3B8",fontSize:7,fontWeight:500,borderRight:"1px solid #E2E8F0"}}>CONSUMED</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <DailyLogRows logs={shiftLogs} currentDay={currentDay} getPhase={getPhase} CYCLE_CONFIG={CYCLE_CONFIG} FEED_FC={FEED_FC} netPlacedBirds={netPlacedBirds} setShiftLogs={setShiftLogs} setEditingLogId={setEditingLogId} setNewLog={setNewLog} setLogDay={setLogDay} editingLogId={editingLogId}/>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+{activeTab==="tasks" && (
+          <div className="su">
+            <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:16, marginBottom:4 }}>Brooding Tasks</div>
+            <div style={{ fontSize:11, color:"#64748B", marginBottom:16 }}>Phase-based checklists · D0–14 · ⚖ marks ALW weighing days · add custom tasks per bracket</div>
+            {/* Bracket tabs */}
+            <div style={{ display:"flex", gap:6, marginBottom:16, flexWrap:"wrap" }}>
+              {Object.keys(BROODING_TASKS).map(b => {
+                const stdDone  = (BROODING_TASKS[b]||[]).filter((_,i) => taskChecks[(b)+"__"+(i)]).length;
+                const custTasks = customTasks[b]||[];
+                const custDone  = custTasks.filter((_,i) => taskChecks[(b)+"__custom_"+(i)]).length;
+                const total = (BROODING_TASKS[b]||[]).length + custTasks.length;
+                const done  = stdDone + custDone;
+                const isCurrent = b === getBroodBracket(currentDay);
+                return (
+                  <button key={b} onClick={() => setActiveBracket(b)} style={{
+                    background: activeBracket===b ? "#D4652A" : isCurrent ? "#D4652A18" : "#FFFFFF", border: activeBracket===b ? "none" : isCurrent ? "1px solid #D4652A40" : "1px solid #E2E8F0", color: activeBracket===b ? "#F5F7FA" : isCurrent ? "#D4652A" : "#64748B",
+                    fontFamily:"'Inter',sans-serif", fontSize:10, letterSpacing:.8, padding:"7px 16px", cursor:"pointer", borderRadius:4, fontWeight:600,
+                  }}>
+                    {b} {["D0–3","D7–9","D10–13","D14"].includes(b) && "⚖"} <span style={{ opacity:.7, fontSize:9 }}>{done}/{total}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {/* Progress bar */}
+            <BracketProgress activeBracket={activeBracket} BROODING_TASKS={BROODING_TASKS} customTasks={customTasks} taskChecks={taskChecks} deletedTasks={deletedTasks}/>
+            {/* Standard tasks */}
+            <div style={{ display:"grid", gap:4, marginBottom:10 }}>
+              {(BROODING_TASKS[activeBracket]||[]).map((text,i) => {
+                const key = (activeBracket)+"__"+(i);
+                const done = taskChecks[key];
+                const deleted = deletedTasks[key];
+                if (deleted) return null;
+                return (
+                  <div key={i} style={{
+                    display:"flex", alignItems:"flex-start", gap:12, padding:"12px 14px", background:"#FFFFFF", borderRadius:6, border: done ? "1px solid #D4652A30" : "1px solid #E2E8F0", transition:"all .12s",
+                  }}>
+                    <div onClick={() => toggleTask(activeBracket, i)} style={{ width:18, height:18, borderRadius:4, flexShrink:0, marginTop:1, border:done?"2px solid #D4652A":"2px solid #CBD5E1", background:done?"#D4652A":"transparent", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>
+                      {done && <span style={{ fontSize:10, color:"#F5F7FA", fontWeight:700 }}>✓</span>}
+                    </div>
+                    <div onClick={() => toggleTask(activeBracket, i)} style={{ flex:1, fontSize:12, color:done?"#64748B":"#334155", textDecoration:done?"line-through":"none", lineHeight:1.5, cursor:"pointer" }}>{text}</div>
+                    <button onClick={()=>setDeletedTasks(p=>({...p,[key]:true}))}
+                      style={{ background:"none", border:"1px solid #E91E6340", color:"#E91E6380", fontFamily:"'Inter',sans-serif", fontSize:11, width:24, height:24, cursor:"pointer", borderRadius:4, display:"flex", alignItems:"center", justifyContent:"center", padding:0, flexShrink:0, marginTop:1 }}>×</button>
+                  </div>
+                );
+              })}
+              {/* Custom tasks */}
+              {(customTasks[activeBracket]||[]).map((task,i) => {
+                const key = (activeBracket)+"__custom_"+(i);
+                const done = taskChecks[key];
+                return (
+                  <div key={task.id} style={{
+                    display:"flex", alignItems:"flex-start", gap:12, padding:"12px 14px", background:"#FFFFFF", borderRadius:6, cursor:"pointer", border: done ? "1px solid #C4960C30" : "1px dashed #CBD5E1", transition:"all .12s",
+                  }}>
+                    <div onClick={() => setTaskChecks(p=>({...p,[key]:!p[key]}))} style={{ width:18, height:18, borderRadius:4, flexShrink:0, marginTop:1, border:done?"2px solid #C4960C":"2px solid #CBD5E1", background:done?"#C4960C":"transparent", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>
+                      {done && <span style={{ fontSize:10, color:"#F5F7FA", fontWeight:700 }}>✓</span>}
+                    </div>
+                    <div onClick={() => setTaskChecks(p=>({...p,[key]:!p[key]}))} style={{ flex:1, fontSize:12, color:done?"#64748B":"#334155", textDecoration:done?"line-through":"none" }}>{task.text}</div>
+                    <span style={{ fontSize:9, color:"#C4960C60", alignSelf:"center" }}>CUSTOM</span>
+                    <button onClick={()=>setCustomTasks(p=>({...p,[activeBracket]:(p[activeBracket]||[]).filter((_,j)=>j!==i)}))}
+                      style={{ background:"none", border:"1px solid #E91E6340", color:"#E91E6380", fontFamily:"'Inter',sans-serif", fontSize:11, width:24, height:24, cursor:"pointer", borderRadius:4, display:"flex", alignItems:"center", justifyContent:"center", padding:0, flexShrink:0, marginTop:1 }}>×</button>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Add custom task */}
+            <div style={{ display:"flex", gap:8 }}>
+              <input value={newTaskText} onChange={e=>setNewTaskText(e.target.value)}
+                onKeyDown={e=>{ if(e.key==="Enter") { addCustomTask(activeBracket); } }}
+                placeholder={"Add custom task for "+(activeBracket)+"... press Enter"}
+                style={{ ...INP, flex:1 }} />
+              <button onClick={() => addCustomTask(activeBracket)} style={{ background:"#D4652A", border:"none", color:"#F5F7FA", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:11, padding:"9px 18px", cursor:"pointer", borderRadius:6 }}>
+                + ADD
+              </button>
+            </div>
+          </div>
+        )}
+        {/* ═══════════════════ VENTILATION MONITOR ═══════════════════ */}
+        {activeTab==="tunnel" && (
+          <div className="su">
+            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Ventilation Monitor</div>
+            <div style={{fontSize:11,color:"#64748B",marginBottom:16}}>Temperature · Min/Max Ventilation · Cooling Pads · log per shift</div>
+            {/* Guide toggle */}
+            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+              <button onClick={()=>setShowVentGuide(v=>!v)} style={{
+                background:"none",border:"1px solid #CBD5E1",color:"#64748B", fontFamily:"'Inter',sans-serif",fontSize:9,letterSpacing:.8, padding:"5px 14px",cursor:"pointer",borderRadius:3,
+              }}>{showVentGuide?"HIDE GUIDE":"SHOW GUIDE"}</button>
+            </div>
+            {/* Today's guide values callout */}
+            <VentGuideCallout currentDay={currentDay} VENT_GUIDE={VENT_GUIDE} ALW_STANDARD={ALW_STANDARD}/>
+            {/* Full guide table (collapsible) */}
+            {showVentGuide&&(
+              <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflow:"hidden",marginBottom:14}}>
+                <div style={{padding:"8px 16px",borderBottom:"1px solid #E2E8F0",fontSize:9,color:"#64748B",letterSpacing:1.5,fontWeight:600}}>
+                  VENTILATION GUIDE — DRY SEASON
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"40px 90px 80px 80px 80px 90px",padding:"7px 16px",borderBottom:"1px solid #E2E8F0",fontSize:8,color:"#64748B",letterSpacing:.8}}>
+                  <div>DAY</div><div>TARGET °C</div><div>MIN VENT%</div><div>MAX VENT%</div><div>Ross 308 (g)</div><div>Internal (g)</div>
+                </div>
+                <div style={{maxHeight:300,overflowY:"auto"}}>
+                  {VENT_GUIDE.map(g=>{
+                    const isCurrent = g.day===currentDay;
+                    const std = ALW_STANDARD.find(r=>r.day===g.day);
+                    const internal = std ? Math.round(std.std * 0.95) : null;
+                    return (
+                      <div key={g.day} style={{display:"grid",gridTemplateColumns:"40px 90px 80px 80px 80px 90px",padding:"6px 16px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",background:isCurrent?"#C4960C08":"transparent"}}>
+                        <div style={{fontFamily:"'Inter',sans-serif",fontSize:10,color:isCurrent?"#C4960C":"#94A3B8",fontWeight:isCurrent?700:400}}>{g.day}{isCurrent?" ◉":""}</div>
+                        <div style={{color:isCurrent?"#C4960C":"#334155",fontWeight:isCurrent?600:400}}>{g.target}°C</div>
+                        <div style={{color:"#5B86E5"}}>{g.minVent}%</div>
+                        <div style={{color:"#5B86E5"}}>{g.maxVent}%</div>
+                        <div style={{color:"#2E7D52"}}>{std?(std.std)+"g":"—"}</div>
+                        <div style={{color:"#C4960C",fontWeight:600}}>{internal?(internal)+"g":"—"}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+                        {/* Latest reading strip */}
+            <TunnelLatest logs={tunnelLogs} VENT_GUIDE={VENT_GUIDE} currentDay={currentDay}/>
+            {/* Log form */}
+            <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16,marginBottom:14}}>
+              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+                <div style={{fontSize:10,color:"#5B86E5",letterSpacing:1.5,fontWeight:600}}>LOG MONITORING SESSION</div>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <label style={{fontSize:9,color:"#64748B",fontWeight:600}}>DAY</label>
+                  <input value={tunnelLogDay} onChange={e=>setTunnelLogDay(e.target.value)} placeholder={String(currentDay)}
+                    style={{width:52,background:"#F5F7FA",border:"1px solid #5B86E540",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"4px 8px",outline:"none",borderRadius:4,textAlign:"center"}} />
+                  <span style={{fontSize:9,color:"#94A3B8"}}>(blank = today)</span>
+                </div>
+              </div>
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:6,fontWeight:600}}>MONITORING TIME</div>
+                <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                  {[
+                    {v:"00:00",l:"12 AM"},{v:"04:00",l:"4 AM"},{v:"08:00",l:"8 AM"},
+                    {v:"12:00",l:"12 PM"},{v:"16:00",l:"4 PM"},{v:"20:00",l:"8 PM"}, ].map(t=>(
+                    <button key={t.v} onClick={()=>setNewTunnel(p=>({...p,shift:t.v}))} style={{
+                      background:newTunnel.shift===t.v?"#5B86E520":"none", border:"1px solid "+(newTunnel.shift===t.v?"#5B86E560":"#CBD5E1"), color:newTunnel.shift===t.v?"#5B86E5":"#64748B", fontFamily:"'Inter',sans-serif",fontSize:10,letterSpacing:.5,
+                      padding:"6px 14px",cursor:"pointer",borderRadius:4,fontWeight:newTunnel.shift===t.v?600:400,
+                    }}>{t.l}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:10}}>
+                {[
+                  {k:"actualTemp",   l:"ACTUAL TEMP IN (°C)",p:"e.g. 29.5"},
+                  {k:"outsideTemp",  l:"OUTSIDE TEMP (°C)", p:"e.g. 33"},
+                  {k:"targetTemp",   l:"TARGET TEMP (°C)",  p:"e.g. 29"},
+                  {k:"sensor1",      l:"SENSOR 1 (°C)",     p:"e.g. 29.2"},
+                  {k:"sensor2",      l:"SENSOR 2 (°C)",     p:"e.g. 29.8"},
+                  {k:"actualVent",   l:"ACTUAL VENT (%)",   p:"e.g. 45"},
+                  {k:"minVent",      l:"MIN VENT (%)",      p:"e.g. 20"},
+                  {k:"maxVent",      l:"MAX VENT (%)",      p:"e.g. 80"},
+                  {k:"humidity",     l:"HUMIDITY (%)",      p:"e.g. 72"},
+                  {k:"heatersOn",    l:"HEATERS ON (#)",    p:"0 if tunnel stage"},
+                  {k:"padCurtain1",  l:"PAD CURTAIN 1 (1-10)",p:"e.g. 7"},
+                  {k:"padCurtain2",  l:"PAD CURTAIN 2 (1-10)",p:"e.g. 6"}, ].map(f=>(
+                  <div key={f.k}>
+                    <label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>{f.l}</label>
+                    <input value={newTunnel[f.k]} onChange={e=>setNewTunnel(p=>({...p,[f.k]:e.target.value}))} placeholder={f.p}
+                      style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} />
+                  </div>
+                ))}
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+                <div>
+                  <label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>COOLING PADS</label>
+                  <button onClick={()=>setNewTunnel(p=>({...p,padsOn:!p.padsOn}))} style={{
+                    background:newTunnel.padsOn?"#5B86E520":"#FFFFFF",border:"1px solid "+(newTunnel.padsOn?"#5B86E550":"#CBD5E1"), color:newTunnel.padsOn?"#5B86E5":"#64748B",fontFamily:"'Inter',sans-serif",fontWeight:700,
+                    fontSize:12,padding:"9px 20px",cursor:"pointer",borderRadius:6,
+                  }}>{newTunnel.padsOn?"💧 ON":"○ OFF"}</button>
+                </div>
+                <div style={{flex:1}}>
+                  <label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>NOTES</label>
+                  <input value={newTunnel.notes} onChange={e=>setNewTunnel(p=>({...p,notes:e.target.value}))} placeholder="observations, adjustments made..."
+                    style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} />
+                </div>
+              </div>
+              <button onClick={addTunnelLog} style={{background:"#5B86E5",border:"none",color:"#F5F7FA",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"10px 24px",cursor:"pointer",borderRadius:6}}>
+                + LOG SESSION
+              </button>
+            </div>
+            {/* Session log table */}
+            <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflow:"hidden"}}>
+              <div style={{display:"grid",gridTemplateColumns:"40px 55px 70px 65px 65px 60px 60px 60px 60px 65px 55px 55px 55px 1fr 36px",padding:"8px 16px",borderBottom:"1px solid #E2E8F0",fontSize:8,color:"#64748B",letterSpacing:.8}}>
+                <div>DAY</div><div>TIME</div><div>ACTUAL°C</div><div>OUTSIDE°C</div><div>TARGET°C</div><div>S1</div><div>S2</div><div>ACT V%</div><div>MIN V%</div><div>MAX V%</div><div>HUM%</div><div>HTR</div><div>PAD</div><div>NOTES</div><div></div>
+              </div>
+              {[...tunnelLogs].reverse().map(r=>(
+                <div key={r.id} className="row" style={{display:"grid",gridTemplateColumns:"40px 55px 70px 65px 65px 60px 60px 60px 60px 65px 55px 55px 55px 1fr 36px",padding:"8px 16px",borderBottom:"1px solid #F0F2F5",fontSize:10.5,alignItems:"center"}}>
+                  <div style={{fontFamily:"'Inter',sans-serif",fontSize:10,color:"#C4960C",fontWeight:700}}>{r.day}</div>
+                  <div style={{fontFamily:"'Inter',sans-serif",fontSize:10,color:"#5B86E5",fontWeight:600}}>{{"04:00":"4 AM","08:00":"8 AM","12:00":"12 PM","16:00":"4 PM","20:00":"8 PM","00:00":"12 AM"}[r.shift]||r.shift}</div>
+                  <div style={{color:r.actualTemp>32?"#E91E63":"#2E7D52",fontWeight:600}}>{r.actualTemp}°</div>
+                  <div style={{color:"#64748B"}}>{r.outsideTemp}°</div>
+                  <div style={{color:"#C4960C"}}>{r.targetTemp}°</div>
+                  <div style={{color:"#888",fontSize:10}}>{r.sensor1}°</div>
+                  <div style={{color:"#888",fontSize:10}}>{r.sensor2}°</div>
+                  <div style={{color:"#5B86E5",fontWeight:600}}>{r.actualVent}%</div>
+                  <div style={{color:"#94A3B8"}}>{r.minVent}%</div>
+                  <div style={{color:"#94A3B8"}}>{r.maxVent}%</div>
+                  <div style={{color:r.humidity>80?"#E91E63":r.humidity<60?"#C4960C":"#5B86E5"}}>{r.humidity}%</div>
+                  <div style={{color:r.heatersOn>0?"#D4652A":"#CBD5E1"}}>{r.heatersOn||"—"}</div>
+                  <div style={{color:r.padsOn?"#2E7D52":"#CBD5E1",fontSize:10}}>{r.padsOn?"ON":"OFF"} {r.padCurtain1}/{r.padCurtain2}</div>
+                  <div style={{color:"#64748B",fontSize:10}}>{r.notes||"—"}</div>
+                  <button onClick={()=>setTunnelLogs(p=>p.filter(x=>x.id!==r.id))}
+                    style={{background:"none",border:"1px solid #E91E6340",color:"#E91E6380",fontFamily:"'Inter',sans-serif",fontSize:11,width:28,height:28,cursor:"pointer",borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {/* ═══════════════════ SHIFT CHECKS ═══════════════════ */}
+        {activeTab==="checks" && (
+          <div className="su">
+            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Shift Checks</div>
+            <div style={{fontSize:11,color:"#64748B",marginBottom:14}}>Crop fill · Litter evaluation · Drinker flushing</div>
+            {/* Section selector */}
+            <div style={{display:"flex",gap:5,marginBottom:16}}>
+              {[["cropfill","◎ CROP FILL","#2E7D52"],["litter","⊟ LITTER","#D4652A"],["flushing","∿ FLUSHING","#5B86E5"]].map(([sid,slabel,sc])=>(
+                <button key={sid} onClick={()=>setChecksSection(sid)} style={{
+                  background:checksSection===sid?(sc)+"20":"none", border:checksSection===sid ? "1px solid "+(sc)+"60" : "1px solid #CBD5E1", color:checksSection===sid?sc:"#64748B", fontFamily:"'Inter',sans-serif",fontSize:9,letterSpacing:.8,
+                  padding:"6px 16px",cursor:"pointer",borderRadius:4,fontWeight:checksSection===sid?600:400,
+                }}>{slabel}</button>
+              ))}
+            </div>
+            {checksSection==="cropfill" && <div>
+              <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Crop Fill Log</div>
+            <div style={{fontSize:11,color:"#64748B",marginBottom:14}}>Check crop fill per pen · sample 10 birds · Day 1–3: every 2 hrs · Day 4–14: every 4 hrs</div>
+            {cropLogs.length>0 && <CropFillSummary logs={cropLogs} currentDay={currentDay}/>}
+            <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:6,padding:"10px 16px",marginBottom:14,display:"flex",gap:20,fontSize:10,flexWrap:"wrap"}}>
+              <span style={{color:"#2E7D52"}}>■ 8/10+ Good</span><span style={{color:"#C4960C"}}>■ 6–7/10 Monitor</span><span style={{color:"#E91E63"}}>■ 5/10 or below — investigate</span>
+            </div>
+            <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16,marginBottom:14}}>
+              <div style={{fontSize:10,color:"#2E7D52",letterSpacing:1.5,fontWeight:600,marginBottom:10}}>LOG CROP CHECK — Day {currentDay}</div>
+              {/* Time buttons based on frequency */}
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:6,display:"block",fontWeight:600}}>
+                  TIME {currentDay<=3?"(every 2 hrs)":currentDay<=14?"(every 4 hrs)":""}
+                </label>
+                <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                  {(currentDay<=3
+                    ? ["12:00 AM","2:00 AM","4:00 AM","6:00 AM","8:00 AM","10:00 AM","12:00 PM","2:00 PM","4:00 PM","6:00 PM","8:00 PM","10:00 PM"]
+                    : currentDay<=14
+                    ? ["12:00 AM","4:00 AM","8:00 AM","12:00 PM","4:00 PM","8:00 PM"]
+                    : ["12:00 AM","4:00 AM","8:00 AM","12:00 PM","4:00 PM","8:00 PM"]
+                  ).map(t=>(
+                    <button key={t} onClick={()=>setNewCrop(p=>({...p,time:t}))} style={{
+                      background:newCrop.time===t?"#2E7D5220":"none",
+                      border:"1px solid "+(newCrop.time===t?"#2E7D5260":"#CBD5E1"), color:newCrop.time===t?"#2E7D52":"#64748B",
+                      fontFamily:"'Inter',sans-serif",fontSize:9,padding:"4px 10px",cursor:"pointer",borderRadius:3,
+                    }}>{t}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:10}}>
+                {[{k:"pen",l:"PEN / LOCATION",p:"e.g. Brooding Zone A"},{k:"filled",l:"CROPS FILLED",p:"e.g. 8"},{k:"checked",l:"BIRDS CHECKED",p:"usually 10"}].map(f=>(
+                  <div key={f.k}><label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>{f.l}</label>
+                  <input value={newCrop[f.k]} onChange={e=>setNewCrop(p=>({...p,[f.k]:e.target.value}))} placeholder={f.p} style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} /></div>
+                ))}
+              </div>
+              {newCrop.filled&&newCrop.checked && <CropFillRate filled={newCrop.filled} checked={newCrop.checked}/>}
+              <div style={{marginBottom:12}}><label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>NOTES</label>
+              <input value={newCrop.notes} onChange={e=>setNewCrop(p=>({...p,notes:e.target.value}))} placeholder="e.g. birds active, feed pans full" style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} /></div>
+              <button onClick={()=>{if(!newCrop.time||!newCrop.pen||!newCrop.filled) return;setCropLogs(p=>[...p,{...newCrop,id:Date.now(),day:currentDay,filled:parseInt(newCrop.filled)||0,checked:parseInt(newCrop.checked)||10}]);setNewCrop({time:"",shift:"",pen:"",filled:"",checked:"10",notes:""});}} style={{background:"#2E7D52",border:"none",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"10px 24px",cursor:"pointer",borderRadius:6}}>+ LOG CHECK</button>
+            </div>
+            <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflow:"hidden"}}>
+              <div style={{display:"grid",gridTemplateColumns:"40px 90px 130px 70px 70px 1fr 32px",padding:"8px 16px",borderBottom:"1px solid #E2E8F0",fontSize:9,color:"#64748B",letterSpacing:1}}>
+                <div>DAY</div><div>TIME</div><div>PEN</div><div>FILLED</div><div>RATE</div><div>NOTES</div><div></div>
+              </div>
+              {[...cropLogs].reverse().map(r=>{const pct=(r.filled/r.checked*100);const c=pct>=80?"#2E7D52":pct>=60?"#C4960C":"#E91E63";return(
+                <div key={r.id} className="row" style={{display:"grid",gridTemplateColumns:"40px 90px 130px 70px 70px 1fr 32px",padding:"9px 16px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center"}}>
+                  <div style={{fontFamily:"'Inter',sans-serif",fontSize:10,color:"#C4960C",fontWeight:700}}>{r.day}</div>
+                  <div style={{color:"#64748B",fontSize:10}}>{r.time}</div>
+                  <div style={{color:"#334155",fontSize:11}}>{r.pen}</div>
+                  <div style={{color:"#334155",fontWeight:600}}>{r.filled}/{r.checked}</div>
+                  <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:12,color:c}}>{pct.toFixed(0)}%</div>
+                  <div style={{color:"#64748B",fontSize:10}}>{r.notes||"—"}</div>
+                  <button onClick={()=>setCropLogs(p=>p.filter(x=>x.id!==r.id))} style={{background:"none",border:"1px solid #E91E6340",color:"#E91E6380",fontFamily:"'Inter',sans-serif",fontSize:11,width:24,height:24,cursor:"pointer",borderRadius:4,padding:0}}>×</button>
+                </div>
+              );})}
+            </div>
+            </div>}
+            {checksSection==="litter" && <div>
+              <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Litter Evaluation Log</div>
+            <div style={{fontSize:11,color:"#64748B",marginBottom:14}}>Score 1–10 per zone · flag wet or caked areas · once per task bracket</div>
+            <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:6,padding:"10px 16px",marginBottom:14,display:"flex",gap:16,fontSize:10,flexWrap:"wrap"}}>
+              <span style={{color:"#2E7D52"}}>8–10 Dry and fluffy</span><span style={{color:"#C4960C"}}>5–7 Slightly moist</span><span style={{color:"#D4652A"}}>3–4 Wet / caking</span><span style={{color:"#E91E63"}}>1–2 Severely wet</span>
+            </div>
+            <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16,marginBottom:14}}>
+              <div style={{fontSize:10,color:"#D4652A",letterSpacing:1.5,fontWeight:600,marginBottom:12}}>LOG LITTER EVALUATION — Day {currentDay}</div>
+              <div style={{marginBottom:12}}><label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>PEN</label>
+              <input value={newLitter.pen||""} onChange={e=>setNewLitter(p=>({...p,pen:e.target.value}))} placeholder="e.g. Brooding Zone, Full Building..." style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} /></div>
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:4,fontWeight:600}}>ZONE SCORES (1–10)</div>
+                <div style={{fontSize:9,color:"#94A3B8",marginBottom:8}}>Facing fans: A=top left · B=top right · C=bottom left · D=bottom right</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>
+                  {LITTER_ZONES.map((zone,i)=>{const sc=parseInt(litterScores[zone.id])||0;const c=sc>=8?"#2E7D52":sc>=5?"#C4960C":sc>=3?"#D4652A":sc>0?"#E91E63":"#94A3B8";return(
+                    <div key={zone.id} style={{background:"#F5F7FA",borderRadius:6,padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{flex:1,fontSize:11,color:"#334155"}}>{zone.label}<div style={{fontSize:8,color:"#94A3B8"}}>{zone.desc}</div></div>
+                      <input type="number" min="1" max="10" value={litterScores[zone.id]||""} onChange={e=>setLitterScores(p=>({...p,[zone.id]:e.target.value}))} placeholder="—" style={{width:48,background:"#FFFFFF",border:"1px solid "+(c+"50"),color:c,fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,padding:"5px",outline:"none",borderRadius:4,textAlign:"center"}} />
+                    </div>
+                  );})}
+                </div>
+                <LitterAverage scores={litterScores} zones={LITTER_ZONES}/>
+              </div>
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:6,fontWeight:600}}>FLAGS / WET AREAS</div>
+                <textarea value={litterFlags.join("\n")} onChange={e=>setLitterFlags(e.target.value?e.target.value.split("\n"):[])} placeholder="One flag per line — e.g. Zone D near drinker" style={{width:"100%",height:56,background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:12,padding:"8px 12px",outline:"none",borderRadius:6,resize:"none"}} />
+              </div>
+              <div style={{marginBottom:12}}><label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>NOTES / ACTION TAKEN</label>
+              <input value={litterNotes} onChange={e=>setLitterNotes(e.target.value)} placeholder="e.g. Added 5 sacks rice hull to Zone D" style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} /></div>
+              <button onClick={()=>{if(!LITTER_ZONES.some(z=>litterScores[z.id])) return;const bracket=getBroodBracket(currentDay);setLitterLogs(p=>[...p,{id:Date.now(),day:currentDay,bracket,pen:newLitter.pen||"",scores:{...litterScores},flags:[...litterFlags],notes:litterNotes}]);setLitterScores({});setLitterFlags([]);setLitterNotes("");setNewLitter(p=>({...p,pen:""}));}} style={{background:"#D4652A",border:"none",color:"#F5F7FA",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"10px 24px",cursor:"pointer",borderRadius:6}}>+ SUBMIT EVALUATION</button>
+            </div>
+            <div style={{display:"grid",gap:6}}>
+              {[...litterLogs].reverse().map(log=>{
+                const vals=LITTER_ZONES.map(z=>parseInt(log.scores[z.id])||0).filter(v=>v>0);
+                const avg=vals.length?(vals.reduce((s,v)=>s+v,0)/vals.length).toFixed(1):0;
+                const c=parseFloat(avg)>=8?"#2E7D52":parseFloat(avg)>=5?"#C4960C":parseFloat(avg)>=3?"#D4652A":"#E91E63";
+                return(
+                  <div key={log.id} style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:6,padding:"10px 14px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                        <span style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:12,color:"#C4960C"}}>Day {log.day}</span>
+                        <span className="pill" style={{background:"#D4652A18",color:"#D4652A"}}>{log.bracket}</span>
+                        {log.pen&&<span style={{fontSize:10,color:"#64748B"}}>{log.pen}</span>}
+                        <span style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:14,color:c}}>avg {avg}/10</span>
+                      </div>
+                      <button onClick={()=>setLitterLogs(p=>p.filter(x=>x.id!==log.id))} style={{background:"none",border:"1px solid #E91E6340",color:"#E91E6380",fontFamily:"'Inter',sans-serif",fontSize:11,width:24,height:24,cursor:"pointer",borderRadius:4,padding:0}}>×</button>
+                    </div>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                      {LITTER_ZONES.map(zone=>{const sc=parseInt(log.scores[zone.id])||0;if(!sc)return null;const zc=sc>=8?"#2E7D52":sc>=5?"#C4960C":sc>=3?"#D4652A":"#E91E63";return(<span key={zone.id} style={{fontSize:10,color:"#64748B"}}>{zone.label}:<strong style={{color:zc,marginLeft:2}}>{sc}</strong></span>);})}
+                    </div>
+                    {log.flags&&log.flags.filter(Boolean).length>0&&<div style={{fontSize:10,color:"#DC2626",marginTop:4}}>{log.flags.filter(Boolean).join(" · ")}</div>}
+                    {log.notes&&<div style={{fontSize:10,color:"#64748B",marginTop:4}}>{log.notes}</div>}
+                  </div>
+                );
+              })}
+            </div>
+            </div>}
+                        {checksSection==="flushing" && <div>
+              <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Drinker Flushing Log</div>
+              <div style={{fontSize:11,color:"#64748B",marginBottom:14}}>Confirm lines flushed per shift · test flow rate · flag issues</div>
+              {flushLogs.length>0 && <LastFlushBanner log={flushLogs[flushLogs.length-1]}/>}
+              <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16,marginBottom:14}}>
+                <div style={{fontSize:10,color:"#5B86E5",letterSpacing:1.5,fontWeight:600,marginBottom:12}}>LOG FLUSH — Day {currentDay}</div>
+                <div style={{display:"flex",gap:8,marginBottom:12}}>
+                  {["DAY","NIGHT"].map(s=>(
+                    <button key={s} onClick={()=>setNewFlush(p=>({...p,shift:s}))} style={{
+                      background:newFlush.shift===s?(s==="DAY"?"#E5B80B20":"#7B1FA220"):"none", border:"1px solid "+(newFlush.shift===s?(s==="DAY"?"#E5B80B50":"#AB47BC50"):"#CBD5E1"), color:newFlush.shift===s?(s==="DAY"?"#E5B80B":"#AB47BC"):"#64748B",
+                      fontFamily:"'Inter',sans-serif",fontSize:10,letterSpacing:1,padding:"6px 16px",cursor:"pointer",borderRadius:4,
+                    }}>{s} SHIFT</button>
+                  ))}
+                  <input value={newFlush.time} onChange={e=>setNewFlush(p=>({...p,time:e.target.value}))} placeholder="Time e.g. 06:30"
+                    style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"6px 12px",outline:"none",borderRadius:4,width:130}} />
+                </div>
+                <div style={{marginBottom:14}}>
+                  <div style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:8,fontWeight:600}}>LINES FLUSHED</div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                    <button onClick={()=>setNewFlush(p=>({...p,linesFlushed:[...DRINKER_LINES]}))}
+                      style={{background:"#5B86E518",border:"1px solid #5B86E540",color:"#5B86E5",fontFamily:"'Inter',sans-serif",fontSize:9,padding:"4px 12px",cursor:"pointer",borderRadius:3,letterSpacing:.8}}>ALL LINES</button>
+                    <button onClick={()=>setNewFlush(p=>({...p,linesFlushed:[]}))}
+                      style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,padding:"4px 12px",cursor:"pointer",borderRadius:3,letterSpacing:.8}}>CLEAR</button>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+                    {DRINKER_LINES.map(line=>{
+                      const checked=newFlush.linesFlushed.includes(line);
+                      return (
+                        <div key={line} onClick={()=>setNewFlush(p=>({...p,linesFlushed:checked?p.linesFlushed.filter(l=>l!==line):[...p.linesFlushed,line]}))}
+                          style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",background:checked?"#5B86E512":"#F5F7FA",border:"1px solid "+(checked?"#5B86E540":"#E2E8F0"),borderRadius:6,cursor:"pointer"}}>
+                          <div style={{width:16,height:16,borderRadius:3,border:checked?"2px solid #5B86E5":"2px solid #CBD5E1",background:checked?"#5B86E5":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                            {checked&&<span style={{fontSize:9,color:"#F5F7FA",fontWeight:700}}>✓</span>}
+                          </div>
+                          <span style={{fontSize:12,color:checked?"#5B86E5":"#64748B"}}>{line}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div style={{marginBottom:12}}>
+                  <div style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:8,fontWeight:600}}>FLOW RATE TEST</div>
+                  <div style={{display:"flex",gap:6}}>
+                    {[["good","Good flow","#2E7D52"],["weak","Weak flow","#C4960C"],["blocked","Blocked","#E91E63"]].map(([val,label,c])=>(
+                      <button key={val} onClick={()=>setNewFlush(p=>({...p,flowRate:val}))} style={{
+                        background:newFlush.flowRate===val?(c+"20"):"none", border:"1px solid "+(newFlush.flowRate===val?(c+"60"):"#CBD5E1"), color:newFlush.flowRate===val?c:"#64748B", fontFamily:"'Inter',sans-serif",fontSize:10,letterSpacing:.5,padding:"7px 14px",cursor:"pointer",borderRadius:4,
+                      }}>{label}</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+                  <div>
+                    <label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>ISSUES FOUND</label>
+                    <input value={newFlush.issues} onChange={e=>setNewFlush(p=>({...p,issues:e.target.value}))} placeholder="e.g. Line 3 nipple clogged"
+                      style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} />
+                  </div>
+                  <div>
+                    <label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>ACTION TAKEN</label>
+                    <input value={newFlush.notes} onChange={e=>setNewFlush(p=>({...p,notes:e.target.value}))} placeholder="e.g. Cleared nipple manually"
+                      style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} />
+                  </div>
+                </div>
+                <button onClick={()=>{if(!newFlush.time||!newFlush.linesFlushed.length) return;setFlushLogs(p=>[...p,{...newFlush,id:Date.now(),day:currentDay}]);setNewFlush({time:"",shift:"DAY",linesFlushed:[],flowRate:"good",issues:"",notes:""});}}
+                  style={{background:"#5B86E5",border:"none",color:"#F5F7FA",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"10px 24px",cursor:"pointer",borderRadius:6}}>
+                  + SUBMIT FLUSH LOG
+                </button>
+              </div>
+              <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflow:"hidden"}}>
+                <div style={{display:"grid",gridTemplateColumns:"40px 55px 55px 80px 1fr 70px 1fr",padding:"8px 16px",borderBottom:"1px solid #E2E8F0",fontSize:9,color:"#64748B",letterSpacing:1}}>
+                  <div>DAY</div><div>TIME</div><div>SHIFT</div><div>LINES</div><div>FLUSHED</div><div>FLOW</div><div>ISSUES / ACTION</div>
+                </div>
+                {[...flushLogs].reverse().map(r=>{
+                  const ok=r.flowRate==="good"&&!r.issues;
+                  const fc=r.flowRate==="good"?"#2E7D52":r.flowRate==="weak"?"#C4960C":"#E91E63";
+                  return (
+                    <div key={r.id} className="row" style={{display:"grid",gridTemplateColumns:"40px 55px 55px 80px 1fr 70px 1fr 32px",padding:"9px 16px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",background:ok?"transparent":"#E91E6305"}}>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontSize:10,color:"#C4960C",fontWeight:700}}>{r.day}</div>
+                      <div style={{color:"#64748B",fontSize:10}}>{r.time}</div>
+                      <div><span className="pill" style={{background:r.shift==="DAY"?"#E5B80B15":"#7B1FA215",color:r.shift==="DAY"?"#E5B80B":"#AB47BC",fontSize:8}}>{r.shift}</span></div>
+                      <div style={{color:"#5B86E5",fontWeight:600}}>{r.linesFlushed.length}/{DRINKER_LINES.length}</div>
+                      <div style={{color:"#64748B",fontSize:10}}>{r.linesFlushed.join(", ")}</div>
+                      <div style={{color:fc,fontWeight:600,fontSize:10}}>{r.flowRate.toUpperCase()}</div>
+                      <div style={{color:ok?"#64748B":"#DC2626",fontSize:10}}>
+                        {r.issues ? (r.notes ? "⚠ "+r.issues+" → "+r.notes : "⚠ "+r.issues) : r.notes||"—"}
+                      </div>
+                      <button onClick={()=>setFlushLogs(p=>p.filter(x=>x.id!==r.id))} style={{background:"none",border:"1px solid #E91E6340",color:"#E91E6380",fontFamily:"'Inter',sans-serif",fontSize:11,width:24,height:24,cursor:"pointer",borderRadius:4,padding:0}}>×</button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>}
+          </div>
+        )}
+        {activeTab==="placement" && (
+          <div className="su">
+            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Placement & Feed Delivery</div>
+            <div style={{fontSize:11,color:"#64748B",marginBottom:14}}>Chick placement · feed deliveries to farm</div>
+            <div style={{display:"flex",gap:5,marginBottom:16}}>
+              {[["placement","🐥 PLACEMENT","#E5B80B"],["feeds","▦ FEED DELIVERY","#2E7D52"]].map(([id,label,c])=>(
+                <button key={id} onClick={()=>setPlacementSection(id)} style={{
+                  background:placementSection===id?(c+"20"):"none",
+                  border:placementSection===id ? ("1px solid "+(c+"60")) : "1px solid #CBD5E1",
+                  color:placementSection===id?c:"#64748B",
+                  fontFamily:"'Inter',sans-serif",fontSize:9,letterSpacing:.8,
+                  padding:"6px 16px",cursor:"pointer",borderRadius:4,fontWeight:placementSection===id?600:400,
+                }}>{label}</button>
+              ))}
+            </div>
+            {placementSection==="placement" && <div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:14}}>
+              {[{l:"Trucks",v:placementTrucks.length,c:"#C4960C"},{l:"Delivered",v:totalHeads.toLocaleString(),c:"#E5B80B"},{l:"DOA",v:totalDOA,c:"#E91E63"},{l:"Net Placed",v:netPlaced.toLocaleString(),c:"#2E7D52"},{l:"Crate ALW",v:crateALW?(crateALW.toFixed(1))+"g":"—",c:crateALW?"#5B86E5":"#64748B"}].map(m=>(
+                <div key={m.l} style={{background:"#FFFFFF",border:"1px solid "+(m.c)+"22",borderRadius:8,padding:"11px 13px"}}><div style={{fontSize:9,color:"#64748B",letterSpacing:1,marginBottom:3}}>{m.l.toUpperCase()}</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:m.c}}>{m.v}</div></div>
+              ))}
+            </div>
+            <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16,marginBottom:14}}>
+              <div style={{fontSize:10,color:"#E5B80B",letterSpacing:1.5,fontWeight:600,marginBottom:12}}>TRUCK ARRIVAL LOG</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:10}}>
+                {[{k:"arrivalTime",l:"ARRIVAL TIME",p:"e.g. 22:10"},{k:"plate",l:"PLATE NUMBER",p:"e.g. TRK 1122"},{k:"qty",l:"HEADS DELIVERED",p:"bird count"},{k:"doa",l:"DOA",p:"dead on arrival"},{k:"notes",l:"NOTES",p:"observations"}].map(f=>(
+                  <div key={f.k}><label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>{f.l}</label><input value={newTruck[f.k]} onChange={e=>setNewTruck(p=>({...p,[f.k]:e.target.value}))} placeholder={f.p} style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} /></div>
+                ))}
+              </div>
+              <button onClick={()=>{if(!newTruck.plate||!newTruck.qty) return;setPlacementTrucks(p=>[...p,{...newTruck,id:Date.now(),qty:parseInt(newTruck.qty)||0,doa:parseInt(newTruck.doa)||0}]);setNewTruck({arrivalTime:"",plate:"",qty:"",doa:"",notes:""});}} style={{background:"#E5B80B",border:"none",color:"#F5F7FA",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"10px 24px",cursor:"pointer",borderRadius:6}}>+ LOG TRUCK</button>
+            </div>
+            <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflow:"hidden",marginBottom:14}}>
+              <div style={{display:"grid",gridTemplateColumns:"70px 100px 80px 70px 1fr 36px",padding:"8px 16px",borderBottom:"1px solid #E2E8F0",fontSize:9,color:"#64748B",letterSpacing:1}}><div>TIME</div><div>PLATE</div><div>HEADS</div><div>DOA</div><div>NOTES</div><div></div></div>
+              {placementTrucks.map(t=>(<div key={t.id} className="row" style={{display:"grid",gridTemplateColumns:"70px 100px 80px 70px 1fr 36px",padding:"9px 16px",borderBottom:"1px solid #F0F2F5",fontSize:12,alignItems:"center"}}><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,color:"#C4960C",fontSize:11}}>{t.arrivalTime}</div><div style={{color:"#64748B",fontSize:11}}>{t.plate}</div><div style={{color:"#E5B80B",fontWeight:600}}>{t.qty.toLocaleString()}</div><div style={{color:t.doa>20?"#E91E63":"#64748B"}}>{t.doa}</div><div style={{color:"#64748B",fontSize:11}}>{t.notes||"—"}</div><button onClick={()=>setPlacementTrucks(p=>p.filter(x=>x.id!==t.id))} style={{background:"none",border:"1px solid #E91E6340",color:"#E91E6380",fontFamily:"'Inter',sans-serif",fontSize:11,width:28,height:28,cursor:"pointer",borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button></div>))}
+            </div>
+            {/* Crate weighing */}
+            <div style={{background:"#FFFFFF",border:"1px solid "+(showCrate?"#E2E8F0":"#E2E8F0"),borderRadius:showCrate?"8px 8px 0 0":8,marginBottom:showCrate?0:14,overflow:"hidden"}}>
+              <button onClick={()=>setShowCrate(v=>!v)} style={{width:"100%",background:"none",border:"none",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",cursor:"pointer"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:10,color:"#5B86E5",letterSpacing:1.5,fontWeight:600}}>CRATE WEIGHING — ALW CALCULATOR</span>{crateALW&&<span style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,color:"#5B86E5"}}>{crateALW.toFixed(1)}g</span>}</div>
+                <span style={{fontSize:12,color:"#64748B"}}>{showCrate?"▲":"▼"}</span>
+              </button>
+            </div>
+            {showCrate&&(
+            <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderTop:"none",borderRadius:"0 0 8px 8px",padding:16,marginBottom:14}}>
+              <div style={{background:"#F5F7FA",borderRadius:6,padding:"10px 12px",marginBottom:12,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                <div><label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>CRATE TARE (kg)</label><input value={crateWeight} onChange={e=>setCrateWeight(e.target.value)} style={{background:"#FFFFFF",border:"1px solid #5B86E540",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"8px 12px",outline:"none",borderRadius:6,width:"100%"}} /></div>
+                <div><label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>CHICKS PER CRATE</label><input value={chicksPerCrate} onChange={e=>setChicksPerCrate(e.target.value)} style={{background:"#FFFFFF",border:"1px solid #5B86E540",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"8px 12px",outline:"none",borderRadius:6,width:"100%"}} /></div>
+                <div style={{display:"flex",alignItems:"flex-end"}}><div style={{background:"#5B86E512",border:"1px solid #5B86E530",borderRadius:6,padding:"10px 14px",width:"100%",textAlign:"center"}}><div style={{fontSize:9,color:"#64748B",marginBottom:3}}>COMPUTED ALW</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:20,color:crateALW?"#5B86E5":"#CBD5E1"}}>{crateALW?(crateALW.toFixed(1))+"g":"—"}</div><div style={{fontSize:9,color:"#64748B",marginTop:2}}>{crateEntries.reduce((s,e)=>s+(e.numCrates*(parseInt(chicksPerCrate)||100)),0).toLocaleString()} birds</div></div></div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr auto",gap:10,marginBottom:10,alignItems:"flex-end"}}>
+                <div><label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>GROSS WEIGHT (kg)</label><input value={newCrate.grossWeight} onChange={e=>setNewCrate(p=>({...p,grossWeight:e.target.value}))} placeholder="total on scale" style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} /></div>
+                <div><label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>CRATES (#)</label><input value={newCrate.numCrates} onChange={e=>setNewCrate(p=>({...p,numCrates:e.target.value}))} placeholder="1, 2, or 3" style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} /></div>
+                <div><label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>NOTES</label><input value={newCrate.notes} onChange={e=>setNewCrate(p=>({...p,notes:e.target.value}))} placeholder="e.g. Truck 1 first load" style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} /></div>
+                <button onClick={()=>{if(!newCrate.grossWeight) return;setCrateEntries(p=>[...p,{...newCrate,id:Date.now(),grossWeight:parseFloat(newCrate.grossWeight)||0,numCrates:parseInt(newCrate.numCrates)||1}]);setNewCrate({grossWeight:"",numCrates:"3",notes:""});}} style={{background:"#5B86E5",border:"none",color:"#F5F7FA",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"10px 18px",cursor:"pointer",borderRadius:6,whiteSpace:"nowrap"}}>+ ADD</button>
+              </div>
+              {crateEntries.length>0&&(
+                <div style={{border:"1px solid #E2E8F0",borderRadius:6,overflow:"hidden"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"40px 110px 80px 90px 100px 1fr 36px",padding:"7px 14px",background:"#F5F7FA",fontSize:8,color:"#64748B",letterSpacing:1,borderBottom:"1px solid #E2E8F0"}}><div>#</div><div>GROSS (kg)</div><div>CRATES</div><div>NET (kg)</div><div>BIRDS</div><div>NOTES</div><div></div></div>
+                  {[...crateEntries].reverse().map((e,i)=>{const tare=parseFloat(crateWeight)||1.8;const perCrate=parseInt(chicksPerCrate)||100;const net=e.grossWeight-(tare*e.numCrates);const birds=e.numCrates*perCrate;const rowAlw=(net/birds*1000);return(
+                    <div key={e.id} className="row" style={{display:"grid",gridTemplateColumns:"40px 110px 80px 90px 100px 1fr 36px",padding:"8px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center"}}><div style={{fontSize:9,color:"#CBD5E1"}}>{crateEntries.length-i}</div><div style={{color:"#1E293B",fontWeight:600}}>{e.grossWeight} kg</div><div style={{color:"#64748B"}}>{e.numCrates}</div><div style={{color:"#5B86E5"}}>{net.toFixed(2)} kg</div><div style={{color:"#64748B"}}>{birds.toLocaleString()}</div><div style={{color:"#64748B",fontSize:10}}>{e.notes||"—"} <span style={{color:"#CBD5E1",marginLeft:6}}>→ {rowAlw.toFixed(1)}g/bird</span></div><button onClick={()=>setCrateEntries(p=>p.filter(x=>x.id!==e.id))} style={{background:"none",border:"1px solid #E91E6340",color:"#E91E6380",fontFamily:"'Inter',sans-serif",fontSize:11,width:28,height:28,cursor:"pointer",borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button></div>
+                  );})}
+                  <div style={{display:"grid",gridTemplateColumns:"40px 110px 80px 90px 100px 1fr 36px",padding:"8px 14px",background:"#F5F7FA",fontSize:11,alignItems:"center",borderTop:"1px solid #252527"}}><div/><div style={{fontSize:9,color:"#5B86E5",letterSpacing:.5}}>TOTAL</div><div/><div style={{color:"#5B86E5",fontWeight:700}}>{crateEntries.reduce((s,e)=>{const t=parseFloat(crateWeight)||1.8;return s+(e.grossWeight-(t*e.numCrates));},0).toFixed(2)} kg</div><div style={{color:"#5B86E5",fontWeight:700}}>{crateEntries.reduce((s,e)=>s+(e.numCrates*(parseInt(chicksPerCrate)||100)),0).toLocaleString()}</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,color:"#5B86E5"}}>{crateALW?"ALW = "+(crateALW.toFixed(1))+"g":"—"}</div><div/></div>
+                </div>
+              )}
+            </div>
+            )}
+            </div>}
+            {placementSection==="feeds" && <div>
+              {/* Feed delivery totals */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
+                {[
+                  {l:"CBC",v:feedDeliveries.filter(d=>d.type==="CBC").reduce((s,d)=>s+d.qty,0),c:"#E5B80B"},
+                  {l:"BSC",v:feedDeliveries.filter(d=>d.type==="BSC").reduce((s,d)=>s+d.qty,0),c:"#D4652A"},
+                  {l:"BFP",v:feedDeliveries.filter(d=>d.type==="BFP").reduce((s,d)=>s+d.qty,0),c:"#5B86E5"},
+                  {l:"TOTAL",v:feedDeliveries.reduce((s,d)=>s+d.qty,0),c:"#1E293B"},
+                ].map(m=>(
+                  <div key={m.l} style={{background:"#FFFFFF",border:"1px solid "+(m.c)+"22",borderRadius:8,padding:"11px 13px"}}>
+                    <div style={{fontSize:9,color:"#64748B",letterSpacing:1,marginBottom:3}}>{m.l}</div>
+                    <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:20,color:m.c}}>{m.v}</div>
+                    <div style={{fontSize:11,color:"#64748B",marginTop:2}}>bags</div>
+                  </div>
+                ))}
+              </div>
+              {/* Log form */}
+              <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16,marginBottom:14}}>
+                <div style={{fontSize:10,color:"#2E7D52",letterSpacing:1.5,fontWeight:600,marginBottom:12}}>LOG FEED DELIVERY — Day {currentDay}</div>
+                <div style={{display:"flex",gap:6,marginBottom:12}}>
+                  {["CBC","BSC","BFP"].map(t=>{
+                    const tc=t==="CBC"?"#E5B80B":t==="BSC"?"#D4652A":"#5B86E5";
+                    return (
+                      <button key={t} onClick={()=>setNewDelivery(p=>({...p,type:t}))} style={{
+                        background:newDelivery.type===t?(tc+"20"):"none",
+                        border:newDelivery.type===t ? ("1px solid "+(tc+"60")) : "1px solid #CBD5E1",
+                        color:newDelivery.type===t?tc:"#64748B",
+                        fontFamily:"'Inter',sans-serif",fontSize:11,padding:"6px 18px",cursor:"pointer",borderRadius:4,fontWeight:newDelivery.type===t?700:400,
+                      }}>{t}</button>
+                    );
+                  })}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:10,marginBottom:12}}>
+                  <div>
+                    <label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>QUANTITY (bags)</label>
+                    <input value={newDelivery.qty} onChange={e=>setNewDelivery(p=>({...p,qty:e.target.value}))} placeholder="e.g. 200" style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} />
+                  </div>
+                  <div>
+                    <label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>NOTES</label>
+                    <input value={newDelivery.notes} onChange={e=>setNewDelivery(p=>({...p,notes:e.target.value}))} placeholder="plate, driver, remarks..." style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} />
+                  </div>
+                </div>
+                <button onClick={()=>{if(!newDelivery.qty) return;setFeedDeliveries(p=>[...p,{...newDelivery,id:Date.now(),day:currentDay,qty:parseInt(newDelivery.qty)||0}]);setNewDelivery({type:newDelivery.type,qty:"",notes:""});}} style={{background:"#2E7D52",border:"none",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"10px 24px",cursor:"pointer",borderRadius:6}}>+ LOG DELIVERY</button>
+              </div>
+              {/* Delivery log */}
+              {feedDeliveries.length>0 && (
+                <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflow:"hidden"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"40px 60px 60px 1fr 32px",padding:"8px 16px",borderBottom:"1px solid #E2E8F0",fontSize:9,color:"#64748B",letterSpacing:1}}>
+                    <div>DAY</div><div>TYPE</div><div>QTY</div><div>NOTES</div><div></div>
+                  </div>
+                  {[...feedDeliveries].reverse().map(d=>{
+                    const tc=d.type==="CBC"?"#E5B80B":d.type==="BSC"?"#D4652A":"#5B86E5";
+                    return (
+                      <div key={d.id} className="row" style={{display:"grid",gridTemplateColumns:"40px 60px 60px 1fr 32px",padding:"9px 16px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center"}}>
+                        <div style={{fontFamily:"'Inter',sans-serif",fontSize:10,color:"#C4960C",fontWeight:700}}>D{d.day}</div>
+                        <div><span className="pill" style={{background:tc+"18",color:tc}}>{d.type}</span></div>
+                        <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,color:"#1E293B"}}>{d.qty}</div>
+                        <div style={{color:"#64748B",fontSize:10}}>{d.notes||"—"}</div>
+                        <button onClick={()=>setFeedDeliveries(p=>p.filter(x=>x.id!==d.id))} style={{background:"none",border:"1px solid #E91E6340",color:"#E91E6380",fontFamily:"'Inter',sans-serif",fontSize:11,width:24,height:24,cursor:"pointer",borderRadius:4,padding:0}}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>}
+          </div>
+        )}
+        {activeTab==="fieldguide" && (
+          <div className="su">
+            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Field Guide</div>
+            <div style={{fontSize:11,color:"#64748B",marginBottom:14}}>Incidents · Medicines · Lighting · Feeding guide</div>
+            <div style={{display:"flex",gap:5,marginBottom:16}}>
+              {[["incidents","INCIDENTS","#D4652A"],["meds","MEDICINES","#7B1FA2"],["lighting","LIGHTING","#E5B80B"],["feeding","FEEDING","#2E7D52"]].map(([id,label,c])=>(
+                <button key={id} onClick={()=>setFgSection(id)} style={{
+                  background:fgSection===id?(c+"20"):"none", border:fgSection===id ? ("1px solid "+(c+"60")) : "1px solid #CBD5E1", color:fgSection===id?c:"#64748B", fontFamily:"'Inter',sans-serif",fontSize:9,letterSpacing:.8,
+                  padding:"6px 16px",cursor:"pointer",borderRadius:4,fontWeight:fgSection===id?600:400,
+                }}>{label}</button>
+              ))}
+            </div>
+            {fgSection==="incidents" && (
+              <div>
+                {/* Log form */}
+                <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16,marginBottom:14}}>
+                  <div style={{fontSize:10,color:"#D4652A",letterSpacing:1.5,fontWeight:600,marginBottom:10}}>LOG INCIDENT — Day {currentDay}</div>
+                  <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+                    {["DAY","NIGHT"].map(s=>(
+                      <button key={s} onClick={()=>setNewIncident(p=>({...p,shift:s}))} style={{background:newIncident.shift===s?(s==="DAY"?"#E5B80B20":"#7B1FA220"):"none",border:"1px solid "+(newIncident.shift===s?(s==="DAY"?"#E5B80B50":"#AB47BC50"):"#CBD5E1"),color:newIncident.shift===s?(s==="DAY"?"#E5B80B":"#AB47BC"):"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,padding:"5px 14px",cursor:"pointer",borderRadius:4}}>{s}</button>
+                    ))}
+                    {[["health","🐔 Health"],["environment","🌡 Env"],["feed","▦ Feed"],["equipment","⚙ Equip"],["other","· Other"]].map(([v,l])=>(
+                      <button key={v} onClick={()=>setNewIncident(p=>({...p,category:v}))} style={{background:newIncident.category===v?"#D4652A18":"none",border:"1px solid "+(newIncident.category===v?"#D4652A50":"#CBD5E1"),color:newIncident.category===v?"#D4652A":"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,padding:"4px 10px",cursor:"pointer",borderRadius:3}}>{l}</button>
+                    ))}
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                    <div>
+                      <label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>PROBLEM / OBSERVATION</label>
+                      <textarea value={newIncident.description} onChange={e=>setNewIncident(p=>({...p,description:e.target.value}))} placeholder="Describe what you observed..." style={{width:"100%",height:70,background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:12,padding:"8px 12px",outline:"none",borderRadius:6,resize:"none"}} />
+                    </div>
+                    <div>
+                      <label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>ACTION TAKEN</label>
+                      <textarea value={newIncident.action} onChange={e=>setNewIncident(p=>({...p,action:e.target.value}))} placeholder="What did you do about it..." style={{width:"100%",height:70,background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:12,padding:"8px 12px",outline:"none",borderRadius:6,resize:"none"}} />
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                    <button onClick={()=>setNewIncident(p=>({...p,resolved:!p.resolved}))} style={{background:newIncident.resolved?"#2E7D5220":"none",border:"1px solid "+(newIncident.resolved?"#2E7D5260":"#CBD5E1"),color:newIncident.resolved?"#2E7D52":"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,padding:"5px 14px",cursor:"pointer",borderRadius:4}}>{newIncident.resolved?"✓ RESOLVED":"UNRESOLVED"}</button>
+                    <button onClick={()=>{if(!newIncident.description) return;setIncidents(p=>[...p,{...newIncident,id:Date.now(),day:currentDay}]);setNewIncident({shift:"DAY",category:"health",description:"",action:"",resolved:false});}} style={{background:"#D4652A",border:"none",color:"#F5F7FA",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"10px 24px",cursor:"pointer",borderRadius:6}}>+ LOG INCIDENT</button>
+                  </div>
+                </div>
+                {/* Filter */}
+                <div style={{display:"flex",gap:5,marginBottom:10,flexWrap:"wrap"}}>
+                  {[["all","ALL"],["health","🐔"],["environment","🌡"],["feed","▦"],["equipment","⚙"],["other","·"]].map(([v,l])=>(
+                    <button key={v} onClick={()=>setIncidentFilter(v)} style={{background:incidentFilter===v?"#D4652A18":"none",border:"1px solid "+(incidentFilter===v?"#D4652A50":"#CBD5E1"),color:incidentFilter===v?"#D4652A":"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,padding:"4px 10px",cursor:"pointer",borderRadius:3}}>{l}</button>
+                  ))}
+                </div>
+                {/* Incident cards */}
+                <div style={{display:"grid",gap:6}}>
+                  {[...incidents].filter(i=>incidentFilter==="all"||i.category===incidentFilter).reverse().map(inc=>{
+                    const CAT_C={health:"#D4652A",environment:"#5B86E5",feed:"#2E7D52",equipment:"#C4960C",other:"#64748B"};
+                    const c=CAT_C[inc.category]||"#64748B";
+                    return (
+                      <div key={inc.id} style={{background:"#FFFFFF",border:"1px solid "+(inc.resolved?"#2E7D5225":"#D4652A20"),borderLeft:"3px solid "+(inc.resolved?"#2E7D52":c),borderRadius:6,padding:"12px 14px"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                            <span style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,color:"#C4960C"}}>Day {inc.day}</span>
+                            <span className="pill" style={{background:c+"18",color:c,fontSize:8}}>{inc.category.toUpperCase()}</span>
+                            <span className="pill" style={{background:inc.shift==="DAY"?"#E5B80B15":"#7B1FA215",color:inc.shift==="DAY"?"#E5B80B":"#AB47BC",fontSize:8}}>{inc.shift}</span>
+                          </div>
+                          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                            <button onClick={()=>setIncidents(p=>p.map(x=>x.id===inc.id?{...x,resolved:!x.resolved}:x))} style={{background:"none",border:"1px solid #CBD5E1",color:"#94A3B8",fontFamily:"'Inter',sans-serif",fontSize:8,padding:"2px 8px",cursor:"pointer",borderRadius:3}}>{inc.resolved?"RE-OPEN":"RESOLVE"}</button>
+                            <button onClick={()=>setIncidents(p=>p.filter(x=>x.id!==inc.id))} style={{background:"none",border:"1px solid #E91E6340",color:"#E91E6380",fontFamily:"'Inter',sans-serif",fontSize:11,width:24,height:24,cursor:"pointer",borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>
+                          </div>
+                        </div>
+                        <div style={{fontSize:11,color:"#334155",marginBottom:inc.action?6:0,lineHeight:1.5}}>{inc.description}</div>
+                        {inc.action&&<div style={{fontSize:11,color:"#64748B",paddingTop:6,borderTop:"1px solid #E2E8F0",lineHeight:1.5}}>→ {inc.action}</div>}
+                      </div>
+                    );
+                  })}
+                  {incidents.filter(i=>incidentFilter==="all"||i.category===incidentFilter).length===0&&(
+                    <div style={{textAlign:"center",padding:"32px",color:"#CBD5E1",fontSize:11}}>No incidents logged yet</div>
+                  )}
+                </div>
+              </div>
+            )}
+            {fgSection==="meds" && (
+              <div>
+                <div style={{fontSize:11,color:"#64748B",marginBottom:10}}>Beracah Farm · AM 9:00 · PM 21:00 · today highlighted · tap ✎ to edit</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                  <thead><tr style={{background:"#F5F7FA",borderBottom:"1px solid #CBD5E1"}}>
+                    {["DAY","SES","MEDICINE","DOSE","UNIT","WATER","",""].map(h=>(
+                      <th key={h} style={{padding:"5px 8px",textAlign:"left",color:"#64748B",fontSize:8,letterSpacing:1}}>{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {medProgram.map((m,i)=>{
+                      const isToday=m.day===currentDay;
+                      const editing=editingMedIdx===i;
+                      const ic={width:"100%",background:"#F5F7FA",border:"1px solid #CBD5E1",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:11,padding:"4px 6px",outline:"none",borderRadius:4};
+                      if(editing) return (
+                        <tr key={i} style={{borderBottom:"1px solid #F0F2F5",background:"#5B86E512"}}>
+                          <td style={{padding:"4px 6px"}}><input type="number" value={medDraft.day} onChange={e=>setMedDraft(p=>({...p,day:e.target.value}))} style={{...ic,width:44}} /></td>
+                          <td style={{padding:"4px 6px"}}>
+                            <select value={medDraft.session} onChange={e=>setMedDraft(p=>({...p,session:e.target.value}))} style={ic}>
+                              <option value="AM">AM</option><option value="PM">PM</option>
+                            </select>
+                          </td>
+                          <td style={{padding:"4px 6px"}}><input value={medDraft.medicine} onChange={e=>setMedDraft(p=>({...p,medicine:e.target.value}))} style={ic} /></td>
+                          <td style={{padding:"4px 6px"}}><input type="number" value={medDraft.dose} onChange={e=>setMedDraft(p=>({...p,dose:e.target.value}))} style={{...ic,width:60}} /></td>
+                          <td style={{padding:"4px 6px"}}><input value={medDraft.unit} onChange={e=>setMedDraft(p=>({...p,unit:e.target.value}))} style={{...ic,width:50}} /></td>
+                          <td style={{padding:"4px 6px"}}><input type="number" value={medDraft.waterL} onChange={e=>setMedDraft(p=>({...p,waterL:e.target.value}))} style={{...ic,width:50}} /></td>
+                          <td style={{padding:"4px 6px"}}>
+                            <button onClick={()=>{setMedProgram(p=>p.map((row,j)=>j===i?{day:parseInt(medDraft.day)||0,session:medDraft.session,medicine:medDraft.medicine,dose:parseFloat(medDraft.dose)||0,unit:medDraft.unit,waterL:parseFloat(medDraft.waterL)||0}:row));setEditingMedIdx(null);}} style={{background:"#2E7D52",border:"none",color:"#FFFFFF",fontFamily:"'Inter',sans-serif",fontSize:9,padding:"4px 8px",cursor:"pointer",borderRadius:4,fontWeight:600}}>SAVE</button>
+                          </td>
+                          <td style={{padding:"4px 6px"}}>
+                            <button onClick={()=>setEditingMedIdx(null)} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,padding:"4px 8px",cursor:"pointer",borderRadius:4}}>CANCEL</button>
+                          </td>
+                        </tr>
+                      );
+                      return (
+                        <tr key={i} style={{borderBottom:"1px solid #F0F2F5",background:isToday?"#C4960C15":"transparent"}}>
+                          <td style={{padding:"5px 8px",color:isToday?"#C4960C":"#64748B",fontWeight:isToday?700:400}}>D{m.day}</td>
+                          <td style={{padding:"5px 8px"}}><span style={{fontSize:8,color:m.session==="AM"?"#E5B80B":"#AB47BC",background:m.session==="AM"?"#E5B80B15":"#7B1FA215",padding:"2px 5px",borderRadius:3}}>{m.session}</span></td>
+                          <td style={{padding:"5px 8px",color:isToday?"#1E293B":"#334155",fontWeight:isToday?600:400}}>{m.medicine}</td>
+                          <td style={{padding:"5px 8px",color:"#64748B"}}>{m.dose}</td>
+                          <td style={{padding:"5px 8px",color:"#64748B"}}>{m.unit}</td>
+                          <td style={{padding:"5px 8px",color:"#5B86E5"}}>{m.waterL>0?m.waterL+"L":"—"}</td>
+                          <td style={{padding:"5px 8px"}} colSpan={2}>
+                            <button onClick={()=>{setEditingMedIdx(i);setMedDraft({day:m.day,session:m.session,medicine:m.medicine,dose:m.dose,unit:m.unit,waterL:m.waterL});}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,width:24,height:24,cursor:"pointer",borderRadius:4,padding:0}}>✎</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {fgSection==="lighting" && (
+              <div>
+                <div style={{fontSize:11,color:"#64748B",marginBottom:10}}>Lights off · Day 18–26 default · tap ✎ to edit</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                  <thead><tr style={{background:"#F5F7FA",borderBottom:"1px solid #CBD5E1"}}>
+                    {["DAY","TIME OFF","DURATION",""].map(h=>(
+                      <th key={h} style={{padding:"6px 12px",textAlign:"left",color:"#64748B",fontSize:8,letterSpacing:1}}>{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {lightingProgram.map((r,i)=>{
+                      const isToday=r.d===currentDay;
+                      const editing=editingLightIdx===i;
+                      const ic={width:"100%",background:"#F5F7FA",border:"1px solid #CBD5E1",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:11,padding:"4px 6px",outline:"none",borderRadius:4};
+                      if(editing) return (
+                        <tr key={i} style={{borderBottom:"1px solid #F0F2F5",background:"#5B86E512"}}>
+                          <td style={{padding:"5px 8px"}}><input type="number" value={lightDraft.d} onChange={e=>setLightDraft(p=>({...p,d:e.target.value}))} style={{...ic,width:50}} /></td>
+                          <td style={{padding:"5px 8px"}}><input value={lightDraft.t} onChange={e=>setLightDraft(p=>({...p,t:e.target.value}))} style={ic} /></td>
+                          <td style={{padding:"5px 8px"}}><input value={lightDraft.r} onChange={e=>setLightDraft(p=>({...p,r:e.target.value}))} style={ic} /></td>
+                          <td style={{padding:"5px 8px",display:"flex",gap:4}}>
+                            <button onClick={()=>{setLightingProgram(p=>p.map((row,j)=>j===i?{d:parseInt(lightDraft.d)||0,t:lightDraft.t,r:lightDraft.r}:row));setEditingLightIdx(null);}} style={{background:"#2E7D52",border:"none",color:"#FFFFFF",fontFamily:"'Inter',sans-serif",fontSize:9,padding:"4px 8px",cursor:"pointer",borderRadius:4,fontWeight:600}}>SAVE</button>
+                            <button onClick={()=>setEditingLightIdx(null)} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,padding:"4px 8px",cursor:"pointer",borderRadius:4}}>CANCEL</button>
+                          </td>
+                        </tr>
+                      );
+                      return (
+                        <tr key={i} style={{borderBottom:"1px solid #F0F2F5",background:isToday?"#E5B80B10":"transparent"}}>
+                          <td style={{padding:"7px 12px",color:isToday?"#E5B80B":"#64748B",fontWeight:isToday?700:400}}>D{r.d}{isToday?" ◉":""}</td>
+                          <td style={{padding:"7px 12px",color:"#334155"}}>{r.t}</td>
+                          <td style={{padding:"7px 12px",color:isToday?"#E5B80B":"#334155",fontWeight:isToday?600:400}}>{r.r}</td>
+                          <td style={{padding:"7px 12px"}}>
+                            <button onClick={()=>{setEditingLightIdx(i);setLightDraft({d:r.d,t:r.t,r:r.r});}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,width:24,height:24,cursor:"pointer",borderRadius:4,padding:0}}>✎</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <div style={{marginTop:12,fontSize:10,color:"#64748B",lineHeight:1.8}}>
+                  <div>· Improves FCR — promotes rest and growth hormone activity</div>
+                  <div>· Ensure access to drinkers and feeders before lights-off</div>
+                </div>
+              </div>
+            )}
+            {fgSection==="feeding" && (
+              <div>
+                <div style={{fontSize:11,color:"#64748B",marginBottom:4}}>Daily feeding guide · BT = bags per 1,000 birds · tap ✎ to edit</div>
+                <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Actual target today: <strong style={{color:"#2E7D52"}}>{feedingGuide.find(x=>x.day===currentDay) ? (feedingGuide.find(x=>x.day===currentDay).bt*(netPlacedBirds/1000)).toFixed(0) : "—"}</strong> bags (Day {currentDay})</div>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,minWidth:600}}>
+                    <thead>
+                      <tr style={{background:"#F5F7FA",borderBottom:"1px solid #CBD5E1"}}>
+                        {["DAY","ALW g","CBC","BSC","BFP","FC/day","CUMM","BT/1000","BAGS*",""].map(h=>(
+                          <th key={h} style={{padding:"6px 10px",textAlign:"right",color:"#64748B",fontSize:8,letterSpacing:1,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {feedingGuide.map((r,i)=>{
+                        const isToday=r.day===currentDay;
+                        const actualBags=(r.bt*(netPlacedBirds/1000)).toFixed(0);
+                        const editing=editingFeedIdx===i;
+                        const ic={width:"100%",background:"#F5F7FA",border:"1px solid #CBD5E1",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:10,padding:"4px 5px",outline:"none",borderRadius:4,textAlign:"right"};
+                        if(editing) return (
+                          <tr key={i} style={{borderBottom:"1px solid #F0F2F5",background:"#5B86E512"}}>
+                            <td style={{padding:"4px 5px"}}><input type="number" value={feedDraft.day} onChange={e=>setFeedDraft(p=>({...p,day:e.target.value}))} style={{...ic,width:44}} /></td>
+                            <td style={{padding:"4px 5px"}}><input type="number" value={feedDraft.alw} onChange={e=>setFeedDraft(p=>({...p,alw:e.target.value}))} style={{...ic,width:54}} /></td>
+                            <td style={{padding:"4px 5px"}}><input type="number" value={feedDraft.cbc} onChange={e=>setFeedDraft(p=>({...p,cbc:e.target.value}))} style={{...ic,width:44}} /></td>
+                            <td style={{padding:"4px 5px"}}><input type="number" value={feedDraft.bsc} onChange={e=>setFeedDraft(p=>({...p,bsc:e.target.value}))} style={{...ic,width:44}} /></td>
+                            <td style={{padding:"4px 5px"}}><input type="number" value={feedDraft.bfp} onChange={e=>setFeedDraft(p=>({...p,bfp:e.target.value}))} style={{...ic,width:44}} /></td>
+                            <td style={{padding:"4px 5px"}}><input type="number" value={feedDraft.fc} onChange={e=>setFeedDraft(p=>({...p,fc:e.target.value}))} style={{...ic,width:50}} /></td>
+                            <td style={{padding:"4px 5px"}}><input type="number" value={feedDraft.cumm} onChange={e=>setFeedDraft(p=>({...p,cumm:e.target.value}))} style={{...ic,width:54}} /></td>
+                            <td style={{padding:"4px 5px"}}><input type="number" value={feedDraft.bt} onChange={e=>setFeedDraft(p=>({...p,bt:e.target.value}))} style={{...ic,width:50}} /></td>
+                            <td style={{padding:"4px 5px",color:"#94A3B8"}}>—</td>
+                            <td style={{padding:"4px 5px",display:"flex",gap:4}}>
+                              <button onClick={()=>{setFeedingGuide(p=>p.map((row,j)=>j===i?{day:parseInt(feedDraft.day)||0,alw:parseFloat(feedDraft.alw)||0,cbc:parseFloat(feedDraft.cbc)||0,bsc:parseFloat(feedDraft.bsc)||0,bfp:parseFloat(feedDraft.bfp)||0,fc:parseFloat(feedDraft.fc)||0,cumm:parseFloat(feedDraft.cumm)||0,bt:parseFloat(feedDraft.bt)||0}:row));setEditingFeedIdx(null);}} style={{background:"#2E7D52",border:"none",color:"#FFFFFF",fontFamily:"'Inter',sans-serif",fontSize:9,padding:"4px 7px",cursor:"pointer",borderRadius:4,fontWeight:600}}>SAVE</button>
+                              <button onClick={()=>setEditingFeedIdx(null)} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,padding:"4px 7px",cursor:"pointer",borderRadius:4}}>X</button>
+                            </td>
+                          </tr>
+                        );
+                        return (
+                          <tr key={i} style={{borderBottom:"1px solid #F0F2F5",background:isToday?"#2E7D5215":"transparent"}}>
+                            <td style={{padding:"5px 10px",textAlign:"right",fontFamily:"'Inter',sans-serif",fontWeight:isToday?700:400,color:isToday?"#2E7D52":"#64748B"}}>D{r.day}{isToday?" ◉":""}</td>
+                            <td style={{padding:"5px 10px",textAlign:"right",color:isToday?"#C4960C":"#334155",fontWeight:isToday?600:400}}>{r.alw}</td>
+                            <td style={{padding:"5px 10px",textAlign:"right",color:r.cbc>0?"#E5B80B":"#CBD5E1"}}>{r.cbc||"—"}</td>
+                            <td style={{padding:"5px 10px",textAlign:"right",color:r.bsc>0?"#D4652A":"#CBD5E1"}}>{r.bsc||"—"}</td>
+                            <td style={{padding:"5px 10px",textAlign:"right",color:r.bfp>0?"#5B86E5":"#CBD5E1"}}>{r.bfp||"—"}</td>
+                            <td style={{padding:"5px 10px",textAlign:"right",color:"#334155",fontWeight:isToday?700:400}}>{r.fc}</td>
+                            <td style={{padding:"5px 10px",textAlign:"right",color:"#64748B"}}>{r.cumm}</td>
+                            <td style={{padding:"5px 10px",textAlign:"right",color:"#64748B"}}>{r.bt}</td>
+                            <td style={{padding:"5px 10px",textAlign:"right",color:isToday?"#2E7D52":"#334155",fontWeight:isToday?700:400}}>{actualBags}</td>
+                            <td style={{padding:"5px 10px",textAlign:"right"}}>
+                              <button onClick={()=>{setEditingFeedIdx(i);setFeedDraft({day:r.day,alw:r.alw,cbc:r.cbc,bsc:r.bsc,bfp:r.bfp,fc:r.fc,cumm:r.cumm,bt:r.bt});}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,width:22,height:22,cursor:"pointer",borderRadius:4,padding:0}}>✎</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{fontSize:9,color:"#94A3B8",marginTop:8}}>* BAGS = BT × {(netPlacedBirds/1000).toFixed(1)}k birds</div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+</script>
+</body>
+</html>

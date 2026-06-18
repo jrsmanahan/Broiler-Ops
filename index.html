@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flock Supervisor</title>
+<title>BroilerOps</title>
 <meta name="theme-color" content="#F5F7FA">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -66,10 +66,14 @@ const { useState, useMemo, useEffect } = React;
 // ─── SUPABASE CONFIG ──────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://xcsaufxxdctlgfjsbbaz.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhjc2F1Znh4ZGN0bGdmanNiYmF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3MjkyMjksImV4cCI6MjA5NzMwNTIyOX0.y7cQJnjoVLReCHx6X3mk90COJZhM8RvswMsczB16Gz0";
+
+const TVE_LOGO = "data:image/jpeg;base64,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";
 function getSupabaseClient() {
   if (typeof window.supabase === "undefined") return null;
   if (!window.__sbClient) {
-    window.__sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    window.__sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    });
   }
   return window.__sbClient;
 }
@@ -274,152 +278,11 @@ const MED_PROGRAM_DEFAULT = [
   { day:33, session:"PM", medicine:"Progastro",     dose:150,  unit:"ml",   waterL:0  },
 ];
 const ALW_DAYS = [0, 3, 7, 10, 14, 18, 21, 25, 28, 32, 35];
-const BROODING_TASKS_DEFAULT = {
-  "Day 0": [
-    "Set controller: target temp 34°C, min vent 20%, max vent 40%",
-    "Turn on all zone heaters — verify all sensor readings",
-    "Close brooding curtains fully",
-    "Deploy chick paper across entire brooding zone",
-    "Fill supplementary feeders and feed pans with CBC",
-    "Set water pressure: 0.5–1.0 PSI for day-olds",
-    "Flush all drinker lines — check for leaks",
-    "Check chick distribution — adjust heat zones as needed",
-    "Record truck arrivals, head count, and DOA",
-  ],
-  "Day 1–3": [
-    "Check curtain position — maintain full closure",
-    "Pick up and count mortality — record per shift",
-    "Check heater zones against sensor readings",
-    "Refill feed pans and supplementary feeders",
-    "Check water pressure and nipple flow",
-    "Log feed pulled from warehouse",
-    "Check for wet litter spots — top up rice hull",
-    "ALW weigh — Day 3 (1% of population)",
-  ],
-  "Day 4–6": [
-    "Reduce target temp to 32°C",
-    "Turn off perimeter heaters — keep center zone active",
-    "Raise curtains 30cm to allow passive airflow",
-    "Remove chick paper — transition fully to feeders and pans",
-    "Increase water pressure slightly",
-    "Check litter — top up rice hull in wet spots",
-    "Rake litter to aerate",
-    "Check feeder height — adjust to back height of birds",
-    "Pick up and count mortality — record per shift",
-  ],
-  "Day 7–9": [
-    "Reduce target temp to 30°C",
-    "Expand brooding area — open first curtain section",
-    "Turn off half of remaining heaters per sensor readings",
-    "Flush all drinker lines",
-    "Rake and top-up litter",
-    "Raise feeder height to back of birds",
-    "Pick up and count mortality — record per shift",
-    "ALW weigh — Day 7 (1% of population)",
-  ],
-  "Day 10–12": [
-    "ALW weigh — Day 10 (1% of population)",
-    "Day 11: Full expand cross-wise — open brooding curtains completely across width of building",
-    "Day 10: Feed mix 3 CBC : 1 BSC",
-    "Day 11: Feed mix 1 CBC : 1 BSC",
-    "Day 12: Feed mix 1 CBC : 1 BSC",
-    "Remove 1 row of bilao feeders per day (Day 10, 11, 12)",
-    "Physically reposition heaters evenly across expanded building area",
-    "Flush drinker lines — check nipple pressure",
-    "Rake litter across full building",
-    "Pick up and count mortality — record per shift",
-  ],
-  "Day 13–15": [
-    "Reduce target temp to 27°C",
-    "Expand brooding area to full building",
-    "Raise curtains to 3/4 position",
-    "Turn off standby heaters if ambient temp allows",
-    "Flush drinker lines",
-    "Rake litter full building",
-    "Pick up and count mortality — record per shift",
-    "ALW weigh — Day 14 — go/no-go for tunnel transition",
-    "Open all brooding curtains fully at Day 14",
-    "Activate tunnel fans at minimum speed — Day 14",
-    "Activate cooling pads — check water supply line — Day 14",
-    "Set controller to tunnel ventilation mode — Day 14",
-  ],
-  "Day 16–18": [
-    "Verify controller is in tunnel ventilation mode",
-    "Check all tunnel fan belts and operation",
-    "Check cooling pad water distribution — all sections flowing",
-    "Log temp and humidity per shift — target IN 27–30°C",
-    "Adjust min/max ventilation rate based on sensor readings",
-    "Pick up and count mortality — record per shift",
-    "Flush drinker lines",
-    "Rake litter",
-  ],
-  "Day 19–21": [
-    "Monitor temp per shift — alert if IN > 32°C",
-    "Adjust fan speed and pad usage based on outside temp",
-    "Check pad curtain levels — adjust for airflow balance",
-    "Pick up and count mortality — record per shift",
-    "Log feed pulled from warehouse",
-    "Flush drinker lines",
-    "ALW weigh — Day 21 (1% of population)",
-  ],
-  "Day 22–24": [
-    "Monitor temp per shift",
-    "Adjust ventilation rate — birds producing more heat",
-    "Check pad curtain levels",
-    "Pick up and count mortality — record per shift",
-    "Log feed pulled from warehouse",
-    "Flush drinker lines",
-    "Rake litter",
-  ],
-  "Day 25–27": [
-    "Monitor temp per shift — heat stress risk increases",
-    "Maximize cooling pad usage during hot hours",
-    "Check pad curtain levels",
-    "Pick up and count mortality — record per shift",
-    "Log feed pulled from warehouse",
-    "Flush drinker lines",
-    "ALW weigh — Day 25 (1% of population)",
-  ],
-  "Day 28–30": [
-    "Monitor temp per shift",
-    "Adjust ventilation for bird density and heat output",
-    "Check all fan operation — no belt slippage",
-    "Check cooling pad flow — all sections active",
-    "Pick up and count mortality — record per shift",
-    "Log feed pulled from warehouse",
-    "Flush drinker lines",
-    "ALW weigh — Day 28 (1% of population)",
-  ],
-  "Day 31–33": [
-    "Monitor temp per shift",
-    "Maintain maximum cooling during hot parts of day",
-    "Pick up and count mortality — record per shift",
-    "Log feed pulled from warehouse",
-    "Flush drinker lines",
-    "ALW weigh — Day 32 (harvest weight check)",
-  ],
-  "Day 34–36": [
-    "ALW weigh — Day 35 — harvest weight decision",
-    "Monitor temp per shift",
-    "Pick up and count mortality — record per shift",
-    "Log feed pulled from warehouse",
-    "Flush drinker lines",
-    "Prepare building for harvest crew access",
-    "Coordinate with manager on harvest truck schedule",
-  ],
-  "Day 37–39": [
-    "Harvest ongoing — assist harvest crew as needed",
-    "Monitor remaining population per shift",
-    "Continue mortality pickup and recording",
-    "Maintain ventilation for remaining birds",
-    "Log final feed pulls",
-    "Record final bird count after each harvest truck",
-  ],
-};
+const BRACKET_NAMES = ["Day 0","Day 1–3","Day 4–6","Day 7–9","Day 10–12","Day 13–15","Day 16–18","Day 19–21","Day 22–24","Day 25–27","Day 28–30","Day 31–33","Day 34–36","Day 37–39"];
 function buildDefaultTaskMap() {
   const out = {};
-  Object.keys(BROODING_TASKS_DEFAULT).forEach(function(b) {
-    out[b] = BROODING_TASKS_DEFAULT[b].map(function(text, i) { return { id: b+"_s"+i, text: text, custom:false }; });
+  BRACKET_NAMES.forEach(function(b) {
+    out[b] = []; // starts empty — fully custom, built by the flockmen
   });
   return out;
 }
@@ -765,7 +628,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const clearAllData = () => {
     const NS = ACTIVE_NS;
     ["shiftLogs","taskChecks","tunnelLogs", "cropLogs","litterLogs","flushLogs","crateEntries","placementTrucks", "crateWeight","chicksPerCrate","activeBracket",
-     "litterScores","litterFlags","litterNotes","incidents","feedDeliveries"].forEach(k => localStorage.removeItem(NS+k));
+     "litterScores","litterFlags","litterNotes","feedDeliveries"].forEach(k => localStorage.removeItem(NS+k));
     localStorage.setItem(NS+"dayOverride", JSON.stringify(0));
     localStorage.setItem(NS+"dayAnchor", JSON.stringify(new Date().toISOString()));
     window.location.reload();
@@ -1207,7 +1070,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
                     OPEN TASKS →
                   </button>
                 </div>
-                {(tasksByBracket[getBroodBracket(currentDay)]||[]).slice(0,4).map((t) => {
+                {(tasksByBracket[getBroodBracket(currentDay)]||[]).length === 0 ? (
+                  <div style={{ padding:"16px", fontSize:11, color:"#94A3B8", textAlign:"center" }}>No tasks added yet for this bracket — tap OPEN TASKS to add some</div>
+                ) : (tasksByBracket[getBroodBracket(currentDay)]||[]).slice(0,4).map((t) => {
                   const done = taskChecks[t.id];
                   return (
                     <div key={t.id} onClick={() => toggleTask(t.id)} className="row" style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 16px", borderBottom:"1px solid #F0F2F5", cursor:"pointer" }}>
@@ -1218,7 +1083,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
                     </div>
                   );
                 })}
-                <div style={{ padding:"8px 16px", fontSize:10, color:"#64748B" }}>+ {(tasksByBracket[getBroodBracket(currentDay)]||[]).length - 4} more tasks — tap to open full list</div>
+                {(tasksByBracket[getBroodBracket(currentDay)]||[]).length > 4 && (
+                  <div style={{ padding:"8px 16px", fontSize:10, color:"#64748B" }}>+ {(tasksByBracket[getBroodBracket(currentDay)]||[]).length - 4} more tasks — tap to open full list</div>
+                )}
               </div>
             )}
             {/* Today's shift logs */}
@@ -1326,7 +1193,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
 {activeTab==="tasks" && (
           <div className="su">
             <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:16, marginBottom:4 }}>Brooding Tasks</div>
-            <div style={{ fontSize:11, color:"#64748B", marginBottom:16 }}>Phase-based checklists · ⚖ marks ALW weighing days · use ▲▼ to reorder, add custom tasks per bracket</div>
+            <div style={{ fontSize:11, color:"#64748B", marginBottom:16 }}>Build your own checklist per bracket · use ▲▼ to reorder · carries over to the next grow</div>
             {/* Bracket tabs */}
             <div style={{ display:"flex", gap:6, marginBottom:16, flexWrap:"wrap" }}>
               {Object.keys(tasksByBracket).map(b => {
@@ -2235,21 +2102,29 @@ function AppShell() {
     }
     if (isOnline) {
       const sb = getSupabaseClient();
+      const pendingKey = "beracah_pending_houses";
       sb.from("houses").select("*").eq("user_id", session.user.id).order("house_number")
         .then(function(res) {
           if (res.data) {
-            setHouses(res.data);
-            localStorage.setItem(cacheKey, JSON.stringify(res.data));
+            const pending = JSON.parse(localStorage.getItem(pendingKey) || "[]");
+            const merged = res.data.concat(pending.filter(function(p) {
+              return !res.data.some(function(h){ return h.id===p.id; });
+            }));
+            setHouses(merged);
+            localStorage.setItem(cacheKey, JSON.stringify(merged));
           } else if (!cached) {
             setHouses([]);
           }
         });
-      // Flush any pending offline-created houses
-      const pendingKey = "beracah_pending_houses";
+      // Flush any pending offline-created houses — only clear queue on confirmed success
       const pending = JSON.parse(localStorage.getItem(pendingKey) || "[]");
       if (pending.length > 0) {
-        sb.from("houses").insert(pending).then(function() {
-          localStorage.removeItem(pendingKey);
+        sb.from("houses").insert(pending).then(function(res) {
+          if (!res.error) {
+            localStorage.removeItem(pendingKey);
+          } else {
+            setAuthError("Could not sync house to server: " + res.error.message + " — your data is safe locally and will retry.");
+          }
         });
       }
     } else if (!cached) {
@@ -2333,8 +2208,9 @@ function AppShell() {
     return (
       <div style={PAGE}>
         <div style={CARD}>
-          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:20,color:"#1E293B",marginBottom:4}}>Flock Supervisor</div>
-          <div style={{fontSize:12,color:"#64748B",marginBottom:20}}>Sign in to manage your farm</div>
+          <img src={TVE_LOGO} alt="Tunnel Vent Experts" style={{height:40,marginBottom:16,display:"block"}} />
+          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:20,color:"#1E293B",marginBottom:4}}>BroilerOps</div>
+          <div style={{fontSize:12,color:"#64748B",marginBottom:20}}>made by Tunnel Vent Experts</div>
           {magicLinkSent ? (
             <div style={{fontSize:13,color:"#2E7D52",background:"#2E7D5212",padding:14,borderRadius:8}}>
               Check your email — we sent a sign-in link to {email}.

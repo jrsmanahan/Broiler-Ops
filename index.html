@@ -19,7 +19,6 @@
 <div id="status">Loading scripts...</div>
 <div id="root"></div>
 <div id="debug"></div>
-
 <script>
 function showDebug(msg) {
   var d = document.getElementById('debug');
@@ -31,12 +30,10 @@ window.onerror = function(msg, url, line, col, err) {
   if (err && err.stack) showDebug(err.stack);
 };
 </script>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.0/babel.min.js"></script>
-
 <script>
 window.addEventListener('load', function() {
   var s = document.getElementById('status');
@@ -60,7 +57,6 @@ window.addEventListener('load', function() {
   }
 });
 </script>
-
 <script id="app-code" type="text/plain">
 const { useState, useMemo, useEffect } = React;
 // ─── SUPABASE CONFIG ──────────────────────────────────────────────────────────
@@ -286,13 +282,12 @@ function buildDefaultTaskMap() {
   });
   return out;
 }
-function getCurrentDay(placementDate) {
-  // Rolls at midnight Philippine time (UTC+8)
-  // Uses fixed PH offset to avoid browser timezone issues
+function getCurrentDay(placementDateStr, rolloverHour) {
+  // Day 0 starts at rolloverHour on placement date (PHT = UTC+8)
   const PH_OFFSET_MS = 8 * 60 * 60 * 1000;
-  const toPHDay = (date) => Math.floor((date.getTime() + PH_OFFSET_MS) / 86400000);
-  const placementPHDay = toPHDay(placementDate);
-  return Math.max(0, toPHDay(new Date()) - placementPHDay);
+  const rolloverMs = (rolloverHour || 0) * 60 * 60 * 1000;
+  const day0Start = new Date(placementDateStr + "T00:00:00+08:00").getTime() + rolloverMs;
+  return Math.max(0, Math.floor((Date.now() - day0Start) / 86400000));
 }
 function getPhase(day) {
   if (day === 0) return { label: "PLACEMENT", color: "#E5B80B", short: "PLACE" };
@@ -477,7 +472,7 @@ function CropFillSummary({ logs, currentDay }) {
     </div>
   );
 }
-function DailyLogRows({ logs, currentDay, getPhase, dayAnchor, FEED_FC, netPlacedBirds, setShiftLogs, setEditingLogId, setNewLog, setLogDay, editingLogId }) {
+function DailyLogRows({ logs, currentDay, getPhase, placementDate, FEED_FC, netPlacedBirds, setShiftLogs, setEditingLogId, setNewLog, setLogDay, editingLogId }) {
   const days = [...new Set(logs.map(l=>l.day))].sort((a,b)=>a-b);
   let cumMort = 0, cumFeed = 0;
   const rows = [];
@@ -498,7 +493,7 @@ function DailyLogRows({ logs, currentDay, getPhase, dayAnchor, FEED_FC, netPlace
     const notes = [am && am.notes, pm && pm.notes].filter(Boolean).join(" / ");
     const isToday = day === currentDay;
     const dp = getPhase(day);
-    const dateStr = new Date(new Date(dayAnchor).getTime()+day*86400000).toLocaleDateString("en-PH",{month:"short",day:"numeric"});
+    const dateStr = new Date(new Date(placementDate + "T00:00:00+08:00").getTime()+day*86400000).toLocaleDateString("en-PH",{month:"short",day:"numeric"});
     const fcRow = FEED_FC.find(r=>r.day===day);
     const feedUnder = fcRow && dayFeed < fcRow.fc;
     const mortTarget = Math.round(netPlacedBirds*0.001);
@@ -552,19 +547,24 @@ function DailyLogRows({ logs, currentDay, getPhase, dayAnchor, FEED_FC, netPlace
 // ═════════════════════════════════════════════════════════════════════════════
 function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const CYCLE_CONFIG = {
-    placementDate: new Date(house.placement_date + "T00:00:00+08:00"),
-    flockSize: house.flock_size,
+    placementDate: cycleConfig ? new Date(cycleConfig.placementDate + "T00:00:00+08:00") : new Date(),
+    flockSize: cycleConfig ? cycleConfig.flockSize : (house.flock_size || 0),
     building: house.building_name,
     breed: house.breed,
     flockman: { names: house.flockman_names || [] },
     openingFloorStock: 20, // bags CBC placed before chicks arrived
   };
   const [activeTab, setActiveTab]   = useState("today");
-  const [dayAnchor, setDayAnchor] = useLocalStorage("dayAnchor", house.placement_date + "T00:00:00+08:00");
-  const [dayOverride, setDayOverride] = useLocalStorage("dayOverride", 0);
+  const [dayOverride, setDayOverride] = useLocalStorage("dayOverride_legacy", 0); // kept for migration only
+  const [dayAnchor] = useLocalStorage("dayAnchor_legacy", null); // kept for migration only
+  const activePlacementDate = cycleConfig ? cycleConfig.placementDate : house.placement_date;
+  const activeRolloverHour = cycleConfig ? (cycleConfig.rolloverHour || 0) : 0;
   const [currentDay, setCurrentDay] = useState(function() {
-    const autoDay = getCurrentDay(new Date(dayAnchor));
-    return Math.max(dayOverride, autoDay);
+    if (cycleConfig) {
+      const autoDay = getCurrentDay(cycleConfig.placementDate, cycleConfig.rolloverHour);
+      return Math.max(cycleConfig.dayOverride || 0, autoDay);
+    }
+    return 0;
   });
   // Daily records — two shifts per day
   const [shiftLogs, setShiftLogs] = useLocalStorage("shiftLogs", []);
@@ -617,7 +617,19 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const [feedingGuide, setFeedingGuide] = useLocalStorage("feedingGuide", FEEDING_GUIDE_DEFAULT);
   const [editingFeedIdx, setEditingFeedIdx] = useState(null);
   const [feedDraft, setFeedDraft] = useState(null);
-  const [showReset, setShowReset] = useState(false);
+  const [cycleConfig, setCycleConfig] = useLocalStorage("cycleConfig", null);
+  const [cycleHistory, setCycleHistory] = useLocalStorage("cycleHistory", []);
+  const [showCycleMenu, setShowCycleMenu] = useState(false);
+  const [showStartCycle, setShowStartCycle] = useState(false);
+  const [showEndCycle, setShowEndCycle] = useState(false);
+  const [saveHistoryOnEnd, setSaveHistoryOnEnd] = useState(true);
+  const [cycleDraft, setCycleDraft] = useState({
+    placementDate: house.placement_date || "",
+    flockSize: String(house.flock_size || ""),
+    rolloverHour: "0",
+  });
+  // If user has legacy dayAnchor data, migrate it into cycleConfig automatically
+  const [migrationDone, setMigrationDone] = useLocalStorage("migrationDone", false);
   const [showCrate, setShowCrate] = useState(false);
   const [placementSection, setPlacementSection] = useState("placement");
   const [feedDeliveries, setFeedDeliveries] = useLocalStorage("feedDeliveries", []);
@@ -625,12 +637,57 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const [medInventoryLog, setMedInventoryLog] = useLocalStorage("medInventoryLog", []);
   const [newMedEntry, setNewMedEntry] = useState({ type:"delivery", medicine:"", qty:"", unit:"", notes:"" });
   const [checksSection, setChecksSection] = useState("cropfill");
-  const clearAllData = () => {
+  const OPS_KEYS = ["shiftLogs","taskChecks","tunnelLogs","cropLogs","litterLogs","flushLogs","crateEntries","placementTrucks","crateWeight","chicksPerCrate","activeBracket","litterScores","litterFlags","litterNotes","feedDeliveries","medInventoryLog","dayOverride_legacy","dayAnchor_legacy"];
+  const startCycle = (draft) => {
     const NS = ACTIVE_NS;
-    ["shiftLogs","taskChecks","tunnelLogs", "cropLogs","litterLogs","flushLogs","crateEntries","placementTrucks", "crateWeight","chicksPerCrate","activeBracket",
-     "litterScores","litterFlags","litterNotes","feedDeliveries"].forEach(k => localStorage.removeItem(NS+k));
-    localStorage.setItem(NS+"dayOverride", JSON.stringify(0));
-    localStorage.setItem(NS+"dayAnchor", JSON.stringify(new Date().toISOString()));
+    OPS_KEYS.forEach(function(k){ localStorage.removeItem(NS+k); });
+    const newConfig = {
+      placementDate: draft.placementDate,
+      flockSize: parseInt(draft.flockSize) || house.flock_size,
+      rolloverHour: parseInt(draft.rolloverHour) || 0,
+      dayOverride: 0,
+      cycleNumber: cycleHistory.length + 1,
+      startedAt: new Date().toISOString(),
+    };
+    setCycleConfig(newConfig);
+    setCurrentDay(0);
+    setLogDay("0");
+    setShowStartCycle(false);
+    setShowCycleMenu(false);
+    window.location.reload();
+  };
+  const endCycle = () => {
+    if (saveHistoryOnEnd && cycleConfig) {
+      const snap = {
+        cycleNumber: cycleConfig.cycleNumber || (cycleHistory.length + 1),
+        placementDate: cycleConfig.placementDate,
+        endDate: new Date().toISOString().split("T")[0],
+        breed: house.breed,
+        flockSize: cycleConfig.flockSize,
+        rolloverHour: cycleConfig.rolloverHour,
+        dayCount: currentDay,
+        shiftLogs: JSON.parse(JSON.stringify(shiftLogs)),
+        tunnelLogs: JSON.parse(JSON.stringify(tunnelLogs)),
+        cropLogs: JSON.parse(JSON.stringify(cropLogs)),
+        litterLogs: JSON.parse(JSON.stringify(litterLogs)),
+        flushLogs: JSON.parse(JSON.stringify(flushLogs)),
+        placementTrucks: JSON.parse(JSON.stringify(placementTrucks)),
+        crateEntries: JSON.parse(JSON.stringify(crateEntries)),
+        feedDeliveries: JSON.parse(JSON.stringify(feedDeliveries)),
+        medInventoryLog: JSON.parse(JSON.stringify(medInventoryLog)),
+        incidents: JSON.parse(JSON.stringify(incidents)),
+        summary: {
+          totalMortality: shiftLogs.reduce(function(s,l){return s+l.mortality;},0),
+          totalFeedBags: shiftLogs.reduce(function(s,l){return s+l.feedsConsumed;},0),
+          finalHR: netPlacedBirds > 0 ? ((netPlacedBirds - shiftLogs.reduce(function(s,l){return s+l.mortality;},0)) / netPlacedBirds * 100).toFixed(2) : null,
+        }
+      };
+      setCycleHistory(function(p){ return [...p, snap]; });
+    }
+    const NS = ACTIVE_NS;
+    OPS_KEYS.forEach(function(k){ localStorage.removeItem(NS+k); });
+    setCycleConfig(null);
+    setShowEndCycle(false);
     window.location.reload();
   };
   const [showVentGuide, setShowVentGuide] = useState(false);
@@ -641,20 +698,39 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const [newCrate, setNewCrate] = useState({ grossWeight:"", numCrates:"3", notes:"" });
   const [placementTrucks, setPlacementTrucks] = useLocalStorage("placementTrucks", []);
   const [newTruck, setNewTruck] = useState({ arrivalTime:"", plate:"", qty:"", initWeight:"", doa:"", notes:"" });
-  // Auto-rollover: catches up currentDay to real elapsed time, never moves it backward
+  // Auto-rollover: every minute, catch up to real elapsed time
   useEffect(() => {
-    const t = setInterval(() => {
-      const autoDay = getCurrentDay(new Date(dayAnchor));
-      if (autoDay > dayOverride) {
-        setDayOverride(autoDay);
-        setCurrentDay(autoDay);
-      }
+    if (!cycleConfig) return;
+    const t = setInterval(function() {
+      const autoDay = getCurrentDay(cycleConfig.placementDate, cycleConfig.rolloverHour);
+      const effective = Math.max(cycleConfig.dayOverride || 0, autoDay);
+      if (effective > currentDay) setCurrentDay(effective);
     }, 60000);
-    return () => clearInterval(t);
-  }, [dayOverride, dayAnchor]);
+    return function(){ clearInterval(t); };
+  }, [cycleConfig, currentDay]);
+  // Migration: carry over old dayAnchor/dayOverride data into cycleConfig
+  useEffect(function() {
+    if (!cycleConfig && !migrationDone) {
+      const hasData = shiftLogs.length > 0 || tunnelLogs.length > 0;
+      const savedAnchor = localStorage.getItem(ACTIVE_NS + "dayAnchor");
+      if (hasData || savedAnchor) {
+        const placementDate = savedAnchor ? JSON.parse(savedAnchor).split("T")[0] : house.placement_date;
+        const existingOverride = parseInt(localStorage.getItem(ACTIVE_NS + "dayOverride") || "0") || 0;
+        setCycleConfig({
+          placementDate: placementDate || house.placement_date,
+          flockSize: house.flock_size,
+          rolloverHour: 0,
+          dayOverride: existingOverride,
+          cycleNumber: 1,
+          startedAt: savedAnchor ? JSON.parse(savedAnchor) : new Date().toISOString(),
+        });
+      }
+      setMigrationDone(true);
+    }
+  }, []);
   const nextDay = () => {
     const nd = currentDay + 1;
-    setDayOverride(nd);
+    setCycleConfig(function(p){ return p ? {...p, dayOverride: nd} : p; });
     setCurrentDay(nd);
     setLogDay(String(nd));
     setActiveBracket(getBroodBracket(nd));
@@ -894,36 +970,91 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:12 }}>
           <div style={{ textAlign:"right" }}>
-            <div style={{ textAlign:"right" }}>
-              <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:28, color:phase.color, lineHeight:1 }}>D{currentDay}</div>
-              <div style={{ fontSize:9, color:"#64748B", letterSpacing:1 }}>DAY ROLLS MIDNIGHT</div>
+            <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:28, color:cycleConfig?phase.color:"#CBD5E1", lineHeight:1 }}>D{currentDay}</div>
+            <div style={{ fontSize:9, color:"#64748B", letterSpacing:1 }}>
+              {cycleConfig ? ("ROLLS " + ["12AM","1AM","2AM","3AM","4AM","5AM","6AM","7AM","8AM","9AM","10AM","11AM","12PM","1PM","2PM","3PM","4PM","5PM","6PM","7PM","8PM","9PM","10PM","11PM"][(cycleConfig.rolloverHour||0)] + " PHT") : "NO ACTIVE CYCLE"}
+            </div>
+            {cycleConfig && (
               <div style={{ display:"flex", gap:6, justifyContent:"flex-end", marginTop:4 }}>
                 <button onClick={nextDay} style={{ background:"none", border:"1px solid "+phase.color+"40", color:phase.color, fontFamily:"'Inter',sans-serif", fontSize:8, padding:"3px 8px", cursor:"pointer", borderRadius:3 }}>NEXT DAY →</button>
               </div>
-            </div>
-          </div>
-          <div style={{ position:"relative" }}>
-            <button onClick={()=>setShowReset(v=>!v)} style={{
-              background:"none", border:"1px solid #CBD5E1", color:"#94A3B8", fontFamily:"'Inter',sans-serif", fontSize:9, padding:"4px 8px", cursor:"pointer", borderRadius:4, letterSpacing:.5,
-            }}>⚙</button>
-            {showReset && (
-              <div style={{ position:"absolute", right:0, top:32, background:"#FFFFFF", border:"1px solid #E91E6340", borderRadius:6, padding:12, zIndex:200, width:180 }}>
-                <div style={{ fontSize:10, color:"#64748B", marginBottom:8 }}>Reset all cycle data?</div>
-                <div style={{ fontSize:9, color:"#94A3B8", marginBottom:10 }}>This cannot be undone.</div>
-                <button onClick={clearAllData} style={{
-                  width:"100%", background:"#E91E6320", border:"1px solid #E91E6350", color:"#E91E63", fontFamily:"'Inter',sans-serif", fontSize:10, padding:"7px", cursor:"pointer", borderRadius:4, letterSpacing:.5,
-                }}>CLEAR ALL DATA</button>
-                <button onClick={()=>setShowReset(false)} style={{
-                  width:"100%", background:"none", border:"none", color:"#94A3B8", fontFamily:"'Inter',sans-serif", fontSize:10, padding:"7px", cursor:"pointer", marginTop:4,
-                }}>cancel</button>
-                {onLogout && <button onClick={onLogout} style={{
-                  width:"100%", background:"none", border:"1px solid #CBD5E1", color:"#64748B", fontFamily:"'Inter',sans-serif", fontSize:10, padding:"7px", cursor:"pointer", borderRadius:4, marginTop:8,
-                }}>LOG OUT</button>}
-              </div>
             )}
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+            <button onClick={()=>{setCycleDraft({placementDate:house.placement_date||"",flockSize:String(house.flock_size||""),rolloverHour:String(cycleConfig?cycleConfig.rolloverHour||0:0)});setShowStartCycle(true);setShowCycleMenu(false);}} style={{ background:"#2E7D52", border:"none", color:"#FFFFFF", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:9, padding:"5px 10px", cursor:"pointer", borderRadius:5, letterSpacing:.5 }}>
+              {cycleConfig ? "↺ NEW CYCLE" : "▶ START CYCLE"}
+            </button>
+            {cycleConfig && (
+              <button onClick={()=>setShowEndCycle(true)} style={{ background:"none", border:"1px solid #E91E6340", color:"#E91E6380", fontFamily:"'Inter',sans-serif", fontSize:9, padding:"5px 10px", cursor:"pointer", borderRadius:5, letterSpacing:.5 }}>■ END CYCLE</button>
+            )}
+            <div style={{ position:"relative" }}>
+              <button onClick={()=>setShowCycleMenu(v=>!v)} style={{ width:"100%", background:"none", border:"1px solid #CBD5E1", color:"#94A3B8", fontFamily:"'Inter',sans-serif", fontSize:9, padding:"4px 8px", cursor:"pointer", borderRadius:4 }}>⚙</button>
+              {showCycleMenu && (
+                <div style={{ position:"absolute", right:0, top:30, background:"#FFFFFF", border:"1px solid #E2E8F0", borderRadius:6, padding:10, zIndex:200, width:150, boxShadow:"0 4px 12px #00000018" }}>
+                  {onLogout && <button onClick={onLogout} style={{ width:"100%", background:"none", border:"none", color:"#64748B", fontFamily:"'Inter',sans-serif", fontSize:11, padding:"7px", cursor:"pointer", textAlign:"left", borderRadius:4 }}>LOG OUT</button>}
+                  <button onClick={()=>setShowCycleMenu(false)} style={{ width:"100%", background:"none", border:"none", color:"#94A3B8", fontFamily:"'Inter',sans-serif", fontSize:10, padding:"6px", cursor:"pointer", textAlign:"left" }}>close</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
+      {/* ── START CYCLE MODAL ── */}
+      {showStartCycle && (
+        <div style={{ position:"fixed", inset:0, background:"#00000040", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:20 }}>
+          <div style={{ background:"#FFFFFF", borderRadius:12, padding:28, maxWidth:380, width:"100%", boxShadow:"0 8px 32px #00000020" }}>
+            <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:800, fontSize:18, color:"#1E293B", marginBottom:4 }}>{cycleConfig ? "Start New Cycle" : "Start Cycle"}</div>
+            <div style={{ fontSize:12, color:"#64748B", marginBottom:20 }}>
+              {cycleConfig ? "This will end the current cycle and start fresh. Save to history first using End Cycle if needed." : "Set up this grow cycle."}
+            </div>
+            <label style={{ fontSize:11, color:"#64748B", fontWeight:600, marginBottom:5, display:"block" }}>PLACEMENT DATE (Day 0)</label>
+            <input type="date" value={cycleDraft.placementDate} onChange={function(e){setCycleDraft(function(p){return {...p,placementDate:e.target.value};});}} style={{ width:"100%", background:"#F5F7FA", border:"1px solid #CBD5E1", color:"#1E293B", fontFamily:"'Inter',sans-serif", fontSize:14, padding:"10px 12px", outline:"none", borderRadius:8, marginBottom:12 }} />
+            <label style={{ fontSize:11, color:"#64748B", fontWeight:600, marginBottom:5, display:"block" }}>ACTUAL FLOCK SIZE (heads placed)</label>
+            <input type="number" value={cycleDraft.flockSize} onChange={function(e){setCycleDraft(function(p){return {...p,flockSize:e.target.value};});}} placeholder="e.g. 36000" style={{ width:"100%", background:"#F5F7FA", border:"1px solid #CBD5E1", color:"#1E293B", fontFamily:"'Inter',sans-serif", fontSize:14, padding:"10px 12px", outline:"none", borderRadius:8, marginBottom:12 }} />
+            <label style={{ fontSize:11, color:"#64748B", fontWeight:600, marginBottom:5, display:"block" }}>DAY ROLLS OVER AT (PHT)</label>
+            <select value={cycleDraft.rolloverHour} onChange={function(e){setCycleDraft(function(p){return {...p,rolloverHour:e.target.value};});}} style={{ width:"100%", background:"#F5F7FA", border:"1px solid #CBD5E1", color:"#1E293B", fontFamily:"'Inter',sans-serif", fontSize:14, padding:"10px 12px", outline:"none", borderRadius:8, marginBottom:20 }}>
+              {["12:00 AM (midnight)","1:00 AM","2:00 AM","3:00 AM","4:00 AM","5:00 AM","6:00 AM","7:00 AM","8:00 AM","9:00 AM","10:00 AM","11:00 AM","12:00 PM (noon)","1:00 PM","2:00 PM","3:00 PM","4:00 PM","5:00 PM","6:00 PM","7:00 PM","8:00 PM","9:00 PM","10:00 PM","11:00 PM"].map(function(label, i){
+                return <option key={i} value={String(i)}>{label}</option>;
+              })}
+            </select>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={function(){startCycle(cycleDraft);}} style={{ flex:1, background:"#2E7D52", border:"none", color:"#FFFFFF", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:14, padding:"11px", cursor:"pointer", borderRadius:8 }}>START CYCLE</button>
+              <button onClick={function(){setShowStartCycle(false);}} style={{ flex:1, background:"none", border:"1px solid #CBD5E1", color:"#64748B", fontFamily:"'Inter',sans-serif", fontSize:13, padding:"11px", cursor:"pointer", borderRadius:8 }}>CANCEL</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── END CYCLE MODAL ── */}
+      {showEndCycle && (
+        <div style={{ position:"fixed", inset:0, background:"#00000040", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:20 }}>
+          <div style={{ background:"#FFFFFF", borderRadius:12, padding:28, maxWidth:380, width:"100%", boxShadow:"0 8px 32px #00000020" }}>
+            <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:800, fontSize:18, color:"#1E293B", marginBottom:4 }}>End Cycle</div>
+            <div style={{ fontSize:12, color:"#64748B", marginBottom:16 }}>Day {currentDay} · {house.building_name} · {cycleConfig && cycleConfig.placementDate}</div>
+            <div style={{ background:"#F5F7FA", border:"1px solid #E2E8F0", borderRadius:8, padding:14, marginBottom:16 }}>
+              <div style={{ fontSize:11, color:"#64748B", marginBottom:6 }}>CYCLE SUMMARY</div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                <div><div style={{ fontSize:9, color:"#94A3B8" }}>DAYS</div><div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, color:"#1E293B" }}>{currentDay}</div></div>
+                <div><div style={{ fontSize:9, color:"#94A3B8" }}>MORTALITY</div><div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, color:"#E91E63" }}>{shiftLogs.reduce(function(s,l){return s+l.mortality;},0)}</div></div>
+                <div><div style={{ fontSize:9, color:"#94A3B8" }}>TOTAL FEED</div><div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, color:"#2E7D52" }}>{shiftLogs.reduce(function(s,l){return s+l.feedsConsumed;},0)} bags</div></div>
+                <div><div style={{ fontSize:9, color:"#94A3B8" }}>DAILY LOGS</div><div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, color:"#1E293B" }}>{shiftLogs.length} entries</div></div>
+              </div>
+            </div>
+            <div onClick={function(){setSaveHistoryOnEnd(function(v){return !v;});}} style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20, cursor:"pointer" }}>
+              <div style={{ width:20, height:20, borderRadius:4, border:saveHistoryOnEnd?"2px solid #2E7D52":"2px solid #CBD5E1", background:saveHistoryOnEnd?"#2E7D52":"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                {saveHistoryOnEnd && <span style={{ fontSize:11, color:"#FFFFFF", fontWeight:700 }}>✓</span>}
+              </div>
+              <div>
+                <div style={{ fontSize:12, color:"#334155", fontWeight:600 }}>Save all data to cycle history</div>
+                <div style={{ fontSize:10, color:"#64748B" }}>All logs will be preserved before clearing</div>
+              </div>
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={endCycle} style={{ flex:1, background:"#E91E63", border:"none", color:"#FFFFFF", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:13, padding:"11px", cursor:"pointer", borderRadius:8 }}>END CYCLE</button>
+              <button onClick={function(){setShowEndCycle(false);}} style={{ flex:1, background:"none", border:"1px solid #CBD5E1", color:"#64748B", fontFamily:"'Inter',sans-serif", fontSize:13, padding:"11px", cursor:"pointer", borderRadius:8 }}>CANCEL</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* ── TAB BAR ── */}
       <div style={{ background:"#EDF0F4", borderBottom:"1px solid #E2E8F0", display:"flex", overflowX:"auto", flexShrink:0, scrollbarWidth:"none" }}>
         {TABS.map(t => (
@@ -1183,7 +1314,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
                     </tr>
                   </thead>
                   <tbody>
-                    <DailyLogRows logs={shiftLogs} currentDay={currentDay} getPhase={getPhase} dayAnchor={dayAnchor} FEED_FC={FEED_FC} netPlacedBirds={netPlacedBirds} setShiftLogs={setShiftLogs} setEditingLogId={setEditingLogId} setNewLog={setNewLog} setLogDay={setLogDay} editingLogId={editingLogId}/>
+                    <DailyLogRows logs={shiftLogs} currentDay={currentDay} getPhase={getPhase} placementDate={activePlacementDate} FEED_FC={FEED_FC} netPlacedBirds={netPlacedBirds} setShiftLogs={setShiftLogs} setEditingLogId={setEditingLogId} setNewLog={setNewLog} setLogDay={setLogDay} editingLogId={editingLogId}/>
                   </tbody>
                 </table>
               </div>
@@ -2174,13 +2305,11 @@ function AppShell() {
         if (res.error) setAuthError("Could not sync the update to the server — it's saved on this device and will retry when online.");
       });
     }
-    // If placement date changed, correct this house's day counter to match — without touching its logged data
-    if (original.placement_date !== editHouseDraft.placement_date) {
-      const ns = "beracah_house_" + editingHouseId + "_";
-      const newAnchor = editHouseDraft.placement_date + "T00:00:00+08:00";
-      const correctedDay = getCurrentDay(new Date(newAnchor));
-      localStorage.setItem(ns+"dayAnchor", JSON.stringify(newAnchor));
-      localStorage.setItem(ns+"dayOverride", JSON.stringify(correctedDay));
+    // If placement date changed, update cycleConfig to match — without touching logged data
+    if (original.placement_date !== editHouseDraft.placement_date && cycleConfig) {
+      const correctedDay = getCurrentDay(editHouseDraft.placement_date, cycleConfig.rolloverHour || 0);
+      setCycleConfig(function(p){ return p ? {...p, placementDate: editHouseDraft.placement_date, dayOverride: correctedDay} : p; });
+      setCurrentDay(correctedDay);
     }
     setEditingHouseId(null);
     setEditHouseDraft(null);

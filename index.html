@@ -12,51 +12,88 @@
   html, body, #root { height: 100%; }
   body { background: #F5F7FA; color: #1E293B; font-family: sans-serif; }
   #status { padding: 20px; font-size: 14px; color: #64748B; }
-  #debug { position: fixed; bottom: 0; left: 0; right: 0; background: #fee2e2; color: #b91c1c; padding: 16px; font-size: 12px; max-height: 50vh; overflow: auto; z-index: 99999; white-space: pre-wrap; border-top: 2px solid #dc2626; display: none; }
+  #debug { position: fixed; bottom: 0; left: 0; right: 0; background: #fee2e2; color: #b91c1c; padding: 16px; font-size: 11px; max-height: 60vh; overflow: auto; z-index: 99999; white-space: pre-wrap; border-top: 2px solid #dc2626; display: none; font-family: monospace; }
 </style>
 </head>
 <body>
-<div id="status">Loading scripts...</div>
+<div id="status">Loading...</div>
 <div id="root"></div>
 <div id="debug"></div>
+
 <script>
-function showDebug(msg) {
+function showError(msg) {
   var d = document.getElementById('debug');
   d.style.display = 'block';
   d.textContent += msg + '\n';
 }
 window.onerror = function(msg, url, line, col, err) {
-  showDebug('ERROR: ' + msg);
-  if (err && err.stack) showDebug(err.stack);
+  if (msg === 'Script error.') return true;
+  var detail = msg;
+  if (url) detail += '\n  at ' + url + ':' + line + ':' + col;
+  if (err && err.stack) detail += '\n' + err.stack;
+  showError('RUNTIME ERROR: ' + detail);
+  return true;
 };
+window.addEventListener('unhandledrejection', function(e) {
+  showError('UNHANDLED PROMISE: ' + (e.reason ? (e.reason.stack || e.reason.message || String(e.reason)) : 'unknown'));
+});
 </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.0/babel.min.js"></script>
+
+<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" onerror="showError('FAILED to load React')"></script>
+<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" onerror="showError('FAILED to load ReactDOM')"></script>
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js" onerror="showError('FAILED to load Supabase — auth will not work')"></script>
+<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.0/babel.min.js" onerror="showError('FAILED to load Babel')"></script>
+
 <script>
 window.addEventListener('load', function() {
   var s = document.getElementById('status');
   try {
-    if (typeof React === 'undefined') { showDebug('React not loaded \u2014 connect to internet and refresh'); s.textContent = 'React failed to load. Connect to internet and refresh.'; return; }
-    if (typeof Babel === 'undefined') { showDebug('Babel not loaded'); s.textContent = 'Babel failed to load. Connect to internet and refresh.'; return; }
-    if (typeof window.supabase === 'undefined') { showDebug('Supabase library not loaded \u2014 check internet connection'); }
-    s.textContent = 'Compiling app...';
-    var code = document.getElementById('app-code').textContent;
-    var transformed = Babel.transform(code, { presets: ['react'] }).code;
+    if (typeof React === 'undefined') { showError('React not available'); s.textContent = 'React failed to load. Check your internet connection and refresh.'; return; }
+    if (typeof ReactDOM === 'undefined') { showError('ReactDOM not available'); return; }
+    if (typeof Babel === 'undefined') { showError('Babel not available'); return; }
+
     s.textContent = 'Starting...';
-    var sc = document.createElement('script');
-    sc.textContent = transformed;
-    document.body.appendChild(sc);
-    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(AppShell));
-    s.style.display = 'none';
+    var code = document.getElementById('app-code').textContent;
+
+    var transformed;
+    try {
+      transformed = Babel.transform(code, { presets: ['react'], filename: 'app.jsx' }).code;
+    } catch(babelErr) {
+      showError('COMPILE ERROR: ' + babelErr.message + (babelErr.loc ? ' (line ' + babelErr.loc.line + ', col ' + babelErr.loc.column + ')' : ''));
+      s.textContent = 'Compile error. See details below.';
+      return;
+    }
+
+    try {
+      var sc = document.createElement('script');
+      sc.textContent = transformed;
+      document.body.appendChild(sc);
+    } catch(execErr) {
+      showError('EXEC ERROR: ' + execErr.message);
+      s.textContent = 'Execution error. See details below.';
+      return;
+    }
+
+    if (typeof AppShell === 'undefined') {
+      showError('AppShell not defined — possible parse error in app code');
+      s.textContent = 'App failed to initialize.';
+      return;
+    }
+
+    try {
+      ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(AppShell));
+      s.style.display = 'none';
+    } catch(renderErr) {
+      showError('RENDER ERROR: ' + renderErr.message + '\n' + renderErr.stack);
+      s.textContent = 'Render error. See details below.';
+    }
   } catch(e) {
-    showDebug('COMPILE ERROR: ' + e.message);
-    if (e.loc) showDebug('Line ' + e.loc.line + ', column ' + e.loc.column);
-    s.textContent = 'App failed to start. See error below.';
+    showError('UNEXPECTED: ' + e.message);
+    s.textContent = 'Unexpected error. See details below.';
   }
 });
 </script>
+
 <script id="app-code" type="text/plain">
 const { useState, useMemo, useEffect } = React;
 // ─── SUPABASE CONFIG ──────────────────────────────────────────────────────────

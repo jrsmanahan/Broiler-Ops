@@ -2073,6 +2073,8 @@ function AppShell() {
   const [showSetupForm, setShowSetupForm] = useState(false);
   const [setupDraft, setSetupDraft] = useState({ building_name:"", breed:"Ross 308", flock_size:"", placement_date:"", flockman_names:"", importLegacy:true });
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [editingHouseId, setEditingHouseId] = useState(null);
+  const [editHouseDraft, setEditHouseDraft] = useState(null);
 
   const hasLegacyData = localStorage.getItem("beracah_2026_04_22_h1_shiftLogs") !== null;
 
@@ -2151,6 +2153,38 @@ function AppShell() {
     });
   };
 
+  const saveHouseEdit = () => {
+    if (!editHouseDraft.building_name || !editHouseDraft.flock_size || !editHouseDraft.placement_date) return;
+    const original = houses.find(function(h){ return h.id===editingHouseId; });
+    const updatedHouse = {
+      ...original,
+      building_name: editHouseDraft.building_name,
+      breed: editHouseDraft.breed,
+      flock_size: parseInt(editHouseDraft.flock_size) || 0,
+      placement_date: editHouseDraft.placement_date,
+    };
+    const updated = houses.map(function(h){ return h.id===editingHouseId ? updatedHouse : h; });
+    setHouses(updated);
+    localStorage.setItem("beracah_houses_" + session.user.id, JSON.stringify(updated));
+    if (isOnline) {
+      getSupabaseClient().from("houses").update({
+        building_name: updatedHouse.building_name, breed: updatedHouse.breed,
+        flock_size: updatedHouse.flock_size, placement_date: updatedHouse.placement_date,
+      }).eq("id", editingHouseId).then(function(res) {
+        if (res.error) setAuthError("Could not sync the update to the server — it's saved on this device and will retry when online.");
+      });
+    }
+    // If placement date changed, correct this house's day counter to match — without touching its logged data
+    if (original.placement_date !== editHouseDraft.placement_date) {
+      const ns = "beracah_house_" + editingHouseId + "_";
+      const newAnchor = editHouseDraft.placement_date + "T00:00:00+08:00";
+      const correctedDay = getCurrentDay(new Date(newAnchor));
+      localStorage.setItem(ns+"dayAnchor", JSON.stringify(newAnchor));
+      localStorage.setItem(ns+"dayOverride", JSON.stringify(correctedDay));
+    }
+    setEditingHouseId(null);
+    setEditHouseDraft(null);
+  };
   const submitSetup = () => {
     if (!setupDraft.building_name || !setupDraft.flock_size || !setupDraft.placement_date) return;
     const newHouse = {
@@ -2276,10 +2310,31 @@ function AppShell() {
           </div>
           <div style={{display:"grid",gap:8,marginBottom:14}}>
             {houses.map(function(h) {
+              const editing = editingHouseId===h.id;
+              if (editing) return (
+                <div key={h.id} style={{background:"#5B86E512",border:"1px solid #5B86E540",borderRadius:8,padding:"14px"}}>
+                  <label style={LBL2}>HOUSE / BUILDING NAME</label>
+                  <input value={editHouseDraft.building_name} onChange={function(e){setEditHouseDraft(function(p){return {...p,building_name:e.target.value};});}} style={INP2} />
+                  <label style={LBL2}>BREED</label>
+                  <input value={editHouseDraft.breed} onChange={function(e){setEditHouseDraft(function(p){return {...p,breed:e.target.value};});}} style={INP2} />
+                  <label style={LBL2}>FLOCK SIZE (heads placed)</label>
+                  <input type="number" value={editHouseDraft.flock_size} onChange={function(e){setEditHouseDraft(function(p){return {...p,flock_size:e.target.value};});}} style={INP2} />
+                  <label style={LBL2}>PLACEMENT DATE (Day 0)</label>
+                  <input type="date" value={editHouseDraft.placement_date} onChange={function(e){setEditHouseDraft(function(p){return {...p,placement_date:e.target.value};});}} style={INP2} />
+                  <div style={{fontSize:10,color:"#64748B",marginBottom:12}}>Changing the placement date corrects this house's day counter automatically — your logged data is not affected.</div>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={saveHouseEdit} style={{...BTN2, width:"auto", flex:1}}>SAVE</button>
+                    <button onClick={function(){setEditingHouseId(null);setEditHouseDraft(null);}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"11px",cursor:"pointer",borderRadius:8,flex:1}}>CANCEL</button>
+                  </div>
+                </div>
+              );
               return (
-                <div key={h.id} onClick={function(){setActiveNamespace("beracah_house_"+h.id+"_");setSelectedHouseId(h.id);}} style={{background:"#F5F7FA",border:"1px solid #E2E8F0",borderRadius:8,padding:"12px 14px",cursor:"pointer"}}>
-                  <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:14,color:"#1E293B"}}>{h.building_name}</div>
-                  <div style={{fontSize:11,color:"#64748B",marginTop:2}}>{h.breed} · {h.flock_size.toLocaleString()} heads · placed {h.placement_date}</div>
+                <div key={h.id} style={{background:"#F5F7FA",border:"1px solid #E2E8F0",borderRadius:8,padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div onClick={function(){setActiveNamespace("beracah_house_"+h.id+"_");setSelectedHouseId(h.id);}} style={{cursor:"pointer",flex:1}}>
+                    <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:14,color:"#1E293B"}}>{h.building_name}</div>
+                    <div style={{fontSize:11,color:"#64748B",marginTop:2}}>{h.breed} · {h.flock_size.toLocaleString()} heads · placed {h.placement_date}</div>
+                  </div>
+                  <button onClick={function(e){e.stopPropagation();setEditingHouseId(h.id);setEditHouseDraft({building_name:h.building_name,breed:h.breed,flock_size:String(h.flock_size),placement_date:h.placement_date});}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,width:28,height:28,cursor:"pointer",borderRadius:6,padding:0,flexShrink:0,marginLeft:10}}>✎</button>
                 </div>
               );
             })}

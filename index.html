@@ -799,7 +799,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const btTarget       = FEED_FC.find(r => r.day === currentDay);
   const addLog = () => {
     if (!newLog.shift) return;
-    const parsed = { ...newLog, day:parseInt(logDay)||currentDay, mortality:parseInt(newLog.mortality)||0, feedsConsumed:parseInt(newLog.feedsConsumed)||0, feedBalance:parseInt(newLog.feedBalance)||0, waterStart:0, waterEnd:parseInt(newLog.waterEnd)||0, alw:newLog.alw?parseFloat(newLog.alw)/1000:null };
+    const parsed = { ...newLog, day: parseInt(logDay)>=0 ? parseInt(logDay) : currentDay, mortality:parseInt(newLog.mortality)||0, feedsConsumed:parseInt(newLog.feedsConsumed)||0, feedBalance:parseInt(newLog.feedBalance)||0, waterStart:0, waterEnd:parseInt(newLog.waterEnd)||0, alw:newLog.alw?parseFloat(newLog.alw)/1000:null };
     if (editingLogId) {
       setShiftLogs(p => p.map(x => x.id===editingLogId ? { ...parsed, id:editingLogId } : x));
       setEditingLogId(null);

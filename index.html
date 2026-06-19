@@ -135,6 +135,100 @@ function useLocalStorage(key, initialValue) {
   return [value, setPersistedValue];
 }
 // ─── CYCLE CONFIG is now built per-house inside SupervisorApp from the `house` prop ──
+// ─── MULTI-DEVICE LOG SYNC ────────────────────────────────────────────────────
+// Each array-type log (shiftLogs, tunnelLogs, etc.) is synced entry-by-entry to
+// Supabase's `sync_entries` table, keyed by (house_id, data_type, local_id).
+// This means two devices logging concurrently never overwrite each other —
+// each entry is its own row. Local writes are always instant; sync happens
+// in the background and merges rather than replaces.
+function pendingSyncKey(dataType) { return ACTIVE_NS + "pendingSync_" + dataType; }
+function readPendingSync(dataType) {
+  try {
+    const raw = localStorage.getItem(pendingSyncKey(dataType));
+    return raw ? JSON.parse(raw) : { upserts: [], deletes: [] };
+  } catch (e) { return { upserts: [], deletes: [] }; }
+}
+function writePendingSync(dataType, pending) {
+  localStorage.setItem(pendingSyncKey(dataType), JSON.stringify(pending));
+}
+function pushEntriesToSync(dataType, houseId, userId, entries) {
+  const sb = getSupabaseClient();
+  if (!sb || entries.length === 0) return Promise.resolve();
+  const rows = entries.map(function(e) {
+    return { house_id: houseId, user_id: userId, data_type: dataType, local_id: e.id, payload: e };
+  });
+  return sb.from("sync_entries").upsert(rows, { onConflict: "house_id,data_type,local_id" }).then(function(res) {
+    if (res.error) {
+      const pending = readPendingSync(dataType);
+      const existingIds = pending.upserts.map(function(e){ return e.id; });
+      entries.forEach(function(e) { if (existingIds.indexOf(e.id) === -1) pending.upserts.push(e); });
+      writePendingSync(dataType, pending);
+    }
+  });
+}
+function deleteEntriesFromSync(dataType, houseId, ids) {
+  const sb = getSupabaseClient();
+  if (!sb || ids.length === 0) return Promise.resolve();
+  return sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", dataType).in("local_id", ids).then(function(res) {
+    if (res.error) {
+      const pending = readPendingSync(dataType);
+      ids.forEach(function(id) { if (pending.deletes.indexOf(id) === -1) pending.deletes.push(id); });
+      writePendingSync(dataType, pending);
+    }
+  });
+}
+function flushPendingSync(dataType, houseId, userId) {
+  const pending = readPendingSync(dataType);
+  if (pending.upserts.length === 0 && pending.deletes.length === 0) return;
+  writePendingSync(dataType, { upserts: [], deletes: [] }); // clear optimistically, re-queue on failure
+  if (pending.upserts.length > 0) pushEntriesToSync(dataType, houseId, userId, pending.upserts);
+  if (pending.deletes.length > 0) deleteEntriesFromSync(dataType, houseId, pending.deletes);
+}
+// useSyncedLog: drop-in replacement for useLocalStorage for array-type logs.
+// On mount/online, does a two-way merge: local-only entries push up,
+// remote-only entries (e.g. from a teammate's device) pull down.
+// On every change, diffs against the previous value and syncs just the delta.
+function useSyncedLog(key, houseId, userId, isOnline) {
+  const [value, setValue] = useLocalStorage(key, []);
+  useEffect(function() {
+    if (!isOnline || !houseId) return;
+    const sb = getSupabaseClient();
+    if (!sb) return;
+    flushPendingSync(key, houseId, userId);
+    sb.from("sync_entries").select("local_id,payload").eq("house_id", houseId).eq("data_type", key)
+      .then(function(res) {
+        if (!res.data) return;
+        const remoteIds = {};
+        res.data.forEach(function(r){ remoteIds[r.local_id] = true; });
+        setValue(function(localArr) {
+          const localIds = {};
+          localArr.forEach(function(e){ localIds[e.id] = true; });
+          const toAdd = res.data.filter(function(r){ return !localIds[r.local_id]; }).map(function(r){ return r.payload; });
+          const merged = toAdd.length ? localArr.concat(toAdd) : localArr;
+          const toPush = localArr.filter(function(e){ return !remoteIds[e.id]; });
+          if (toPush.length > 0) pushEntriesToSync(key, houseId, userId, toPush);
+          return merged;
+        });
+      });
+  }, [isOnline, houseId]);
+  const setSyncedValue = function(updater) {
+    setValue(function(prev) {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      if (isOnline && houseId) {
+        const prevIds = {};
+        prev.forEach(function(e){ prevIds[e.id] = e; });
+        const nextIds = {};
+        next.forEach(function(e){ nextIds[e.id] = true; });
+        const toUpsert = next.filter(function(e){ return !prevIds[e.id] || JSON.stringify(prevIds[e.id]) !== JSON.stringify(e); });
+        const toDelete = prev.filter(function(e){ return !nextIds[e.id]; }).map(function(e){ return e.id; });
+        if (toUpsert.length > 0) pushEntriesToSync(key, houseId, userId, toUpsert);
+        if (toDelete.length > 0) deleteEntriesFromSync(key, houseId, toDelete);
+      }
+      return next;
+    });
+  };
+  return [value, setSyncedValue];
+}
 // ─── FEED PROJECTION — bags/day target (50kg bags, from Beracah feeds ordering tab)
 const FEED_FC = [
   {day:0,fc:0},{day:1,fc:10},{day:2,fc:12},{day:3,fc:14},{day:4,fc:18},
@@ -571,6 +665,9 @@ function DailyLogRows({ logs, currentDay, getPhase, placementDate, FEED_FC, netP
 }
 // ═════════════════════════════════════════════════════════════════════════════
 function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
+  const isOnline = syncStatus === "online";
+  const houseId = house.id;
+  const userId = house.user_id;
   const [cycleConfig, setCycleConfig] = useLocalStorage("cycleConfig", null);
   const CYCLE_CONFIG = {
     placementDate: cycleConfig ? new Date(cycleConfig.placementDate + "T00:00:00+08:00") : new Date(),
@@ -593,7 +690,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
     return 0;
   });
   // Daily records — two shifts per day
-  const [shiftLogs, setShiftLogs] = useLocalStorage("shiftLogs", []);
+  const [shiftLogs, setShiftLogs] = useSyncedLog("shiftLogs", houseId, userId, isOnline);
   const [newLog, setNewLog] = useState({ shift:"DAY", mortality:"", feedsConsumed:"", feedBalance:"", waterEnd:"", alw:"", notes:"" });
   const [logDay, setLogDay] = useState(String(currentDay));
   const [editingLogId, setEditingLogId] = useState(null);
@@ -604,13 +701,13 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const [newTaskText, setNewTaskText] = useState("");
   const [activeBracket, setActiveBracket] = useState(getBroodBracket(currentDay));
   // Tunnel logs
-  const [tunnelLogs, setTunnelLogs] = useLocalStorage("tunnelLogs", []);
+  const [tunnelLogs, setTunnelLogs] = useSyncedLog("tunnelLogs", houseId, userId, isOnline);
   const [newTunnel, setNewTunnel] = useState({ shift:"04:00", targetTemp:"", actualTemp:"", outsideTemp:"", sensor1:"", sensor2:"", actualVent:"", minVent:"", maxVent:"", humidity:"", heatersOn:"", padCurtain1:"", padCurtain2:"", padsOn:false, notes:"" });
   const [tunnelLogDay, setTunnelLogDay] = useState("");
   // Placement
   // Season for ventilation guide
   // Crop fill log
-  const [cropLogs, setCropLogs] = useLocalStorage("cropLogs", []);
+  const [cropLogs, setCropLogs] = useSyncedLog("cropLogs", houseId, userId, isOnline);
   const [newCrop, setNewCrop] = useState({ time:"", shift:"DAY", pen:"", filled:"", checked:"10", notes:"" });
   // Litter evaluation log
   const LITTER_ZONES = [
@@ -618,18 +715,18 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
     { id:"B", label:"Zone B", desc:"Top Right (facing fans)" },
     { id:"C", label:"Zone C", desc:"Bottom Left" },
     { id:"D", label:"Zone D", desc:"Bottom Right" }, ];
-  const [litterLogs, setLitterLogs] = useLocalStorage("litterLogs", []);
+  const [litterLogs, setLitterLogs] = useSyncedLog("litterLogs", houseId, userId, isOnline);
   const [newLitter, setNewLitter] = useState({ bracket:"", pen:"", scores:{}, flags:[], flagInput:"", notes:"" });
   const [litterScores, setLitterScores] = useLocalStorage("litterScores", {});
   const [litterFlags, setLitterFlags] = useLocalStorage("litterFlags", []);
   const [litterNotes, setLitterNotes] = useLocalStorage("litterNotes", "");
   // Drinker flushing log
   const DRINKER_LINES = ["Line 1","Line 2","Line 3","Line 4","Line 5"];
-  const [flushLogs, setFlushLogs] = useLocalStorage("flushLogs", []);
+  const [flushLogs, setFlushLogs] = useSyncedLog("flushLogs", houseId, userId, isOnline);
   const [newFlush, setNewFlush] = useState({ time:"", shift:"DAY", linesFlushed:[], flowRate:"good", issues:"", notes:"" });
   const [metricsOpen, setMetricsOpen] = useState(false);
   // Field Guide state
-  const [incidents, setIncidents]     = useLocalStorage("incidents", []);
+  const [incidents, setIncidents]     = useSyncedLog("incidents", houseId, userId, isOnline);
   const [newIncident, setNewIncident] = useState({ shift:"DAY", category:"health", description:"", action:"", resolved:false });
   const [incidentFilter, setIncidentFilter] = useState("all");
   const [fgSection, setFgSection]         = useState("incidents"); // "incidents" | "kb" | "meds" | "lighting"
@@ -657,9 +754,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const [migrationDone, setMigrationDone] = useLocalStorage("migrationDone", false);
   const [showCrate, setShowCrate] = useState(false);
   const [placementSection, setPlacementSection] = useState("placement");
-  const [feedDeliveries, setFeedDeliveries] = useLocalStorage("feedDeliveries", []);
+  const [feedDeliveries, setFeedDeliveries] = useSyncedLog("feedDeliveries", houseId, userId, isOnline);
   const [newDelivery, setNewDelivery] = useState({ type:"CBC", qty:"", notes:"" });
-  const [medInventoryLog, setMedInventoryLog] = useLocalStorage("medInventoryLog", []);
+  const [medInventoryLog, setMedInventoryLog] = useSyncedLog("medInventoryLog", houseId, userId, isOnline);
   const [newMedEntry, setNewMedEntry] = useState({ type:"delivery", medicine:"", qty:"", unit:"", notes:"" });
   const [checksSection, setChecksSection] = useState("cropfill");
   const OPS_KEYS = ["shiftLogs","taskChecks","tunnelLogs","cropLogs","litterLogs","flushLogs","crateEntries","placementTrucks","crateWeight","chicksPerCrate","activeBracket","litterScores","litterFlags","litterNotes","feedDeliveries","medInventoryLog","dayOverride_legacy","dayAnchor_legacy"];
@@ -719,9 +816,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   // Crate weighing for chick ALW
   const [crateWeight, setCrateWeight] = useLocalStorage("crateWeight", "1.8");   // kg per crate (tare)
   const [chicksPerCrate, setChicksPerCrate] = useLocalStorage("chicksPerCrate", "100");
-  const [crateEntries, setCrateEntries] = useLocalStorage("crateEntries", []);
+  const [crateEntries, setCrateEntries] = useSyncedLog("crateEntries", houseId, userId, isOnline);
   const [newCrate, setNewCrate] = useState({ grossWeight:"", numCrates:"3", notes:"" });
-  const [placementTrucks, setPlacementTrucks] = useLocalStorage("placementTrucks", []);
+  const [placementTrucks, setPlacementTrucks] = useSyncedLog("placementTrucks", houseId, userId, isOnline);
   const [newTruck, setNewTruck] = useState({ arrivalTime:"", plate:"", qty:"", initWeight:"", doa:"", notes:"" });
   // Auto-rollover: every minute, catch up to real elapsed time
   useEffect(() => {

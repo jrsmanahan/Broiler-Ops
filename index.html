@@ -571,6 +571,7 @@ function DailyLogRows({ logs, currentDay, getPhase, placementDate, FEED_FC, netP
 }
 // ═════════════════════════════════════════════════════════════════════════════
 function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
+  const [cycleConfig, setCycleConfig] = useLocalStorage("cycleConfig", null);
   const CYCLE_CONFIG = {
     placementDate: cycleConfig ? new Date(cycleConfig.placementDate + "T00:00:00+08:00") : new Date(),
     flockSize: cycleConfig ? cycleConfig.flockSize : (house.flock_size || 0),
@@ -642,7 +643,6 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const [feedingGuide, setFeedingGuide] = useLocalStorage("feedingGuide", FEEDING_GUIDE_DEFAULT);
   const [editingFeedIdx, setEditingFeedIdx] = useState(null);
   const [feedDraft, setFeedDraft] = useState(null);
-  const [cycleConfig, setCycleConfig] = useLocalStorage("cycleConfig", null);
   const [cycleHistory, setCycleHistory] = useLocalStorage("cycleHistory", []);
   const [showCycleMenu, setShowCycleMenu] = useState(false);
   const [showStartCycle, setShowStartCycle] = useState(false);

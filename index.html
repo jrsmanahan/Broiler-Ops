@@ -19,7 +19,6 @@
 <div id="status">Loading...</div>
 <div id="root"></div>
 <div id="debug"></div>
-
 <script>
 function showError(msg) {
   var d = document.getElementById('debug');
@@ -38,48 +37,38 @@ window.addEventListener('unhandledrejection', function(e) {
   showError('UNHANDLED PROMISE: ' + (e.reason ? (e.reason.stack || e.reason.message || String(e.reason)) : 'unknown'));
 });
 </script>
-
 <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" onerror="showError('FAILED to load React')"></script>
 <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" onerror="showError('FAILED to load ReactDOM')"></script>
-<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js" onerror="showError('FAILED to load Supabase — auth will not work')"></script>
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js" onerror="showError('FAILED to load Supabase')"></script>
 <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.0/babel.min.js" onerror="showError('FAILED to load Babel')"></script>
-
 <script>
 window.addEventListener('load', function() {
   var s = document.getElementById('status');
   try {
-    if (typeof React === 'undefined') { showError('React not available'); s.textContent = 'React failed to load. Check your internet connection and refresh.'; return; }
+    if (typeof React === 'undefined') { showError('React not available'); s.textContent = 'React failed to load. Check internet and refresh.'; return; }
     if (typeof ReactDOM === 'undefined') { showError('ReactDOM not available'); return; }
     if (typeof Babel === 'undefined') { showError('Babel not available'); return; }
-
     s.textContent = 'Starting...';
     var code = document.getElementById('app-code').textContent;
-
     var transformed;
     try {
       transformed = Babel.transform(code, { presets: ['react'], filename: 'app.jsx' }).code;
     } catch(babelErr) {
       showError('COMPILE ERROR: ' + babelErr.message + (babelErr.loc ? ' (line ' + babelErr.loc.line + ', col ' + babelErr.loc.column + ')' : ''));
-      s.textContent = 'Compile error. See details below.';
-      return;
+      s.textContent = 'Compile error. See details below.'; return;
     }
-
     try {
       var sc = document.createElement('script');
       sc.textContent = transformed;
       document.body.appendChild(sc);
     } catch(execErr) {
       showError('EXEC ERROR: ' + execErr.message);
-      s.textContent = 'Execution error. See details below.';
-      return;
+      s.textContent = 'Execution error. See details below.'; return;
     }
-
     if (typeof AppShell === 'undefined') {
-      showError('AppShell not defined — possible parse error in app code');
-      s.textContent = 'App failed to initialize.';
-      return;
+      showError('AppShell not defined after execution');
+      s.textContent = 'App failed to initialize.'; return;
     }
-
     try {
       ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(AppShell));
       s.style.display = 'none';
@@ -93,7 +82,6 @@ window.addEventListener('load', function() {
   }
 });
 </script>
-
 <script id="app-code" type="text/plain">
 const { useState, useMemo, useEffect } = React;
 // ─── SUPABASE CONFIG ──────────────────────────────────────────────────────────
@@ -969,6 +957,32 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const INP = { background:"#F5F7FA", border:"1px solid #E2E8F0", color:"#1E293B", fontFamily:"'Inter',sans-serif", fontSize:13, padding:"9px 12px", outline:"none", borderRadius:6, width:"100%" };
   const SEL = { ...INP };
   const LBL = { fontSize:10, color:"#64748B", letterSpacing:1.2, marginBottom:5, display:"block", fontWeight:600 };
+
+  // ── No active cycle → show Start Cycle screen ──
+  if (!cycleConfig && migrationDone) {
+    return (
+      <div style={{ fontFamily:"'Inter',sans-serif", minHeight:"100vh", background:"#F5F7FA", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+        <div style={{ background:"#FFFFFF", border:"1px solid #E2E8F0", borderRadius:12, padding:28, maxWidth:400, width:"100%" }}>
+          <img src={TVE_LOGO} alt="Tunnel Vent Experts" style={{height:36,marginBottom:14,display:"block"}} />
+          <div style={{ fontWeight:800, fontSize:18, color:"#1E293B", marginBottom:4 }}>{house.building_name}</div>
+          <div style={{ fontSize:12, color:"#64748B", marginBottom:20 }}>No active cycle. Set up this grow to get started.</div>
+          <label style={{ fontSize:11, color:"#64748B", fontWeight:600, marginBottom:5, display:"block" }}>PLACEMENT DATE (Day 0)</label>
+          <input type="date" value={cycleDraft.placementDate} onChange={function(e){setCycleDraft(function(p){return {...p,placementDate:e.target.value};});}} style={{ width:"100%", background:"#F5F7FA", border:"1px solid #CBD5E1", color:"#1E293B", fontFamily:"'Inter',sans-serif", fontSize:14, padding:"10px 12px", outline:"none", borderRadius:8, marginBottom:12 }} />
+          <label style={{ fontSize:11, color:"#64748B", fontWeight:600, marginBottom:5, display:"block" }}>ACTUAL FLOCK SIZE (heads)</label>
+          <input type="number" value={cycleDraft.flockSize} onChange={function(e){setCycleDraft(function(p){return {...p,flockSize:e.target.value};});}} placeholder="e.g. 36000" style={{ width:"100%", background:"#F5F7FA", border:"1px solid #CBD5E1", color:"#1E293B", fontFamily:"'Inter',sans-serif", fontSize:14, padding:"10px 12px", outline:"none", borderRadius:8, marginBottom:12 }} />
+          <label style={{ fontSize:11, color:"#64748B", fontWeight:600, marginBottom:5, display:"block" }}>DAY ROLLS OVER AT (PHT)</label>
+          <select value={cycleDraft.rolloverHour} onChange={function(e){setCycleDraft(function(p){return {...p,rolloverHour:e.target.value};});}} style={{ width:"100%", background:"#F5F7FA", border:"1px solid #CBD5E1", color:"#1E293B", fontFamily:"'Inter',sans-serif", fontSize:14, padding:"10px 12px", outline:"none", borderRadius:8, marginBottom:20 }}>
+            {["12:00 AM (midnight)","1:00 AM","2:00 AM","3:00 AM","4:00 AM","5:00 AM","6:00 AM","7:00 AM","8:00 AM","9:00 AM","10:00 AM","11:00 AM","12:00 PM (noon)","1:00 PM","2:00 PM","3:00 PM","4:00 PM","5:00 PM","6:00 PM","7:00 PM","8:00 PM","9:00 PM","10:00 PM","11:00 PM"].map(function(label,i){
+              return <option key={i} value={String(i)}>{label}</option>;
+            })}
+          </select>
+          <button onClick={function(){startCycle(cycleDraft);}} style={{ width:"100%", background:"#2E7D52", border:"none", color:"#FFFFFF", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:14, padding:"12px", cursor:"pointer", borderRadius:8 }}>▶ START CYCLE</button>
+          <button onClick={onSwitchHouse} style={{ width:"100%", background:"none", border:"none", color:"#94A3B8", fontFamily:"'Inter',sans-serif", fontSize:12, padding:"10px", cursor:"pointer", marginTop:6 }}>← Back to house selection</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ fontFamily:"'Inter',sans-serif", background:"#F5F7FA", minHeight:"100vh", color:"#1E293B", display:"flex", flexDirection:"column", maxWidth:1024, margin:"0 auto" }}>
       <style>{`
@@ -2231,6 +2245,23 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
 // ═════════════════════════════════════════════════════════════════════════════
 // ─── APP SHELL — auth, house picker/setup, offline-first sync ────────────────
 // ═════════════════════════════════════════════════════════════════════════════
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(err) { return { error: err }; }
+  componentDidCatch(err, info) { console.error("App crashed:", err, info); }
+  render() {
+    if (this.state.error) {
+      return React.createElement('div', { style: { padding: 24, fontFamily: "'Inter',sans-serif" } },
+        React.createElement('div', { style: { fontWeight: 700, fontSize: 16, color: '#E91E63', marginBottom: 8 } }, 'Something went wrong'),
+        React.createElement('div', { style: { fontSize: 12, color: '#64748B', marginBottom: 12 } }, this.state.error.message),
+        React.createElement('pre', { style: { fontSize: 10, color: '#94A3B8', whiteSpace: 'pre-wrap', background: '#F5F7FA', padding: 12, borderRadius: 6 } }, this.state.error.stack),
+        React.createElement('button', { onClick: () => window.location.reload(), style: { marginTop: 16, background: '#2E7D52', border: 'none', color: '#fff', padding: '10px 20px', borderRadius: 6, cursor: 'pointer', fontFamily: "'Inter',sans-serif", fontWeight: 600 } }, 'Reload App')
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function AppShell() {
   const [session, setSession] = useState(undefined); // undefined=loading, null=logged out, object=logged in
   const [email, setEmail] = useState("");
@@ -2515,7 +2546,7 @@ function AppShell() {
   const house = houses.find(function(h){return h.id===selectedHouseId;});
   if (!house) return <div style={PAGE}><div style={{color:"#64748B"}}>House not found.</div></div>;
   setActiveNamespace("beracah_house_" + house.id + "_");
-  return <SupervisorApp house={house} onSwitchHouse={function(){setSelectedHouseId(null);}} onLogout={handleLogout} syncStatus={isOnline?"online":"offline"} />;
+  return <ErrorBoundary><SupervisorApp house={house} onSwitchHouse={function(){setSelectedHouseId(null);}} onLogout={handleLogout} syncStatus={isOnline?"online":"offline"} /></ErrorBoundary>;
 }
 
 </script>

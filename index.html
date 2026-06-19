@@ -2266,6 +2266,8 @@ function AppShell() {
   const [session, setSession] = useState(undefined); // undefined=loading, null=logged out, object=logged in
   const [email, setEmail] = useState("");
   const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [houses, setHouses] = useState(null); // null=loading
   const [selectedHouseId, setSelectedHouseId] = useState(null);
@@ -2341,6 +2343,18 @@ function AppShell() {
     sb.auth.signInWithOtp({ email: email }).then(function(res) {
       if (res.error) setAuthError(res.error.message);
       else setMagicLinkSent(true);
+    });
+  };
+  const verifyOtpCode = () => {
+    setAuthError(null);
+    if (!otpCode || otpCode.length < 6) { setAuthError("Enter the 6-digit code from the email."); return; }
+    const sb = getSupabaseClient();
+    if (!sb) { setAuthError("Supabase failed to load — check your internet connection and refresh."); return; }
+    setVerifyingOtp(true);
+    sb.auth.verifyOtp({ email: email, token: otpCode.trim(), type: "email" }).then(function(res) {
+      setVerifyingOtp(false);
+      if (res.error) setAuthError(res.error.message);
+      // on success, onAuthStateChange picks up the new session automatically
     });
   };
 
@@ -2443,8 +2457,18 @@ function AppShell() {
           <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:20,color:"#1E293B",marginBottom:4}}>BroilerOps</div>
           <div style={{fontSize:12,color:"#64748B",marginBottom:20}}>made by Tunnel Vent Experts</div>
           {magicLinkSent ? (
-            <div style={{fontSize:13,color:"#2E7D52",background:"#2E7D5212",padding:14,borderRadius:8}}>
-              Check your email — we sent a sign-in link to {email}.
+            <div>
+              <div style={{fontSize:13,color:"#2E7D52",background:"#2E7D5212",padding:14,borderRadius:8,marginBottom:16}}>
+                Check your email — we sent a sign-in link to {email}.
+              </div>
+              <div style={{fontSize:12,color:"#64748B",marginBottom:10}}>
+                Signing in on a different device than your email? Enter the 6-digit code from the same email instead of clicking the link.
+              </div>
+              <label style={LBL2}>6-DIGIT CODE</label>
+              <input value={otpCode} onChange={function(e){setOtpCode(e.target.value.replace(/\D/g,"").slice(0,6));}} placeholder="123456" maxLength={6} style={{...INP2, fontSize:18, letterSpacing:4, textAlign:"center"}} />
+              {authError && <div style={{fontSize:11,color:"#E91E63",marginBottom:10}}>{authError}</div>}
+              <button onClick={verifyOtpCode} disabled={verifyingOtp} style={BTN2}>{verifyingOtp ? "VERIFYING..." : "VERIFY CODE"}</button>
+              <button onClick={function(){setMagicLinkSent(false);setOtpCode("");setAuthError(null);}} style={{width:"100%",background:"none",border:"none",color:"#94A3B8",fontFamily:"'Inter',sans-serif",fontSize:12,padding:10,cursor:"pointer",marginTop:4}}>← use a different email</button>
             </div>
           ) : (
             <div>

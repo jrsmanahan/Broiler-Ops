@@ -184,10 +184,29 @@ function flushPendingSync(dataType, houseId, userId) {
   if (pending.upserts.length > 0) pushEntriesToSync(dataType, houseId, userId, pending.upserts);
   if (pending.deletes.length > 0) deleteEntriesFromSync(dataType, houseId, pending.deletes);
 }
+function getTombstones(dataType) {
+  try {
+    return JSON.parse(localStorage.getItem(ACTIVE_NS + "tomb_" + dataType) || "[]");
+  } catch(e) { return []; }
+}
+function addTombstones(dataType, ids) {
+  var existing = getTombstones(dataType);
+  var existingIds = {};
+  existing.forEach(function(t){ existingIds[t.id] = true; });
+  var now = Date.now();
+  var cutoff = now - 30 * 24 * 60 * 60 * 1000; // prune after 30 days
+  var pruned = existing.filter(function(t){ return t.deletedAt > cutoff; });
+  ids.forEach(function(id){ if (!existingIds[id]) pruned.push({ id: id, deletedAt: now }); });
+  localStorage.setItem(ACTIVE_NS + "tomb_" + dataType, JSON.stringify(pruned));
+}
+function clearTombstones(dataType) {
+  localStorage.removeItem(ACTIVE_NS + "tomb_" + dataType);
+}
+
 // useSyncedLog: drop-in replacement for useLocalStorage for array-type logs.
 // On mount/online, does a two-way merge: local-only entries push up,
-// remote-only entries (e.g. from a teammate's device) pull down.
-// On every change, diffs against the previous value and syncs just the delta.
+// remote-only entries pull down. Tombstoned IDs (intentionally deleted)
+// are never pulled back from remote, even if the delete failed earlier.
 function useSyncedLog(key, houseId, userId, isOnline) {
   const [value, setValue] = useLocalStorage(key, []);
   useEffect(function() {
@@ -198,14 +217,22 @@ function useSyncedLog(key, houseId, userId, isOnline) {
     sb.from("sync_entries").select("local_id,payload").eq("house_id", houseId).eq("data_type", key)
       .then(function(res) {
         if (!res.data) return;
-        const remoteIds = {};
+        var tombArr = getTombstones(key);
+        var tombIds = {};
+        tombArr.forEach(function(t){ tombIds[t.id] = true; });
+        var remoteIds = {};
         res.data.forEach(function(r){ remoteIds[r.local_id] = true; });
+        // If any tombstoned entries are still in remote, retry the delete
+        var staleRemote = tombArr.map(function(t){return t.id;}).filter(function(id){return remoteIds[id];});
+        if (staleRemote.length > 0) deleteEntriesFromSync(key, houseId, staleRemote);
         setValue(function(localArr) {
-          const localIds = {};
+          var localIds = {};
           localArr.forEach(function(e){ localIds[e.id] = true; });
-          const toAdd = res.data.filter(function(r){ return !localIds[r.local_id]; }).map(function(r){ return r.payload; });
-          const merged = toAdd.length ? localArr.concat(toAdd) : localArr;
-          const toPush = localArr.filter(function(e){ return !remoteIds[e.id]; });
+          // Only pull entries that are not tombstoned and not already local
+          var toAdd = res.data.filter(function(r){ return !localIds[r.local_id] && !tombIds[r.local_id]; }).map(function(r){ return r.payload; });
+          var merged = toAdd.length ? localArr.concat(toAdd) : localArr;
+          // Push local entries not in remote and not tombstoned
+          var toPush = localArr.filter(function(e){ return !remoteIds[e.id] && !tombIds[e.id]; });
           if (toPush.length > 0) pushEntriesToSync(key, houseId, userId, toPush);
           return merged;
         });
@@ -214,15 +241,25 @@ function useSyncedLog(key, houseId, userId, isOnline) {
   const setSyncedValue = function(updater) {
     setValue(function(prev) {
       const next = typeof updater === "function" ? updater(prev) : updater;
+      const prevIds = {};
+      prev.forEach(function(e){ prevIds[e.id] = e; });
+      const nextIds = {};
+      next.forEach(function(e){ nextIds[e.id] = true; });
+      const toDelete = prev.filter(function(e){ return !nextIds[e.id]; }).map(function(e){ return e.id; });
+      // Always record tombstones immediately — even if offline — so they never come back on sync
+      if (toDelete.length > 0) {
+        addTombstones(key, toDelete);
+        if (isOnline && houseId) deleteEntriesFromSync(key, houseId, toDelete);
+        else {
+          // Queue the delete for when we come back online
+          var pending = readPendingSync(key);
+          toDelete.forEach(function(id){ if (pending.deletes.indexOf(id) === -1) pending.deletes.push(id); });
+          writePendingSync(key, pending);
+        }
+      }
       if (isOnline && houseId) {
-        const prevIds = {};
-        prev.forEach(function(e){ prevIds[e.id] = e; });
-        const nextIds = {};
-        next.forEach(function(e){ nextIds[e.id] = true; });
         const toUpsert = next.filter(function(e){ return !prevIds[e.id] || JSON.stringify(prevIds[e.id]) !== JSON.stringify(e); });
-        const toDelete = prev.filter(function(e){ return !nextIds[e.id]; }).map(function(e){ return e.id; });
         if (toUpsert.length > 0) pushEntriesToSync(key, houseId, userId, toUpsert);
-        if (toDelete.length > 0) deleteEntriesFromSync(key, houseId, toDelete);
       }
       return next;
     });
@@ -831,6 +868,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const startCycle = (draft) => {
     const NS = ACTIVE_NS;
     OPS_KEYS.forEach(function(k){ localStorage.removeItem(NS+k); });
+    // Clear tombstones for all synced log types — fresh cycle starts clean
+    ["shiftLogs","tunnelLogs","cropLogs","litterLogs","flushLogs","incidents","feedDeliveries","medInventoryLog","crateEntries","placementTrucks","harvestTrucks"].forEach(function(k){ clearTombstones(k); });
     const newConfig = {
       placementDate: draft.placementDate,
       flockSize: parseInt(draft.flockSize) || house.flock_size,
@@ -878,6 +917,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
     }
     const NS = ACTIVE_NS;
     OPS_KEYS.forEach(function(k){ localStorage.removeItem(NS+k); });
+    ["shiftLogs","tunnelLogs","cropLogs","litterLogs","flushLogs","incidents","feedDeliveries","medInventoryLog","crateEntries","placementTrucks","harvestTrucks"].forEach(function(k){ clearTombstones(k); });
     setCycleConfig(null);
     setShowEndCycle(false);
     window.location.reload();
@@ -977,20 +1017,32 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const projectedALW = (() => {
     if (alwHistory.length < 1) return null;
     if (todayAlw) return null;
+    // Helper: canonical cumulative mortality up to a day (first AM + first PM per day, same as daily log table)
+    const canonicalCumMort = function(upToDay) {
+      var daySet = {};
+      var mort = 0;
+      shiftLogs.filter(function(l){return l.day <= upToDay;}).forEach(function(l){
+        if (!daySet[l.day]) daySet[l.day] = {};
+        if (!daySet[l.day][l.shift]) { daySet[l.day][l.shift] = l; mort += l.mortality||0; }
+      });
+      return mort;
+    };
+    // Helper: canonical cumulative feed consumed up to a day
+    const canonicalCumFeed = function(upToDay) {
+      var daySet = {};
+      var feed = 0;
+      shiftLogs.filter(function(l){return l.day <= upToDay;}).forEach(function(l){
+        if (!daySet[l.day]) daySet[l.day] = {};
+        if (!daySet[l.day][l.shift]) { daySet[l.day][l.shift] = l; feed += l.feedsConsumed||0; }
+      });
+      return feed * 50;
+    };
     // Build FCR data points at each weigh day
     const fcrPoints = alwHistory.map(weighEntry => {
       const day = weighEntry.day;
-      // Cumulative feed consumed up to this day (kg) — bags × 50kg/bag
-      const cumFeedKg = shiftLogs
-        .filter(l => l.day <= day)
-        .reduce((s,l) => s + l.feedsConsumed, 0) * 50;
-      // Cumulative mortality up to this day
-      const cumMortToDay = shiftLogs
-        .filter(l => l.day <= day)
-        .reduce((s,l) => s + l.mortality, 0);
-      // Remaining population
+      const cumFeedKg = canonicalCumFeed(day);
+      const cumMortToDay = canonicalCumMort(day);
       const remainingPop = netPlacedBirds - cumMortToDay;
-      // FCR = cumulative feed kg ÷ (remaining pop × ALW kg)
       const fcr = remainingPop > 0 && weighEntry.alw > 0
         ? cumFeedKg / (remainingPop * weighEntry.alw)
         : null;
@@ -1000,10 +1052,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
     // Project today's FCR via linear regression (FCR vs day)
     let projectedFCR;
     if (fcrPoints.length === 1) {
-      // Single point — use it directly, no regression
       projectedFCR = fcrPoints[0].fcr;
     } else {
-      // Linear regression: FCR = a + b × day
       const n     = fcrPoints.length;
       const sumX  = fcrPoints.reduce((s,p) => s + p.day, 0);
       const sumY  = fcrPoints.reduce((s,p) => s + p.fcr, 0);
@@ -1016,24 +1066,17 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
       projectedFCR = a + b * currentDay;
     }
     if (!projectedFCR || projectedFCR <= 0) return null;
-    // Today's cumulative feed consumed (kg)
-    const todayCumFeedKg = shiftLogs
-      .filter(l => l.day <= currentDay)
-      .reduce((s,l) => s + l.feedsConsumed, 0) * 50;
-    // Today's remaining population
-    const todayCumMort = shiftLogs
-      .filter(l => l.day <= currentDay)
-      .reduce((s,l) => s + l.mortality, 0);
+    const todayCumFeedKg = canonicalCumFeed(currentDay);
+    const todayCumMort = canonicalCumMort(currentDay);
     const todayRemainingPop = netPlacedBirds - todayCumMort;
     if (todayRemainingPop <= 0 || todayCumFeedKg <= 0) return null;
-    // Back-calculate projected ALW
-    // ALW (kg) = cumul feed kg ÷ (remaining pop × projected FCR)
     const projALWkg = todayCumFeedKg / (todayRemainingPop * projectedFCR);
     const projALWg  = Math.round(projALWkg * 1000);
     const lastWeigh = alwHistory[alwHistory.length - 1];
     return {
-      value:        projALWg, projectedFCR: projectedFCR.toFixed(3), fcrPoints:    fcrPoints.map(p => ({ day: p.day, fcr: p.fcr.toFixed(3) })), lastDay:      lastWeigh.day, lastActualG:  Math.round(lastWeigh.alw * 1000),
-      weighPoints:  fcrPoints.length, todayCumFeedKg, todayRemainingPop,
+      value: projALWg, projectedFCR: projectedFCR.toFixed(3), fcrPoints: fcrPoints.map(p => ({ day: p.day, fcr: p.fcr.toFixed(3) })),
+      lastDay: lastWeigh.day, lastActualG: Math.round(lastWeigh.alw * 1000),
+      weighPoints: fcrPoints.length, todayCumFeedKg, todayRemainingPop,
     };
   })();
   // Running performance metrics
@@ -2704,7 +2747,13 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
               var sameMonthLastYear = lastYearCycle.length > 0 ? lastYearCycle[lastYearCycle.length-1] : null;
 
               // Current cycle summary from live data
-              var curMortality = shiftLogs.reduce(function(s,l){return s+(l.mortality||0);},0);
+              // Canonical mortality — first AM + first PM per day (matches Daily Log table)
+              var curDaySet = {};
+              var curMortality = 0;
+              shiftLogs.forEach(function(l){
+                if (!curDaySet[l.day]) curDaySet[l.day] = {};
+                if (!curDaySet[l.day][l.shift]) { curDaySet[l.day][l.shift] = l; curMortality += l.mortality||0; }
+              });
               var curFeedBags = shiftLogs.reduce(function(s,l){return s+(l.feedsConsumed||0);},0);
               var curFeedKg = curFeedBags * 50;
               var curSurvivors = netPlacedBirds - curMortality;

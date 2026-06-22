@@ -464,15 +464,15 @@ function computeCycleSummary(cycle) {
   };
 }
 const TABS = [
-  { id:"today",      label:"TODAY",         icon:"◉" },
-  { id:"checks",     label:"SHIFT CHECKS",  icon:"◎" },
-  { id:"tunnel",     label:"VENTILATION",   icon:"≈" },
-  { id:"tasks",      label:"TASKS",         icon:"✓" },
-  { id:"records",    label:"DAILY LOG",     icon:"≡" },
-  { id:"placement",  label:"DELIVERIES",    icon:"🐥" },
-  { id:"fieldguide", label:"FIELD GUIDE",   icon:"◈" },
-  { id:"history",    label:"HISTORY",       icon:"⌛" },
-  { id:"harvest",    label:"HARVEST",       icon:"🚚" },
+  { id:"today",      label:"TODAY"        },
+  { id:"checks",     label:"SHIFT CHECKS" },
+  { id:"tunnel",     label:"VENTILATION"  },
+  { id:"tasks",      label:"TASKS"        },
+  { id:"records",    label:"DAILY LOG"    },
+  { id:"placement",  label:"DELIVERIES"   },
+  { id:"fieldguide", label:"FIELD GUIDE"  },
+  { id:"harvest",    label:"HARVEST"      },
+  { id:"history",    label:"HISTORY"      },
 ];
 // ─── FEEDING GUIDE ────────────────────────────────────────────────────────────
 const FEEDING_GUIDE_DEFAULT = [
@@ -797,10 +797,11 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const [newDelivery, setNewDelivery] = useState({ type:"CBC", qty:"", notes:"" });
   const [harvestTrucks, setHarvestTrucks] = useSyncedLog("harvestTrucks", houseId, userId, isOnline);
   const [newHarvest, setNewHarvest] = useState({ plate:"", heads:"", kg:"", day:String(currentDay), notes:"" });
+  const [surplusFeedBags, setSurplusFeedBags] = useLocalStorage("surplusFeedBags", 0);
   const [medInventoryLog, setMedInventoryLog] = useSyncedLog("medInventoryLog", houseId, userId, isOnline);
   const [newMedEntry, setNewMedEntry] = useState({ type:"delivery", medicine:"", qty:"", unit:"", notes:"" });
   const [checksSection, setChecksSection] = useState("cropfill");
-  const OPS_KEYS = ["shiftLogs","taskChecks","tunnelLogs","cropLogs","litterLogs","flushLogs","crateEntries","placementTrucks","crateWeight","chicksPerCrate","activeBracket","litterScores","litterFlags","litterNotes","feedDeliveries","medInventoryLog","harvestTrucks","dayOverride_legacy","dayAnchor_legacy"];
+  const OPS_KEYS = ["shiftLogs","taskChecks","tunnelLogs","cropLogs","litterLogs","flushLogs","crateEntries","placementTrucks","crateWeight","chicksPerCrate","activeBracket","litterScores","litterFlags","litterNotes","feedDeliveries","medInventoryLog","harvestTrucks","surplusFeedBags","dayOverride_legacy","dayAnchor_legacy"];
   const startCycle = (draft) => {
     const NS = ACTIVE_NS;
     OPS_KEYS.forEach(function(k){ localStorage.removeItem(NS+k); });
@@ -1280,7 +1281,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
             background: activeTab===t.id ? "#2E7D52" : "none", border:"none", whiteSpace:"nowrap", borderRadius: activeTab===t.id ? 6 : 0, color: activeTab===t.id ? "#FFFFFF" : "#64748B",
             fontFamily:"'Inter',sans-serif", fontSize:10, letterSpacing:1.5, padding:"8px 16px", cursor:"pointer", margin:"4px 2px", fontWeight:activeTab===t.id?700:400,
           }}>
-            <span style={{ marginRight:5 }}>{t.icon}</span>{t.label}
+            {t.label}
           </button>
         ))}
       </div>
@@ -2400,29 +2401,79 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
         {activeTab==="harvest" && (
           <div className="su">
             <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Harvest</div>
-            <div style={{fontSize:11,color:"#64748B",marginBottom:14}}>Log harvest trucks · per-day summary · cycle totals</div>
+            <div style={{fontSize:11,color:"#64748B",marginBottom:14}}>Log harvest trucks · per-day summary · performance metrics</div>
 
-            {/* ── CYCLE TOTALS ── */}
-            {harvestTrucks.length > 0 && (function(){
-              var totalHeads = harvestTrucks.reduce(function(s,t){return s+(t.heads||0);},0);
-              var totalKg = harvestTrucks.reduce(function(s,t){return s+(t.kg||0);},0);
-              var overallALW = totalHeads > 0 ? totalKg / totalHeads : null;
+            {/* ── PERFORMANCE METRICS ── */}
+            {(function(){
+              var totalHarvestedHeads = harvestTrucks.reduce(function(s,t){return s+(t.heads||0);},0);
+              var totalHarvestKg = harvestTrucks.reduce(function(s,t){return s+(t.kg||0);},0);
+              if (totalHarvestedHeads === 0) return null;
+              var harvestALW = totalHarvestKg / totalHarvestedHeads;
+              var harvestRecovery = netPlacedBirds > 0 ? (totalHarvestedHeads / netPlacedBirds * 100) : null;
+              var weightedAge = harvestTrucks.reduce(function(s,t){return s+((t.day||0)*(t.heads||0));},0) / totalHarvestedHeads;
+              var totalFeedKgConsumed = cumulFeedKgTotal - ((surplusFeedBags||0) * 50);
+              var fcr = totalHarvestKg > 0 ? (totalFeedKgConsumed / totalHarvestKg) : null;
+              var bpi = (harvestRecovery && harvestALW && fcr && weightedAge) ? (harvestRecovery * harvestALW) / (fcr * weightedAge) * 100 : null;
+              var bpiColor = !bpi ? "#94A3B8" : bpi>=400 ? "#2E7D52" : bpi>=350 ? "#5B86E5" : bpi>=300 ? "#C4960C" : "#E91E63";
+              var bpiLabel = !bpi ? "—" : bpi>=400 ? "EXCELLENT" : bpi>=350 ? "GOOD" : bpi>=300 ? "PASSING" : "BELOW TARGET";
               return (
-                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:16}}>
-                  <div style={{background:"#FFFFFF",border:"1px solid #2E7D5225",borderRadius:8,padding:"12px 14px"}}>
-                    <div style={{fontSize:9,color:"#64748B",letterSpacing:1,marginBottom:2}}>TOTAL HEADS</div>
-                    <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:22,color:"#2E7D52"}}>{totalHeads.toLocaleString()}</div>
-                    <div style={{fontSize:11,color:"#64748B",marginTop:2}}>{harvestTrucks.length} trucks</div>
+                <div style={{marginBottom:16}}>
+                  <div style={{fontSize:10,color:"#64748B",letterSpacing:1.5,fontWeight:600,marginBottom:10}}>CYCLE PERFORMANCE</div>
+                  {/* BPI headline */}
+                  <div style={{background:"#FFFFFF",border:"2px solid "+bpiColor+"40",borderRadius:8,padding:"14px 16px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                    <div>
+                      <div style={{fontSize:9,color:"#64748B",letterSpacing:1,marginBottom:2}}>BROILER PERFORMANCE INDEX</div>
+                      <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+                        <span style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:32,color:bpiColor}}>{bpi?bpi.toFixed(0):"—"}</span>
+                        <span style={{fontSize:12,color:bpiColor,fontWeight:700}}>{bpiLabel}</span>
+                      </div>
+                      <div style={{fontSize:10,color:"#94A3B8",marginTop:2}}>300 passing · 350 good · 400 excellent</div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{height:6,width:160,background:"#F0F2F5",borderRadius:3,overflow:"hidden",marginBottom:4}}>
+                        <div style={{height:"100%",width:Math.min(100,(bpi||0)/500*100)+"%",background:bpiColor,borderRadius:3,transition:"width .4s"}}/>
+                      </div>
+                      <div style={{fontSize:9,color:"#94A3B8"}}>target 400+</div>
+                    </div>
                   </div>
-                  <div style={{background:"#FFFFFF",border:"1px solid #5B86E525",borderRadius:8,padding:"12px 14px"}}>
-                    <div style={{fontSize:9,color:"#64748B",letterSpacing:1,marginBottom:2}}>TOTAL KG</div>
-                    <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:22,color:"#5B86E5"}}>{totalKg.toLocaleString(undefined,{maximumFractionDigits:1})}</div>
-                    <div style={{fontSize:11,color:"#64748B",marginTop:2}}>kg live weight</div>
+                  {/* Key metrics grid */}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:10}}>
+                    <div style={{background:"#FFFFFF",border:"1px solid #2E7D5220",borderRadius:8,padding:"11px 13px"}}>
+                      <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>HARVEST RECOVERY</div>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#2E7D52"}}>{harvestRecovery?harvestRecovery.toFixed(2)+"%":"—"}</div>
+                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{totalHarvestedHeads.toLocaleString()} of {netPlacedBirds.toLocaleString()} birds</div>
+                    </div>
+                    <div style={{background:"#FFFFFF",border:"1px solid #C4960C20",borderRadius:8,padding:"11px 13px"}}>
+                      <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>HARVEST ALW</div>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#C4960C"}}>{harvestALW.toFixed(3)} kg</div>
+                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{totalHarvestKg.toLocaleString(undefined,{maximumFractionDigits:1})} kg total</div>
+                    </div>
+                    <div style={{background:"#FFFFFF",border:"1px solid #5B86E520",borderRadius:8,padding:"11px 13px"}}>
+                      <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>WEIGHTED AVG AGE</div>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#5B86E5"}}>{weightedAge.toFixed(1)} days</div>
+                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>at harvest</div>
+                    </div>
+                    <div style={{background:"#FFFFFF",border:"1px solid #E91E6320",borderRadius:8,padding:"11px 13px"}}>
+                      <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>FCR (NET)</div>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:fcr?(fcr<1.6?"#2E7D52":fcr<1.8?"#C4960C":"#E91E63"):"#94A3B8"}}>{fcr?fcr.toFixed(3):"—"}</div>
+                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>excl. {surplusFeedBags||0} bags surplus</div>
+                    </div>
+                    <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"11px 13px"}}>
+                      <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>TOTAL FEED (NET)</div>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#334155"}}>{Math.round(totalFeedKgConsumed).toLocaleString()} kg</div>
+                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{Math.round(totalFeedKgConsumed/50)} bags consumed</div>
+                    </div>
+                    <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"11px 13px"}}>
+                      <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>MORTALITY</div>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#E91E63"}}>{cumulMortTotal}</div>
+                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{netPlacedBirds>0?((cumulMortTotal/netPlacedBirds)*100).toFixed(2):"—"}% of placed</div>
+                    </div>
                   </div>
-                  <div style={{background:"#FFFFFF",border:"1px solid #C4960C25",borderRadius:8,padding:"12px 14px"}}>
-                    <div style={{fontSize:9,color:"#64748B",letterSpacing:1,marginBottom:2}}>OVERALL ALW</div>
-                    <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:22,color:"#C4960C"}}>{overallALW?overallALW.toFixed(2):"—"}</div>
-                    <div style={{fontSize:11,color:"#64748B",marginTop:2}}>kg / bird</div>
+                  {/* Surplus feed input */}
+                  <div style={{background:"#FFF8E8",border:"1px solid #C4960C30",borderRadius:8,padding:"10px 14px",display:"flex",alignItems:"center",gap:12}}>
+                    <div style={{flex:1,fontSize:11,color:"#C4960C",fontWeight:600}}>Surplus feed sold to another farm (bags)</div>
+                    <input type="number" value={surplusFeedBags||""} onChange={function(e){setSurplusFeedBags(parseInt(e.target.value)||0);}} placeholder="0" style={{width:80,background:"#FFFFFF",border:"1px solid #C4960C40",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"6px 10px",outline:"none",borderRadius:6,textAlign:"center"}} />
+                    <div style={{fontSize:10,color:"#94A3B8"}}>excl. from FCR</div>
                   </div>
                 </div>
               );
@@ -2482,7 +2533,6 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
                 var dateStr = cycleConfig ? new Date(new Date(cycleConfig.placementDate+"T00:00:00+08:00").getTime()+day*86400000).toLocaleDateString("en-PH",{weekday:"short",month:"short",day:"numeric"}) : "Day "+day;
                 return (
                   <div key={day} style={{marginBottom:14}}>
-                    {/* Day header */}
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 14px",background:"#2E7D5212",borderRadius:"6px 6px 0 0",borderBottom:"2px solid #2E7D5230"}}>
                       <div>
                         <span style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,color:"#2E7D52"}}>Day {day}</span>
@@ -2491,10 +2541,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
                       <div style={{display:"flex",gap:16}}>
                         <div style={{textAlign:"right"}}><div style={{fontSize:9,color:"#94A3B8"}}>HEADS</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,color:"#2E7D52"}}>{dayHeads.toLocaleString()}</div></div>
                         <div style={{textAlign:"right"}}><div style={{fontSize:9,color:"#94A3B8"}}>KG</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,color:"#5B86E5"}}>{dayKg.toLocaleString(undefined,{maximumFractionDigits:1})}</div></div>
-                        <div style={{textAlign:"right"}}><div style={{fontSize:9,color:"#94A3B8"}}>ALW</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,color:"#C4960C"}}>{dayALW.toFixed(2)}</div></div>
+                        <div style={{textAlign:"right"}}><div style={{fontSize:9,color:"#94A3B8"}}>ALW</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,color:"#C4960C"}}>{dayALW.toFixed(3)}</div></div>
                       </div>
                     </div>
-                    {/* Truck rows */}
                     <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderTop:"none",borderRadius:"0 0 6px 6px",overflow:"hidden"}}>
                       <div style={{display:"grid",gridTemplateColumns:"1fr 80px 100px 80px 1fr 32px",padding:"6px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1}}>
                         <div>PLATE</div><div style={{textAlign:"right"}}>HEADS</div><div style={{textAlign:"right"}}>KG</div><div style={{textAlign:"right"}}>ALW</div><div>NOTES</div><div></div>

@@ -438,40 +438,35 @@ function computeCycleSummary(cycle) {
   var harvestTks = cycle.harvestTrucks || [];
   var surplus = cycle.surplusFeedBags || 0;
 
-  // Placed birds (from placement trucks or cycleConfig flockSize)
+  // Placed birds
   var totalDelivered = trucks.reduce(function(s,t){return s+(t.qty||0);},0);
   var totalDOA = trucks.reduce(function(s,t){return s+(t.doa||0);},0);
   var netPlaced = cycle.flockSize || (totalDelivered - totalDOA) || 0;
 
-  // Mortality from shift logs (grouped per day, first AM + first PM)
-  var daysSeen = {};
-  var totalMortality = 0;
-  logs.forEach(function(l){ if(!daysSeen[l.day]) daysSeen[l.day]={}; daysSeen[l.day][l.shift]=l; });
-  Object.keys(daysSeen).forEach(function(day){
-    var d = daysSeen[day];
-    totalMortality += ((d["DAY"]?d["DAY"].mortality:0) + (d["NIGHT"]?d["NIGHT"].mortality:0));
-  });
+  // Mortality: match daily log table exactly — first AM + first PM per unique day
+  var days = [];
+  var daySet = {};
+  logs.forEach(function(l){ if(!daySet[l.day]){daySet[l.day]=true;days.push(l.day);} });
+  var totalMortality = days.reduce(function(sum, day) {
+    var am = logs.find(function(l){return l.day===day && l.shift==="DAY";});
+    var pm = logs.find(function(l){return l.day===day && l.shift==="NIGHT";});
+    return sum + (am?am.mortality:0) + (pm?pm.mortality:0);
+  }, 0);
 
-  // Feed from shift logs (same day-grouping)
-  var totalFeedBags = 0;
-  Object.keys(daysSeen).forEach(function(day){
-    var d = daysSeen[day];
-    totalFeedBags += ((d["DAY"]?d["DAY"].feedsConsumed:0) + (d["NIGHT"]?d["NIGHT"].feedsConsumed:0));
-  });
-  var netFeedKg = (totalFeedBags * 50) - (surplus * 50);
+  // Feed: total delivered kg minus surplus — more reliable than summing shift logs
+  var cbcBags = deliveries.filter(function(d){return d.type==="CBC";}).reduce(function(s,d){return s+(d.qty||0);},0);
+  var bscBags = deliveries.filter(function(d){return d.type==="BSC";}).reduce(function(s,d){return s+(d.qty||0);},0);
+  var bfpBags = deliveries.filter(function(d){return d.type==="BFP";}).reduce(function(s,d){return s+(d.qty||0);},0);
+  var totalDeliveredBags = cbcBags + bscBags + bfpBags;
+  var netFeedKg = (totalDeliveredBags - surplus) * 50;
 
-  // Feed delivery breakdown
-  var cbcBags = deliveries.filter(function(d){return d.type==="CBC";}).reduce(function(s,d){return s+d.qty;},0);
-  var bscBags = deliveries.filter(function(d){return d.type==="BSC";}).reduce(function(s,d){return s+d.qty;},0);
-  var bfpBags = deliveries.filter(function(d){return d.type==="BFP";}).reduce(function(s,d){return s+d.qty;},0);
-
-  // Harvest-based metrics (preferred source for ALW, weight, recovery, FCR)
+  // Harvest-based metrics
   var totalHarvestedHeads = harvestTks.reduce(function(s,t){return s+(t.heads||0);},0);
   var totalHarvestKg = harvestTks.reduce(function(s,t){return s+(t.kg||0);},0);
   var harvestALW = totalHarvestedHeads > 0 ? totalHarvestKg / totalHarvestedHeads : null;
   var harvestRecovery = netPlaced > 0 && totalHarvestedHeads > 0 ? (totalHarvestedHeads / netPlaced * 100) : null;
   var weightedAge = totalHarvestedHeads > 0 ? harvestTks.reduce(function(s,t){return s+((t.day||0)*(t.heads||0));},0) / totalHarvestedHeads : null;
-  var fcr = totalHarvestKg > 0 ? netFeedKg / totalHarvestKg : null;
+  var fcr = totalHarvestKg > 0 && netFeedKg > 0 ? netFeedKg / totalHarvestKg : null;
   var feedPerBird = totalHarvestedHeads > 0 ? netFeedKg / totalHarvestedHeads : null;
   var bpi = (harvestRecovery && harvestALW && fcr && weightedAge) ? (harvestRecovery * harvestALW) / (fcr * weightedAge) * 100 : null;
 
@@ -479,16 +474,13 @@ function computeCycleSummary(cycle) {
     netPlaced: netPlaced,
     totalMortality: totalMortality,
     mortalityRate: netPlaced > 0 ? (totalMortality / netPlaced * 100) : null,
-    // Harvest-based (primary)
     totalHarvestedHeads: totalHarvestedHeads,
     totalHarvestKg: totalHarvestKg,
     harvestRecovery: harvestRecovery,
     finalALWg: harvestALW ? Math.round(harvestALW * 1000) : null,
-    totalFlockKg: totalHarvestKg || null,
     weightedAge: weightedAge,
-    // Feed
-    totalFeedBags: totalFeedBags,
     netFeedKg: netFeedKg,
+    totalDeliveredBags: totalDeliveredBags,
     feedPerBird: feedPerBird,
     fcr: fcr,
     bpi: bpi,
@@ -2447,7 +2439,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
               var harvestALW = totalHarvestKg / totalHarvestedHeads;
               var harvestRecovery = netPlacedBirds > 0 ? (totalHarvestedHeads / netPlacedBirds * 100) : null;
               var weightedAge = harvestTrucks.reduce(function(s,t){return s+((t.day||0)*(t.heads||0));},0) / totalHarvestedHeads;
-              var totalFeedKgConsumed = cumulFeedKgTotal - ((surplusFeedBags||0) * 50);
+              var totalFeedDeliveredBags = feedDeliveries.reduce(function(s,d){return s+(d.qty||0);},0);
+              var totalFeedKgConsumed = (totalFeedDeliveredBags - (surplusFeedBags||0)) * 50;
               var fcr = totalHarvestKg > 0 ? (totalFeedKgConsumed / totalHarvestKg) : null;
               var bpi = (harvestRecovery && harvestALW && fcr && weightedAge) ? (harvestRecovery * harvestALW) / (fcr * weightedAge) * 100 : null;
               var bpiColor = !bpi ? "#94A3B8" : bpi>=400 ? "#2E7D52" : bpi>=350 ? "#5B86E5" : bpi>=300 ? "#C4960C" : "#E91E63";
@@ -2497,7 +2490,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
                     <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"11px 13px"}}>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>TOTAL FEED (NET)</div>
                       <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#334155"}}>{Math.round(totalFeedKgConsumed).toLocaleString()} kg</div>
-                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{Math.round(totalFeedKgConsumed/50)} bags consumed</div>
+                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{totalFeedDeliveredBags - (surplusFeedBags||0)} bags net delivered</div>
                     </div>
                     <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"11px 13px"}}>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>MORTALITY</div>
@@ -2721,17 +2714,14 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
               var curCBCBags = feedDeliveries.filter(function(d){return d.type==="CBC";}).reduce(function(s,d){return s+d.qty;},0);
               var curBSCBags = feedDeliveries.filter(function(d){return d.type==="BSC";}).reduce(function(s,d){return s+d.qty;},0);
               var curBFPBags = feedDeliveries.filter(function(d){return d.type==="BFP";}).reduce(function(s,d){return s+d.qty;},0);
-              var curAlwLogs = shiftLogs.filter(function(l){return l.alw&&l.alw>0;}).sort(function(a,b){return b.day!==a.day?b.day-a.day:(b.shift==="NIGHT"?1:-1);});
-              var curFinalALWKg = curAlwLogs.length>0?curAlwLogs[0].alw:null;
-              var curFinalALWg = curFinalALWKg?Math.round(curFinalALWKg*1000):null;
-              var curTotalFlockKg = curFinalALWKg&&curSurvivors>0?Math.round(curSurvivors*curFinalALWKg):null;
+              var curTotalDeliveredBags = curCBCBags + curBSCBags + curBFPBags;
+              var curNetFeedKg = (curTotalDeliveredBags - (surplusFeedBags||0)) * 50;
               var curTotalHarvestedHeads = harvestTrucks.reduce(function(s,t){return s+(t.heads||0);},0);
               var curTotalHarvestKg = harvestTrucks.reduce(function(s,t){return s+(t.kg||0);},0);
               var curHarvestALW = curTotalHarvestedHeads > 0 ? curTotalHarvestKg / curTotalHarvestedHeads : null;
               var curHarvestRecovery = netPlacedBirds > 0 && curTotalHarvestedHeads > 0 ? (curTotalHarvestedHeads / netPlacedBirds * 100) : null;
               var curWeightedAge = curTotalHarvestedHeads > 0 ? harvestTrucks.reduce(function(s,t){return s+((t.day||0)*(t.heads||0));},0) / curTotalHarvestedHeads : null;
-              var curNetFeedKg = (curFeedBags * 50) - ((surplusFeedBags||0) * 50);
-              var curFCR = curTotalHarvestKg > 0 ? curNetFeedKg / curTotalHarvestKg : null;
+              var curFCR = curTotalHarvestKg > 0 && curNetFeedKg > 0 ? curNetFeedKg / curTotalHarvestKg : null;
               var curFeedPerBirdH = curTotalHarvestedHeads > 0 ? curNetFeedKg / curTotalHarvestedHeads : null;
               var curBPI = (curHarvestRecovery && curHarvestALW && curFCR && curWeightedAge) ? (curHarvestRecovery * curHarvestALW) / (curFCR * curWeightedAge) * 100 : null;
               var cur = {

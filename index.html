@@ -1301,7 +1301,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
               )}
             </div>
             {/* ── 3-card strip: Target ALW · Feed Target · Feed Balance ── */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:8 }}>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
               {/* Target ALW */}
               <div style={{ background:"#FFFFFF", border:"1px solid #C4960C25", borderRadius:8, padding:"12px 14px" }}>
                 <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:6 }}>
@@ -1335,9 +1335,6 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
                   cumul target: {cumFCTarget} bags
                 </div>
               </div>
-            </div>
-            {/* Running Performance — Harvest Rate only */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(1,1fr)", gap:8, marginBottom:14 }}>
               {/* Harvest Rate */}
               <div style={{ background:"#FFFFFF", border:"1px solid "+(hrPct>=99?"#2E7D52":hrPct>=97?"#C4960C":"#E91E63")+"25", borderRadius:8, padding:"12px 14px" }}>
                 <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:2 }}>HARVEST RATE</div>
@@ -1345,7 +1342,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
                   <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:hrPct>=99?"#2E7D52":hrPct>=97?"#C4960C":"#E91E63" }}>{hrPct.toFixed(2)}</span>
                   <span style={{ fontSize:10, color:"#64748B" }}>%</span>
                 </div>
-                <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>{remainingPopMetric.toLocaleString()} alive · {cumulMortTotal} cumulative mortality</div>
+                <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>{remainingPopMetric.toLocaleString()} alive · {cumulMortTotal} mort.</div>
               </div>
             </div>
             {/* Today's medicines */}

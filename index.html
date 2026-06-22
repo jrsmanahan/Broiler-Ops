@@ -99,7 +99,7 @@ function getSupabaseClient() {
   return window.__sbClient;
 }
 // ─── LEGACY DATA MIGRATION — carries old single-house data into a new house ──
-const LEGACY_DATA_KEYS = ["dayOverride","dayAnchor","shiftLogs","taskChecks","tasksByBracket","tunnelLogs","cropLogs","litterLogs","litterScores","litterFlags","litterNotes","flushLogs","incidents","medProgram","lightingProgram","feedingGuide","feedDeliveries","medInventoryLog","crateWeight","chicksPerCrate","crateEntries","placementTrucks","activeBracket"];
+const LEGACY_DATA_KEYS = ["dayOverride","dayAnchor","shiftLogs","taskChecks","tasksByBracket","tunnelLogs","cropLogs","litterLogs","litterScores","litterFlags","litterNotes","flushLogs","incidents","medProgram","lightingProgram","feedingGuide","feedDeliveries","medInventoryLog","crateWeight","chicksPerCrate","crateEntries","placementTrucks","harvestTrucks","activeBracket"];
 function migrateLegacyData(oldNS, newNS) {
   LEGACY_DATA_KEYS.forEach(function(k) {
     const v = localStorage.getItem(oldNS + k);
@@ -447,14 +447,19 @@ function computeCycleSummary(cycle) {
   var cbcBags = deliveries.filter(function(d){return d.type==="CBC";}).reduce(function(s,d){return s+d.qty;},0);
   var bscBags = deliveries.filter(function(d){return d.type==="BSC";}).reduce(function(s,d){return s+d.qty;},0);
   var bfpBags = deliveries.filter(function(d){return d.type==="BFP";}).reduce(function(s,d){return s+d.qty;},0);
+  // Final ALW = last recorded weigh-in (by day desc, then by night shift preferred)
+  var alwLogs = logs.filter(function(l){return l.alw && l.alw > 0;}).sort(function(a,b){return b.day!==a.day?b.day-a.day:(b.shift==="NIGHT"?1:-1);});
+  var finalALWKg = alwLogs.length > 0 ? alwLogs[0].alw : null; // stored in kg
+  var finalALWg = finalALWKg ? Math.round(finalALWKg * 1000) : null;
+  var totalFlockKg = finalALWKg && survivors > 0 ? Math.round(survivors * finalALWKg) : null;
   var peakALW = logs.reduce(function(best,l){return l.alw&&l.alw>best?l.alw:best;},0);
-  var fcr = peakALW && survivors > 0 ? (totalFeedKg / (survivors * peakALW)) : null;
+  var fcr = finalALWKg && survivors > 0 ? (totalFeedKg / (survivors * finalALWKg)) : null;
   return {
     netPlaced: netPlaced, totalMortality: totalMortality, survivors: survivors,
     hr: hr, mortalityRate: netPlaced>0?(totalMortality/netPlaced*100):null,
     totalFeedBags: totalFeedBags, totalFeedKg: totalFeedKg, feedPerBird: feedPerBird,
     cbcBags: cbcBags, bscBags: bscBags, bfpBags: bfpBags,
-    peakALW: peakALW>0?(peakALW*1000).toFixed(0):null, fcr: fcr,
+    finalALWg: finalALWg, totalFlockKg: totalFlockKg, fcr: fcr,
     days: cycle.dayCount || 0,
   };
 }
@@ -467,6 +472,7 @@ const TABS = [
   { id:"placement",  label:"DELIVERIES",    icon:"🐥" },
   { id:"fieldguide", label:"FIELD GUIDE",   icon:"◈" },
   { id:"history",    label:"HISTORY",       icon:"⌛" },
+  { id:"harvest",    label:"HARVEST",       icon:"🚚" },
 ];
 // ─── FEEDING GUIDE ────────────────────────────────────────────────────────────
 const FEEDING_GUIDE_DEFAULT = [
@@ -789,10 +795,12 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const [placementSection, setPlacementSection] = useState("placement");
   const [feedDeliveries, setFeedDeliveries] = useSyncedLog("feedDeliveries", houseId, userId, isOnline);
   const [newDelivery, setNewDelivery] = useState({ type:"CBC", qty:"", notes:"" });
+  const [harvestTrucks, setHarvestTrucks] = useSyncedLog("harvestTrucks", houseId, userId, isOnline);
+  const [newHarvest, setNewHarvest] = useState({ plate:"", heads:"", kg:"", day:String(currentDay), notes:"" });
   const [medInventoryLog, setMedInventoryLog] = useSyncedLog("medInventoryLog", houseId, userId, isOnline);
   const [newMedEntry, setNewMedEntry] = useState({ type:"delivery", medicine:"", qty:"", unit:"", notes:"" });
   const [checksSection, setChecksSection] = useState("cropfill");
-  const OPS_KEYS = ["shiftLogs","taskChecks","tunnelLogs","cropLogs","litterLogs","flushLogs","crateEntries","placementTrucks","crateWeight","chicksPerCrate","activeBracket","litterScores","litterFlags","litterNotes","feedDeliveries","medInventoryLog","dayOverride_legacy","dayAnchor_legacy"];
+  const OPS_KEYS = ["shiftLogs","taskChecks","tunnelLogs","cropLogs","litterLogs","flushLogs","crateEntries","placementTrucks","crateWeight","chicksPerCrate","activeBracket","litterScores","litterFlags","litterNotes","feedDeliveries","medInventoryLog","harvestTrucks","dayOverride_legacy","dayAnchor_legacy"];
   const startCycle = (draft) => {
     const NS = ACTIVE_NS;
     OPS_KEYS.forEach(function(k){ localStorage.removeItem(NS+k); });
@@ -2389,6 +2397,127 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
             )}
           </div>
         )}
+        {activeTab==="harvest" && (
+          <div className="su">
+            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Harvest</div>
+            <div style={{fontSize:11,color:"#64748B",marginBottom:14}}>Log harvest trucks · per-day summary · cycle totals</div>
+
+            {/* ── CYCLE TOTALS ── */}
+            {harvestTrucks.length > 0 && (function(){
+              var totalHeads = harvestTrucks.reduce(function(s,t){return s+(t.heads||0);},0);
+              var totalKg = harvestTrucks.reduce(function(s,t){return s+(t.kg||0);},0);
+              var overallALW = totalHeads > 0 ? totalKg / totalHeads : null;
+              return (
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:16}}>
+                  <div style={{background:"#FFFFFF",border:"1px solid #2E7D5225",borderRadius:8,padding:"12px 14px"}}>
+                    <div style={{fontSize:9,color:"#64748B",letterSpacing:1,marginBottom:2}}>TOTAL HEADS</div>
+                    <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:22,color:"#2E7D52"}}>{totalHeads.toLocaleString()}</div>
+                    <div style={{fontSize:11,color:"#64748B",marginTop:2}}>{harvestTrucks.length} trucks</div>
+                  </div>
+                  <div style={{background:"#FFFFFF",border:"1px solid #5B86E525",borderRadius:8,padding:"12px 14px"}}>
+                    <div style={{fontSize:9,color:"#64748B",letterSpacing:1,marginBottom:2}}>TOTAL KG</div>
+                    <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:22,color:"#5B86E5"}}>{totalKg.toLocaleString(undefined,{maximumFractionDigits:1})}</div>
+                    <div style={{fontSize:11,color:"#64748B",marginTop:2}}>kg live weight</div>
+                  </div>
+                  <div style={{background:"#FFFFFF",border:"1px solid #C4960C25",borderRadius:8,padding:"12px 14px"}}>
+                    <div style={{fontSize:9,color:"#64748B",letterSpacing:1,marginBottom:2}}>OVERALL ALW</div>
+                    <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:22,color:"#C4960C"}}>{overallALW?overallALW.toFixed(2):"—"}</div>
+                    <div style={{fontSize:11,color:"#64748B",marginTop:2}}>kg / bird</div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── LOG FORM ── */}
+            <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16,marginBottom:16}}>
+              <div style={{fontSize:10,color:"#2E7D52",letterSpacing:1.5,fontWeight:600,marginBottom:12}}>LOG HARVEST TRUCK</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:10}}>
+                <div>
+                  <label style={LBL}>PLATE NUMBER</label>
+                  <input value={newHarvest.plate} onChange={function(e){setNewHarvest(function(p){return {...p,plate:e.target.value};});}} placeholder="e.g. CBR 5200" style={{...INP,width:"100%"}} />
+                </div>
+                <div>
+                  <label style={LBL}>DAY</label>
+                  <input type="number" value={newHarvest.day} onChange={function(e){setNewHarvest(function(p){return {...p,day:e.target.value};});}} placeholder={String(currentDay)} style={{...INP,width:"100%"}} />
+                </div>
+                <div>
+                  <label style={LBL}>HEADS</label>
+                  <input type="number" value={newHarvest.heads} onChange={function(e){setNewHarvest(function(p){return {...p,heads:e.target.value};});}} placeholder="e.g. 3000" style={{...INP,width:"100%"}} />
+                </div>
+                <div>
+                  <label style={LBL}>TOTAL KG</label>
+                  <input type="number" step="0.01" value={newHarvest.kg} onChange={function(e){setNewHarvest(function(p){return {...p,kg:e.target.value};});}} placeholder="e.g. 6274.7" style={{...INP,width:"100%"}} />
+                </div>
+              </div>
+              {newHarvest.heads && newHarvest.kg && (
+                <div style={{fontSize:11,color:"#C4960C",fontWeight:600,marginBottom:10}}>
+                  ALW: {(parseFloat(newHarvest.kg)/parseInt(newHarvest.heads)).toFixed(3)} kg / bird
+                </div>
+              )}
+              <div style={{marginBottom:12}}>
+                <label style={LBL}>NOTES (optional)</label>
+                <input value={newHarvest.notes} onChange={function(e){setNewHarvest(function(p){return {...p,notes:e.target.value};});}} placeholder="driver, time, remarks..." style={{...INP,width:"100%"}} />
+              </div>
+              <button onClick={function(){
+                if(!newHarvest.plate||!newHarvest.heads||!newHarvest.kg) return;
+                var h=parseFloat(newHarvest.heads)||0; var k=parseFloat(newHarvest.kg)||0;
+                setHarvestTrucks(function(p){return [...p,{id:Date.now(),day:parseInt(newHarvest.day)>=0?parseInt(newHarvest.day):currentDay,plate:newHarvest.plate,heads:h,kg:k,alw:h>0?k/h:0,notes:newHarvest.notes}];});
+                setNewHarvest({plate:"",heads:"",kg:"",day:String(currentDay),notes:""});
+              }} style={{background:"#2E7D52",border:"none",color:"#FFFFFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"10px 24px",cursor:"pointer",borderRadius:6}}>+ LOG TRUCK</button>
+            </div>
+
+            {/* ── PER-DAY BREAKDOWN ── */}
+            {harvestTrucks.length === 0 ? (
+              <div style={{textAlign:"center",padding:"32px",color:"#94A3B8",fontSize:11}}>No harvest trucks logged yet.</div>
+            ) : (function(){
+              var days = [];
+              var seenDays = {};
+              var sorted = [...harvestTrucks].sort(function(a,b){return b.day-a.day;});
+              sorted.forEach(function(t){ if(!seenDays[t.day]){seenDays[t.day]=true;days.push(t.day);} });
+              return days.map(function(day){
+                var trucks = sorted.filter(function(t){return t.day===day;});
+                var dayHeads = trucks.reduce(function(s,t){return s+(t.heads||0);},0);
+                var dayKg = trucks.reduce(function(s,t){return s+(t.kg||0);},0);
+                var dayALW = dayHeads > 0 ? dayKg / dayHeads : 0;
+                var dateStr = cycleConfig ? new Date(new Date(cycleConfig.placementDate+"T00:00:00+08:00").getTime()+day*86400000).toLocaleDateString("en-PH",{weekday:"short",month:"short",day:"numeric"}) : "Day "+day;
+                return (
+                  <div key={day} style={{marginBottom:14}}>
+                    {/* Day header */}
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 14px",background:"#2E7D5212",borderRadius:"6px 6px 0 0",borderBottom:"2px solid #2E7D5230"}}>
+                      <div>
+                        <span style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,color:"#2E7D52"}}>Day {day}</span>
+                        <span style={{fontSize:11,color:"#64748B",marginLeft:8}}>{dateStr}</span>
+                      </div>
+                      <div style={{display:"flex",gap:16}}>
+                        <div style={{textAlign:"right"}}><div style={{fontSize:9,color:"#94A3B8"}}>HEADS</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,color:"#2E7D52"}}>{dayHeads.toLocaleString()}</div></div>
+                        <div style={{textAlign:"right"}}><div style={{fontSize:9,color:"#94A3B8"}}>KG</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,color:"#5B86E5"}}>{dayKg.toLocaleString(undefined,{maximumFractionDigits:1})}</div></div>
+                        <div style={{textAlign:"right"}}><div style={{fontSize:9,color:"#94A3B8"}}>ALW</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,color:"#C4960C"}}>{dayALW.toFixed(2)}</div></div>
+                      </div>
+                    </div>
+                    {/* Truck rows */}
+                    <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderTop:"none",borderRadius:"0 0 6px 6px",overflow:"hidden"}}>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 80px 100px 80px 1fr 32px",padding:"6px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1}}>
+                        <div>PLATE</div><div style={{textAlign:"right"}}>HEADS</div><div style={{textAlign:"right"}}>KG</div><div style={{textAlign:"right"}}>ALW</div><div>NOTES</div><div></div>
+                      </div>
+                      {trucks.map(function(t){
+                        return (
+                          <div key={t.id} className="row" style={{display:"grid",gridTemplateColumns:"1fr 80px 100px 80px 1fr 32px",padding:"9px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center"}}>
+                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,color:"#1E293B"}}>{t.plate}</div>
+                            <div style={{textAlign:"right",color:"#334155"}}>{(t.heads||0).toLocaleString()}</div>
+                            <div style={{textAlign:"right",color:"#5B86E5",fontWeight:600}}>{(t.kg||0).toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+                            <div style={{textAlign:"right",color:"#C4960C",fontWeight:600}}>{t.alw?t.alw.toFixed(3):"—"}</div>
+                            <div style={{color:"#64748B",fontSize:10}}>{t.notes||"—"}</div>
+                            <button onClick={function(){setHarvestTrucks(function(p){return p.filter(function(x){return x.id!==t.id;});});}} style={{background:"none",border:"1px solid #E91E6340",color:"#E91E6380",fontFamily:"'Inter',sans-serif",fontSize:11,width:24,height:24,cursor:"pointer",borderRadius:4,padding:0}}>×</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        )}
         {activeTab==="history" && (
           <div className="su">
             <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Grow Cycle History</div>
@@ -2449,6 +2578,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
                               {l:"HARVEST RATE",v:s.hr?s.hr.toFixed(2)+"%":"—",u:"",c:s.hr?(s.hr>=99?"#2E7D52":s.hr>=97?"#C4960C":"#E91E63"):"#94A3B8"},
                               {l:"MORTALITY",v:s.totalMortality,u:"birds",c:"#E91E63"},
                               {l:"MORTALITY RATE",v:s.mortalityRate?s.mortalityRate.toFixed(2)+"%":"—",u:""},
+                              {l:"FINAL ALW",v:s.finalALWg?s.finalALWg+"g":"—",u:""},
+                              {l:"TOTAL FLOCK WEIGHT",v:s.totalFlockKg?s.totalFlockKg.toLocaleString()+" kg":"—",u:""},
                               {l:"TOTAL FEED",v:s.totalFeedBags,u:"bags"},
                               {l:"TOTAL FEED",v:s.totalFeedKg.toLocaleString(),u:"kg"},
                               {l:"FEED / BIRD",v:s.feedPerBird?s.feedPerBird.toFixed(2):"—",u:"kg"},
@@ -2503,7 +2634,11 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
               var curCBCBags = feedDeliveries.filter(function(d){return d.type==="CBC";}).reduce(function(s,d){return s+d.qty;},0);
               var curBSCBags = feedDeliveries.filter(function(d){return d.type==="BSC";}).reduce(function(s,d){return s+d.qty;},0);
               var curBFPBags = feedDeliveries.filter(function(d){return d.type==="BFP";}).reduce(function(s,d){return s+d.qty;},0);
-              var cur = { netPlaced:netPlacedBirds, totalMortality:curMortality, survivors:curSurvivors, hr:curHR, mortalityRate:curMortRate, totalFeedBags:curFeedBags, totalFeedKg:curFeedKg, feedPerBird:curFeedPerBird, days:currentDay, cbcBags:curCBCBags, bscBags:curBSCBags, bfpBags:curBFPBags, fcr:parseFloat(runningFCR)||null };
+              var curAlwLogs = shiftLogs.filter(function(l){return l.alw&&l.alw>0;}).sort(function(a,b){return b.day!==a.day?b.day-a.day:(b.shift==="NIGHT"?1:-1);});
+              var curFinalALWKg = curAlwLogs.length>0?curAlwLogs[0].alw:null;
+              var curFinalALWg = curFinalALWKg?Math.round(curFinalALWKg*1000):null;
+              var curTotalFlockKg = curFinalALWKg&&curSurvivors>0?Math.round(curSurvivors*curFinalALWKg):null;
+              var cur = { netPlaced:netPlacedBirds, totalMortality:curMortality, survivors:curSurvivors, hr:curHR, mortalityRate:curMortRate, totalFeedBags:curFeedBags, totalFeedKg:curFeedKg, feedPerBird:curFeedPerBird, days:currentDay, cbcBags:curCBCBags, bscBags:curBSCBags, bfpBags:curBFPBags, fcr:parseFloat(runningFCR)||null, finalALWg:curFinalALWg, totalFlockKg:curTotalFlockKg };
               var prev = prevCycle ? computeCycleSummary(prevCycle) : null;
               var smly = sameMonthLastYear ? computeCycleSummary(sameMonthLastYear) : null;
 
@@ -2514,18 +2649,20 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
               ];
 
               var metrics = [
-                {key:"days",      label:"Days",               fmt:function(v){return v+" d";}},
-                {key:"netPlaced", label:"Flock Placed",       fmt:function(v){return v.toLocaleString()+" heads";}},
-                {key:"totalMortality", label:"Total Mortality", fmt:function(v){return v+" birds";}, lower:true},
-                {key:"mortalityRate",  label:"Mortality Rate",  fmt:function(v){return v.toFixed(2)+"%";}, lower:true},
-                {key:"hr",        label:"Harvest Rate",       fmt:function(v){return v.toFixed(2)+"%";}},
-                {key:"totalFeedBags", label:"Total Feed",     fmt:function(v){return v+" bags";}},
-                {key:"totalFeedKg",   label:"Total Feed (kg)",fmt:function(v){return v.toLocaleString()+" kg";}},
-                {key:"feedPerBird",   label:"Feed / Bird",    fmt:function(v){return v.toFixed(2)+" kg";}},
-                {key:"fcr",       label:"Est. FCR",           fmt:function(v){return v.toFixed(3);}, lower:true},
-                {key:"cbcBags",   label:"CBC Delivered",      fmt:function(v){return v+" bags";}},
-                {key:"bscBags",   label:"BSC Delivered",      fmt:function(v){return v+" bags";}},
-                {key:"bfpBags",   label:"BFP Delivered",      fmt:function(v){return v+" bags";}},
+                {key:"days",          label:"Days",                fmt:function(v){return v+" d";}},
+                {key:"netPlaced",     label:"Flock Placed",        fmt:function(v){return v.toLocaleString()+" heads";}},
+                {key:"finalALWg",     label:"Final ALW",           fmt:function(v){return v+"g";}},
+                {key:"totalFlockKg",  label:"Total Flock Weight",  fmt:function(v){return v.toLocaleString()+" kg";}},
+                {key:"totalMortality",label:"Total Mortality",     fmt:function(v){return v+" birds";}, lower:true},
+                {key:"mortalityRate", label:"Mortality Rate",      fmt:function(v){return v.toFixed(2)+"%";}, lower:true},
+                {key:"hr",            label:"Harvest Rate",        fmt:function(v){return v.toFixed(2)+"%";}},
+                {key:"totalFeedBags", label:"Total Feed",          fmt:function(v){return v+" bags";}},
+                {key:"totalFeedKg",   label:"Total Feed (kg)",     fmt:function(v){return v.toLocaleString()+" kg";}},
+                {key:"feedPerBird",   label:"Feed / Bird",         fmt:function(v){return v.toFixed(2)+" kg";}},
+                {key:"fcr",           label:"Est. FCR",            fmt:function(v){return v.toFixed(3);}, lower:true},
+                {key:"cbcBags",       label:"CBC Delivered",       fmt:function(v){return v+" bags";}},
+                {key:"bscBags",       label:"BSC Delivered",       fmt:function(v){return v+" bags";}},
+                {key:"bfpBags",       label:"BFP Delivered",       fmt:function(v){return v+" bags";}},
               ];
 
               return (

@@ -430,6 +430,34 @@ function getBroodBracket(day) {
   if (day <= 36)  return "Day 34–36";
   return "Day 37–39";
 }
+// ─── CYCLE SUMMARY HELPER ────────────────────────────────────────────────────
+function computeCycleSummary(cycle) {
+  var logs = cycle.shiftLogs || [];
+  var trucks = cycle.placementTrucks || [];
+  var deliveries = cycle.feedDeliveries || [];
+  var totalDelivered = trucks.reduce(function(s,t){return s+(t.qty||0);},0);
+  var totalDOA = trucks.reduce(function(s,t){return s+(t.doa||0);},0);
+  var netPlaced = cycle.flockSize || (totalDelivered - totalDOA) || 0;
+  var totalMortality = logs.reduce(function(s,l){return s+(l.mortality||0);},0);
+  var survivors = netPlaced - totalMortality;
+  var hr = netPlaced > 0 ? (survivors / netPlaced * 100) : null;
+  var totalFeedBags = logs.reduce(function(s,l){return s+(l.feedsConsumed||0);},0);
+  var totalFeedKg = totalFeedBags * 50;
+  var feedPerBird = survivors > 0 ? (totalFeedKg / survivors) : null;
+  var cbcBags = deliveries.filter(function(d){return d.type==="CBC";}).reduce(function(s,d){return s+d.qty;},0);
+  var bscBags = deliveries.filter(function(d){return d.type==="BSC";}).reduce(function(s,d){return s+d.qty;},0);
+  var bfpBags = deliveries.filter(function(d){return d.type==="BFP";}).reduce(function(s,d){return s+d.qty;},0);
+  var peakALW = logs.reduce(function(best,l){return l.alw&&l.alw>best?l.alw:best;},0);
+  var fcr = peakALW && survivors > 0 ? (totalFeedKg / (survivors * peakALW)) : null;
+  return {
+    netPlaced: netPlaced, totalMortality: totalMortality, survivors: survivors,
+    hr: hr, mortalityRate: netPlaced>0?(totalMortality/netPlaced*100):null,
+    totalFeedBags: totalFeedBags, totalFeedKg: totalFeedKg, feedPerBird: feedPerBird,
+    cbcBags: cbcBags, bscBags: bscBags, bfpBags: bfpBags,
+    peakALW: peakALW>0?(peakALW*1000).toFixed(0):null, fcr: fcr,
+    days: cycle.dayCount || 0,
+  };
+}
 const TABS = [
   { id:"today",      label:"TODAY",         icon:"◉" },
   { id:"checks",     label:"SHIFT CHECKS",  icon:"◎" },
@@ -438,6 +466,7 @@ const TABS = [
   { id:"records",    label:"DAILY LOG",     icon:"≡" },
   { id:"placement",  label:"DELIVERIES",    icon:"🐥" },
   { id:"fieldguide", label:"FIELD GUIDE",   icon:"◈" },
+  { id:"history",    label:"HISTORY",       icon:"⌛" },
 ];
 // ─── FEEDING GUIDE ────────────────────────────────────────────────────────────
 const FEEDING_GUIDE_DEFAULT = [
@@ -607,7 +636,8 @@ function DailyLogRows({ logs, currentDay, getPhase, placementDate, FEED_FC, netP
     cumMort += dayMort;
     cumFeed += dayFeed;
     const waterEnd = (pm && pm.waterEnd) || (am && am.waterEnd) || null;
-    const feedBal = (pm && pm.feedBalance) || (am && am.feedBalance) || null;
+    const feedBal = (pm && pm.feedBalance !== null && pm.feedBalance !== undefined ? pm.feedBalance : null) ||
+                    (am && am.feedBalance !== null && am.feedBalance !== undefined ? am.feedBalance : null);
     const alw = (pm && pm.alw) || (am && am.alw) || null;
     const notes = [am && am.notes, pm && pm.notes].filter(Boolean).join(" / ");
     const isToday = day === currentDay;
@@ -741,6 +771,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const [editingFeedIdx, setEditingFeedIdx] = useState(null);
   const [feedDraft, setFeedDraft] = useState(null);
   const [cycleHistory, setCycleHistory] = useLocalStorage("cycleHistory", []);
+  const [historySubTab, setHistorySubTab] = useState("cycles");
+  const [expandedCycle, setExpandedCycle] = useState(null);
   const [showCycleMenu, setShowCycleMenu] = useState(false);
   const [showEditRollover, setShowEditRollover] = useState(false);
   const [showStartCycle, setShowStartCycle] = useState(false);
@@ -871,9 +903,11 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const latestAlw  = [...shiftLogs].sort((a,b) => b.day - a.day).find(l => l.alw);
   const todayAlw   = shiftLogs.find(l => l.day === currentDay && l.alw) || null;
   const latestBal  = (() => {
-    if (!shiftLogs.length) return CYCLE_CONFIG.openingFloorStock + 200;
+    if (!shiftLogs.length) return null;
     const sorted = [...shiftLogs].sort((a,b) => a.day !== b.day ? b.day - a.day : (b.shift==="NIGHT"?1:-1));
-    return sorted[0].feedBalance;
+    // Skip entries where feedBalance was intentionally left blank (null)
+    const withBal = sorted.find(function(l){ return l.feedBalance !== null && l.feedBalance !== undefined; });
+    return withBal ? withBal.feedBalance : null;
   })();
   const todayFC    = (function(){ const r = FEED_FC.find(r => r.day === currentDay); return r ? r.fc : null; })();
   const todayConsumed  = shiftLogs.filter(l => l.day === currentDay).reduce((s,l) => s + l.feedsConsumed, 0);
@@ -966,8 +1000,24 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
     };
   })();
   // Running performance metrics
-  const cumulMortTotal = shiftLogs.reduce((s,l) => s+l.mortality, 0);
-  const cumulFeedKgTotal = cumulMortTotal >= 0 ? shiftLogs.reduce((s,l) => s+l.feedsConsumed, 0) * 50 : 0;
+  // Compute cumulative mortality/feed matching the daily log table grouping:
+  // take only the FIRST AM and FIRST PM entry per day to avoid double-counting duplicates
+  const canonicalDays = (function() {
+    var days = [];
+    var seen = {};
+    shiftLogs.forEach(function(l) { if (!seen[l.day]) { seen[l.day] = true; days.push(l.day); } });
+    return days;
+  })();
+  const cumulMortTotal = canonicalDays.reduce(function(sum, day) {
+    var am = shiftLogs.find(function(l){return l.day===day && l.shift==="DAY";});
+    var pm = shiftLogs.find(function(l){return l.day===day && l.shift==="NIGHT";});
+    return sum + (am?am.mortality:0) + (pm?pm.mortality:0);
+  }, 0);
+  const cumulFeedKgTotal = canonicalDays.reduce(function(sum, day) {
+    var am = shiftLogs.find(function(l){return l.day===day && l.shift==="DAY";});
+    var pm = shiftLogs.find(function(l){return l.day===day && l.shift==="NIGHT";});
+    return sum + (am?am.feedsConsumed:0) + (pm?pm.feedsConsumed:0);
+  }, 0) * 50;
   const remainingPopMetric = netPlacedBirds - cumulMortTotal;
   const hrPct = netPlacedBirds > 0 ? (remainingPopMetric / netPlacedBirds * 100) : 100;
   const daysElapsed = Math.max(currentDay, 1);
@@ -998,7 +1048,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const btTarget       = FEED_FC.find(r => r.day === currentDay);
   const addLog = () => {
     if (!newLog.shift) return;
-    const parsed = { ...newLog, day: parseInt(logDay)>=0 ? parseInt(logDay) : currentDay, mortality:parseInt(newLog.mortality)||0, feedsConsumed:parseInt(newLog.feedsConsumed)||0, feedBalance:parseInt(newLog.feedBalance)||0, waterStart:0, waterEnd:parseInt(newLog.waterEnd)||0, alw:newLog.alw?parseFloat(newLog.alw)/1000:null };
+    const parsed = { ...newLog, day: parseInt(logDay)>=0 ? parseInt(logDay) : currentDay, mortality:parseInt(newLog.mortality)||0, feedsConsumed:parseInt(newLog.feedsConsumed)||0, feedBalance: newLog.feedBalance !== "" ? (parseInt(newLog.feedBalance)||0) : null, waterStart:0, waterEnd:parseInt(newLog.waterEnd)||0, alw:newLog.alw?parseFloat(newLog.alw)/1000:null };
     if (editingLogId) {
       setShiftLogs(p => p.map(x => x.id===editingLogId ? { ...parsed, id:editingLogId } : x));
       setEditingLogId(null);
@@ -1410,7 +1460,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
                   <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, fontSize:11 }}>
                     <div><span style={{ color:"#64748B" }}>Mortality: </span><span style={{ color:l.mortality>15?"#E91E63":"#1E293B", fontWeight:600 }}>{l.mortality}</span></div>
                     <div><span style={{ color:"#64748B" }}>Feed pulled: </span><span style={{ color:"#1E293B", fontWeight:600 }}>{l.feedsConsumed} bags</span></div>
-                    <div><span style={{ color:"#64748B" }}>Feed bal: </span><span style={{ color:l.feedBalance<100?"#E91E63":"#2E7D52", fontWeight:600 }}>{l.feedBalance} bags</span></div>
+                    {l.feedBalance !== null && l.feedBalance !== undefined && <div><span style={{ color:"#64748B" }}>Feed bal: </span><span style={{ color:l.feedBalance<100?"#E91E63":"#2E7D52", fontWeight:600 }}>{l.feedBalance} bags</span></div>}
                     <div><span style={{ color:"#64748B" }}>H₂O end: </span><span style={{ color:"#5B86E5", fontWeight:600 }}>{l.waterEnd} m³</span></div>
                   </div>
                   {l.notes && <div style={{ fontSize:10, color:"#64748B", marginTop:6, borderTop:"1px solid #E2E8F0", paddingTop:6 }}>{l.notes}</div>}
@@ -2367,6 +2417,198 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
                 <div style={{fontSize:9,color:"#94A3B8",marginTop:8}}>* BAGS = BT × {(netPlacedBirds/1000).toFixed(1)}k birds</div>
               </div>
             )}
+          </div>
+        )}
+        {activeTab==="history" && (
+          <div className="su">
+            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Grow Cycle History</div>
+            <div style={{fontSize:11,color:"#64748B",marginBottom:14}}>All completed cycles · compare performance across grows</div>
+            {/* Sub-tabs */}
+            <div style={{display:"flex",gap:6,marginBottom:18}}>
+              {[["cycles","📋 CYCLES"],["compare","⇆ COMPARE"]].map(function(item){
+                var id=item[0]; var label=item[1];
+                return (
+                  <button key={id} onClick={function(){setHistorySubTab(id);setExpandedCycle(null);}} style={{
+                    background:historySubTab===id?"#2E7D52":"none",
+                    border:historySubTab===id?"none":"1px solid #CBD5E1",
+                    color:historySubTab===id?"#FFFFFF":"#64748B",
+                    fontFamily:"'Inter',sans-serif",fontSize:10,fontWeight:historySubTab===id?700:400,
+                    padding:"7px 18px",cursor:"pointer",borderRadius:6,
+                  }}>{label}</button>
+                );
+              })}
+            </div>
+
+            {/* ── CYCLES sub-tab ── */}
+            {historySubTab==="cycles" && (
+              <div>
+                {cycleHistory.length === 0 ? (
+                  <div style={{textAlign:"center",padding:"48px 20px",color:"#94A3B8"}}>
+                    <div style={{fontSize:32,marginBottom:12}}>⌛</div>
+                    <div style={{fontSize:14,fontWeight:600,color:"#64748B",marginBottom:6}}>No completed cycles yet</div>
+                    <div style={{fontSize:12}}>When you press End Cycle, all grow data is saved here for future reference.</div>
+                  </div>
+                ) : [...cycleHistory].reverse().map(function(cycle,idx){
+                  var s = computeCycleSummary(cycle);
+                  var isOpen = expandedCycle === cycle.cycleNumber;
+                  return (
+                    <div key={idx} style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,marginBottom:10,overflow:"hidden"}}>
+                      <div onClick={function(){setExpandedCycle(isOpen?null:cycle.cycleNumber);}} style={{padding:"14px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <div>
+                          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:14,color:"#1E293B"}}>Cycle {cycle.cycleNumber} — {cycle.breed}</div>
+                          <div style={{fontSize:11,color:"#64748B",marginTop:2}}>{cycle.placementDate} → {cycle.endDate} · {s.days} days · {s.netPlaced.toLocaleString()} heads</div>
+                        </div>
+                        <div style={{display:"flex",gap:16,alignItems:"center",flexShrink:0}}>
+                          <div style={{textAlign:"right"}}>
+                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:s.hr>=99?"#2E7D52":s.hr>=97?"#C4960C":"#E91E63"}}>{s.hr?s.hr.toFixed(2)+"%":"—"}</div>
+                            <div style={{fontSize:9,color:"#94A3B8"}}>HARVEST RATE</div>
+                          </div>
+                          <div style={{textAlign:"right"}}>
+                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#E91E63"}}>{s.totalMortality}</div>
+                            <div style={{fontSize:9,color:"#94A3B8"}}>MORTALITY</div>
+                          </div>
+                          <div style={{color:"#CBD5E1",fontSize:16}}>{isOpen?"▲":"▼"}</div>
+                        </div>
+                      </div>
+                      {isOpen && (
+                        <div style={{borderTop:"1px solid #F0F2F5",padding:"14px 16px"}}>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
+                            {[
+                              {l:"FLOCK PLACED",v:s.netPlaced.toLocaleString(),u:"heads"},
+                              {l:"TOTAL DAYS",v:s.days,u:"days"},
+                              {l:"HARVEST RATE",v:s.hr?s.hr.toFixed(2)+"%":"—",u:"",c:s.hr?(s.hr>=99?"#2E7D52":s.hr>=97?"#C4960C":"#E91E63"):"#94A3B8"},
+                              {l:"MORTALITY",v:s.totalMortality,u:"birds",c:"#E91E63"},
+                              {l:"MORTALITY RATE",v:s.mortalityRate?s.mortalityRate.toFixed(2)+"%":"—",u:""},
+                              {l:"TOTAL FEED",v:s.totalFeedBags,u:"bags"},
+                              {l:"TOTAL FEED",v:s.totalFeedKg.toLocaleString(),u:"kg"},
+                              {l:"FEED / BIRD",v:s.feedPerBird?s.feedPerBird.toFixed(2):"—",u:"kg"},
+                              {l:"EST. FCR",v:s.fcr?s.fcr.toFixed(3):"—",u:""},
+                            ].map(function(m,i){
+                              return (
+                                <div key={i} style={{background:"#F5F7FA",borderRadius:6,padding:"10px 12px"}}>
+                                  <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>{m.l}</div>
+                                  <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:m.c||"#1E293B"}}>{String(m.v)}</div>
+                                  {m.u && <div style={{fontSize:9,color:"#64748B"}}>{m.u}</div>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {(s.cbcBags>0||s.bscBags>0||s.bfpBags>0) && (
+                            <div style={{borderTop:"1px solid #F0F2F5",paddingTop:12}}>
+                              <div style={{fontSize:9,color:"#64748B",letterSpacing:1,marginBottom:8}}>FEED DELIVERED BY TYPE</div>
+                              <div style={{display:"flex",gap:10}}>
+                                <div style={{flex:1,background:"#F5F7FA",borderRadius:6,padding:"10px 12px",borderTop:"3px solid #E5B80B"}}><div style={{fontSize:9,color:"#94A3B8"}}>CBC</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#E5B80B"}}>{s.cbcBags}</div><div style={{fontSize:9,color:"#64748B"}}>bags</div></div>
+                                <div style={{flex:1,background:"#F5F7FA",borderRadius:6,padding:"10px 12px",borderTop:"3px solid #D4652A"}}><div style={{fontSize:9,color:"#94A3B8"}}>BSC</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#D4652A"}}>{s.bscBags}</div><div style={{fontSize:9,color:"#64748B"}}>bags</div></div>
+                                <div style={{flex:1,background:"#F5F7FA",borderRadius:6,padding:"10px 12px",borderTop:"3px solid #5B86E5"}}><div style={{fontSize:9,color:"#94A3B8"}}>BFP</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#5B86E5"}}>{s.bfpBags}</div><div style={{fontSize:9,color:"#64748B"}}>bags</div></div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* ── COMPARE sub-tab ── */}
+            {historySubTab==="compare" && (function(){
+              var cyclePlacementMonth = cycleConfig ? new Date(cycleConfig.placementDate + "T00:00:00+08:00").getMonth() : -1;
+              var cyclePlacementYear = cycleConfig ? new Date(cycleConfig.placementDate + "T00:00:00+08:00").getFullYear() : -1;
+              var prevCycle = cycleHistory.length > 0 ? cycleHistory[cycleHistory.length-1] : null;
+              var lastYearCycle = cycleHistory.filter(function(c){
+                var d = new Date(c.placementDate + "T00:00:00+08:00");
+                return d.getMonth() === cyclePlacementMonth && d.getFullYear() === cyclePlacementYear - 1;
+              });
+              var sameMonthLastYear = lastYearCycle.length > 0 ? lastYearCycle[lastYearCycle.length-1] : null;
+
+              // Current cycle summary from live data
+              var curMortality = shiftLogs.reduce(function(s,l){return s+(l.mortality||0);},0);
+              var curFeedBags = shiftLogs.reduce(function(s,l){return s+(l.feedsConsumed||0);},0);
+              var curFeedKg = curFeedBags * 50;
+              var curSurvivors = netPlacedBirds - curMortality;
+              var curHR = netPlacedBirds > 0 ? (curSurvivors / netPlacedBirds * 100) : null;
+              var curFeedPerBird = curSurvivors > 0 ? (curFeedKg / curSurvivors) : null;
+              var curMortRate = netPlacedBirds > 0 ? (curMortality / netPlacedBirds * 100) : null;
+              var curCBCBags = feedDeliveries.filter(function(d){return d.type==="CBC";}).reduce(function(s,d){return s+d.qty;},0);
+              var curBSCBags = feedDeliveries.filter(function(d){return d.type==="BSC";}).reduce(function(s,d){return s+d.qty;},0);
+              var curBFPBags = feedDeliveries.filter(function(d){return d.type==="BFP";}).reduce(function(s,d){return s+d.qty;},0);
+              var cur = { netPlaced:netPlacedBirds, totalMortality:curMortality, survivors:curSurvivors, hr:curHR, mortalityRate:curMortRate, totalFeedBags:curFeedBags, totalFeedKg:curFeedKg, feedPerBird:curFeedPerBird, days:currentDay, cbcBags:curCBCBags, bscBags:curBSCBags, bfpBags:curBFPBags, fcr:parseFloat(runningFCR)||null };
+              var prev = prevCycle ? computeCycleSummary(prevCycle) : null;
+              var smly = sameMonthLastYear ? computeCycleSummary(sameMonthLastYear) : null;
+
+              var cols = [
+                {label:"CURRENT", sub:cycleConfig?("Placed "+cycleConfig.placementDate):"Active cycle", s:cur, color:"#2E7D52"},
+                {label:"PREVIOUS", sub:prevCycle?("Placed "+prevCycle.placementDate):"No previous cycle", s:prev, color:"#5B86E5"},
+                {label:"SAME MONTH LAST YEAR", sub:sameMonthLastYear?("Placed "+sameMonthLastYear.placementDate):"No data from same period", s:smly, color:"#C4960C"},
+              ];
+
+              var metrics = [
+                {key:"days",      label:"Days",               fmt:function(v){return v+" d";}},
+                {key:"netPlaced", label:"Flock Placed",       fmt:function(v){return v.toLocaleString()+" heads";}},
+                {key:"totalMortality", label:"Total Mortality", fmt:function(v){return v+" birds";}, lower:true},
+                {key:"mortalityRate",  label:"Mortality Rate",  fmt:function(v){return v.toFixed(2)+"%";}, lower:true},
+                {key:"hr",        label:"Harvest Rate",       fmt:function(v){return v.toFixed(2)+"%";}},
+                {key:"totalFeedBags", label:"Total Feed",     fmt:function(v){return v+" bags";}},
+                {key:"totalFeedKg",   label:"Total Feed (kg)",fmt:function(v){return v.toLocaleString()+" kg";}},
+                {key:"feedPerBird",   label:"Feed / Bird",    fmt:function(v){return v.toFixed(2)+" kg";}},
+                {key:"fcr",       label:"Est. FCR",           fmt:function(v){return v.toFixed(3);}, lower:true},
+                {key:"cbcBags",   label:"CBC Delivered",      fmt:function(v){return v+" bags";}},
+                {key:"bscBags",   label:"BSC Delivered",      fmt:function(v){return v+" bags";}},
+                {key:"bfpBags",   label:"BFP Delivered",      fmt:function(v){return v+" bags";}},
+              ];
+
+              return (
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:520}}>
+                    <thead>
+                      <tr>
+                        <th style={{padding:"8px 12px",textAlign:"left",fontSize:9,color:"#94A3B8",letterSpacing:1,width:"28%"}}></th>
+                        {cols.map(function(c){
+                          return (
+                            <th key={c.label} style={{padding:"8px 12px",textAlign:"center",borderBottom:"3px solid "+c.color}}>
+                              <div style={{fontSize:10,fontWeight:700,color:c.color,letterSpacing:.5}}>{c.label}</div>
+                              <div style={{fontSize:9,color:"#94A3B8",fontWeight:400,marginTop:2}}>{c.sub}</div>
+                            </th>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metrics.map(function(m){
+                        // Find best value across columns for highlighting
+                        var vals = cols.map(function(c){return c.s?c.s[m.key]:null;});
+                        var numVals = vals.filter(function(v){return v!==null&&v!==undefined&&!isNaN(v);});
+                        var best = numVals.length ? (m.lower ? Math.min.apply(null,numVals) : Math.max.apply(null,numVals)) : null;
+                        return (
+                          <tr key={m.key} style={{borderBottom:"1px solid #F0F2F5"}}>
+                            <td style={{padding:"10px 12px",fontSize:9,color:"#64748B",letterSpacing:.8,fontWeight:600}}>{m.label}</td>
+                            {cols.map(function(c){
+                              var v = c.s ? c.s[m.key] : null;
+                              var isBest = v!==null&&v!==undefined&&!isNaN(v)&&numVals.length>1&&v===best;
+                              return (
+                                <td key={c.label} style={{padding:"10px 12px",textAlign:"center",background:isBest?"#2E7D5208":"transparent"}}>
+                                  {c.s ? (
+                                    <span style={{fontFamily:"'Inter',sans-serif",fontWeight:isBest?700:400,fontSize:12,color:isBest?"#2E7D52":"#334155"}}>
+                                      {v!==null&&v!==undefined&&!isNaN(v)?m.fmt(v):"—"}
+                                    </span>
+                                  ) : (
+                                    <span style={{fontSize:11,color:"#CBD5E1"}}>—</span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {cycleHistory.length === 0 && (
+                    <div style={{textAlign:"center",padding:"20px",fontSize:11,color:"#94A3B8",marginTop:8}}>Complete your first cycle to unlock comparison data.</div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>

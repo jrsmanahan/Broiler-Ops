@@ -1335,21 +1335,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
                   cumul target: {cumFCTarget} bags
                 </div>
               </div>
-              {/* Feed balance */}
-              <div style={{ background:"#FFFFFF", border:"1px solid "+(latestBal<100?"#E91E63":"#2E7D52")+"25", borderRadius:8, padding:"12px 14px", position:"relative" }}>
-                {latestBal < 100 && <div style={{ position:"absolute", top:8, right:10, width:6, height:6, borderRadius:"50%", background:"#E91E63", animation:"pulse 1.4s infinite" }} />}
-                <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:2 }}>FEED BALANCE</div>
-                <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
-                  <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color: latestBal<100?"#E91E63":latestBal<150?"#C4960C":"#2E7D52" }}>{latestBal}</span>
-                  <span style={{ fontSize:10, color:"#64748B" }}>bags</span>
-                </div>
-                <div style={{ fontSize:9, color: latestBal<100?"#E91E63":"#64748B", marginTop:2 }}>
-                  {latestBal<100 ? "below maintaining balance" : latestBal<150 ? "approaching minimum" : "warehouse balance"}
-                </div>
-              </div>
             </div>
-            {/* Running Performance — compact cards matching ALW/FC/Balance style */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
+            {/* Running Performance — Harvest Rate only */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(1,1fr)", gap:8, marginBottom:14 }}>
               {/* Harvest Rate */}
               <div style={{ background:"#FFFFFF", border:"1px solid "+(hrPct>=99?"#2E7D52":hrPct>=97?"#C4960C":"#E91E63")+"25", borderRadius:8, padding:"12px 14px" }}>
                 <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:2 }}>HARVEST RATE</div>
@@ -1357,22 +1345,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
                   <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:hrPct>=99?"#2E7D52":hrPct>=97?"#C4960C":"#E91E63" }}>{hrPct.toFixed(2)}</span>
                   <span style={{ fontSize:10, color:"#64748B" }}>%</span>
                 </div>
-                <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>{remainingPopMetric.toLocaleString()} alive</div>
-              </div>
-              {/* Running FCR */}
-              <div style={{ background:"#FFFFFF", border:"1px solid "+(runningFCR?(parseFloat(runningFCR)<1.6?"#2E7D52":parseFloat(runningFCR)<1.8?"#C4960C":"#E91E63"):"#CBD5E1")+"25", borderRadius:8, padding:"12px 14px" }}>
-                <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:2 }}>RUNNING FCR</div>
-                <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
-                  <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:runningFCR?(parseFloat(runningFCR)<1.6?"#2E7D52":parseFloat(runningFCR)<1.8?"#C4960C":"#E91E63"):"#CBD5E1" }}>{runningFCR || "—"}</span>
-                </div>
-                <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>total weight: {runningALWkg ? (remainingPopMetric * runningALWkg).toFixed(0) : "—"} kg</div>
-              </div>
-              {/* BPI Score */}
-              <div style={{ background:"#FFFFFF", border:"1px solid "+bpiColor+"25", borderRadius:8, padding:"12px 14px" }}>
-                <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:2 }}>BPI SCORE</div>
-                <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
-                  <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:bpiColor }}>{bpiScore ? bpiScore.toFixed(0) : "—"}</span>
-                </div>
+                <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>{remainingPopMetric.toLocaleString()} alive · {cumulMortTotal} cumulative mortality</div>
               </div>
             </div>
             {/* Today's medicines */}

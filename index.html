@@ -742,6 +742,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const [feedDraft, setFeedDraft] = useState(null);
   const [cycleHistory, setCycleHistory] = useLocalStorage("cycleHistory", []);
   const [showCycleMenu, setShowCycleMenu] = useState(false);
+  const [showEditRollover, setShowEditRollover] = useState(false);
   const [showStartCycle, setShowStartCycle] = useState(false);
   const [showEndCycle, setShowEndCycle] = useState(false);
   const [saveHistoryOnEnd, setSaveHistoryOnEnd] = useState(true);
@@ -1119,9 +1120,20 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
         <div style={{ display:"flex", alignItems:"center", gap:12 }}>
           <div style={{ textAlign:"right" }}>
             <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:28, color:cycleConfig?phase.color:"#CBD5E1", lineHeight:1 }}>D{currentDay}</div>
-            <div style={{ fontSize:9, color:"#64748B", letterSpacing:1 }}>
-              {cycleConfig ? ("ROLLS " + ["12AM","1AM","2AM","3AM","4AM","5AM","6AM","7AM","8AM","9AM","10AM","11AM","12PM","1PM","2PM","3PM","4PM","5PM","6PM","7PM","8PM","9PM","10PM","11PM"][(cycleConfig.rolloverHour||0)] + " PHT") : "NO ACTIVE CYCLE"}
-            </div>
+            {showEditRollover ? (
+              <div style={{ display:"flex", alignItems:"center", gap:4, justifyContent:"flex-end", marginTop:2 }}>
+                <select defaultValue={String(cycleConfig?cycleConfig.rolloverHour||0:0)} onChange={function(e){setCycleConfig(function(p){return p?{...p,rolloverHour:parseInt(e.target.value)||0}:p;});setShowEditRollover(false);}} style={{ fontSize:9, background:"#F5F7FA", border:"1px solid #CBD5E1", color:"#1E293B", borderRadius:4, padding:"2px 4px" }}>
+                  {["12AM","1AM","2AM","3AM","4AM","5AM","6AM","7AM","8AM","9AM","10AM","11AM","12PM","1PM","2PM","3PM","4PM","5PM","6PM","7PM","8PM","9PM","10PM","11PM"].map(function(l,i){
+                    return <option key={i} value={String(i)}>{l}</option>;
+                  })}
+                </select>
+                <button onClick={function(){setShowEditRollover(false);}} style={{ fontSize:9, background:"none", border:"none", color:"#94A3B8", cursor:"pointer" }}>✕</button>
+              </div>
+            ) : (
+              <div onClick={function(){if(cycleConfig)setShowEditRollover(true);}} style={{ fontSize:9, color:"#64748B", letterSpacing:1, cursor:cycleConfig?"pointer":"default", textDecoration:cycleConfig?"underline dotted":"none" }}>
+                {cycleConfig ? ("ROLLS " + ["12AM","1AM","2AM","3AM","4AM","5AM","6AM","7AM","8AM","9AM","10AM","11AM","12PM","1PM","2PM","3PM","4PM","5PM","6PM","7PM","8PM","9PM","10PM","11PM"][(cycleConfig.rolloverHour||0)] + " PHT ✎") : "NO ACTIVE CYCLE"}
+              </div>
+            )}
             {cycleConfig && (
               <div style={{ display:"flex", gap:6, justifyContent:"flex-end", marginTop:4 }}>
                 <button onClick={nextDay} style={{ background:"none", border:"1px solid "+phase.color+"40", color:phase.color, fontFamily:"'Inter',sans-serif", fontSize:8, padding:"3px 8px", cursor:"pointer", borderRadius:3 }}>NEXT DAY →</button>
@@ -1351,20 +1363,35 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
                 </div>
                 {(tasksByBracket[getBroodBracket(currentDay)]||[]).length === 0 ? (
                   <div style={{ padding:"16px", fontSize:11, color:"#94A3B8", textAlign:"center" }}>No tasks added yet for this bracket — tap OPEN TASKS to add some</div>
-                ) : (tasksByBracket[getBroodBracket(currentDay)]||[]).slice(0,4).map((t) => {
-                  const done = taskChecks[t.id];
+                ) : (function() {
+                  const allTasks = tasksByBracket[getBroodBracket(currentDay)]||[];
+                  const pending = allTasks.filter(function(t){ return !taskChecks[t.id]; });
+                  const total = allTasks.length;
+                  const doneCount = total - pending.length;
+                  if (pending.length === 0) return (
+                    <div style={{ padding:"16px", fontSize:11, color:"#2E7D52", textAlign:"center", fontWeight:600 }}>✓ All {total} tasks complete</div>
+                  );
                   return (
-                    <div key={t.id} onClick={() => toggleTask(t.id)} className="row" style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 16px", borderBottom:"1px solid #F0F2F5", cursor:"pointer" }}>
-                      <div style={{ width:16, height:16, borderRadius:3, border:done?"2px solid #D4652A":"2px solid #CBD5E1", background:done?"#D4652A":"transparent", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                        {done && <span style={{ fontSize:9, color:"#F5F7FA" }}>✓</span>}
-                      </div>
-                      <div style={{ fontSize:11, color:done?"#64748B":"#334155", textDecoration:done?"line-through":"none" }}>{t.text}</div>
+                    <div>
+                      {pending.slice(0,4).map(function(t) {
+                        return (
+                          <div key={t.id} onClick={() => toggleTask(t.id)} className="row" style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 16px", borderBottom:"1px solid #F0F2F5", cursor:"pointer" }}>
+                            <div style={{ width:16, height:16, borderRadius:3, border:"2px solid #CBD5E1", background:"transparent", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }} />
+                            <div style={{ fontSize:11, color:"#334155" }}>{t.text}</div>
+                          </div>
+                        );
+                      })}
+                      {(pending.length > 4 || doneCount > 0) && (
+                        <div style={{ padding:"8px 16px", fontSize:10, color:"#64748B" }}>
+                          {pending.length > 4 ? ("+ " + (pending.length - 4) + " more pending") : ""}
+                          {pending.length > 4 && doneCount > 0 ? " · " : ""}
+                          {doneCount > 0 ? (doneCount + " completed") : ""}
+                          {" — tap to open full list"}
+                        </div>
+                      )}
                     </div>
                   );
-                })}
-                {(tasksByBracket[getBroodBracket(currentDay)]||[]).length > 4 && (
-                  <div style={{ padding:"8px 16px", fontSize:10, color:"#64748B" }}>+ {(tasksByBracket[getBroodBracket(currentDay)]||[]).length - 4} more tasks — tap to open full list</div>
-                )}
+                })()}
               </div>
             )}
             {/* Today's shift logs */}
@@ -1414,8 +1441,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
               <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:10}}>
                 <div><label style={LBL}>MORTALITY (birds)</label><input value={newLog.mortality} onChange={e=>setNewLog(p=>({...p,mortality:e.target.value}))} placeholder="dead birds this shift" style={{...INP,width:"100%"}} /></div>
                 <div><label style={LBL}>FEEDS CONSUMED (bags pulled)</label><input value={newLog.feedsConsumed} onChange={e=>setNewLog(p=>({...p,feedsConsumed:e.target.value}))} placeholder="bags pulled from warehouse" style={{...INP,width:"100%"}} /></div>
-                <div><label style={LBL}>FEED BALANCE (bags in warehouse)</label><input value={newLog.feedBalance} onChange={e=>setNewLog(p=>({...p,feedBalance:e.target.value}))} placeholder="bags remaining" style={{...INP,width:"100%"}} /></div>
                 <div><label style={LBL}>WATER METER END (m³)</label><input value={newLog.waterEnd} onChange={e=>setNewLog(p=>({...p,waterEnd:e.target.value}))} placeholder="end of shift reading" style={{...INP,width:"100%"}} /></div>
+                <div><label style={LBL}>FEED BALANCE (bags in warehouse)</label><input value={newLog.feedBalance} onChange={e=>setNewLog(p=>({...p,feedBalance:e.target.value}))} placeholder="bags remaining" style={{...INP,width:"100%"}} /></div>
               </div>
               <div style={{marginBottom:10}}>
                 <label style={{...LBL,color:isAlwDay?"#C4960C":"#64748B"}}>{isAlwDay?"⚖ ALW (g) — weigh day":"ALW (g) — optional"}</label>
@@ -1584,14 +1611,22 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
               <div style={{marginBottom:12}}>
                 <div style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:6,fontWeight:600}}>MONITORING TIME</div>
                 <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                  {[
-                    {v:"00:00",l:"12 AM"},{v:"04:00",l:"4 AM"},{v:"08:00",l:"8 AM"},
-                    {v:"12:00",l:"12 PM"},{v:"16:00",l:"4 PM"},{v:"20:00",l:"8 PM"}, ].map(t=>(
-                    <button key={t.v} onClick={()=>setNewTunnel(p=>({...p,shift:t.v}))} style={{
-                      background:newTunnel.shift===t.v?"#5B86E520":"none", border:"1px solid "+(newTunnel.shift===t.v?"#5B86E560":"#CBD5E1"), color:newTunnel.shift===t.v?"#5B86E5":"#64748B", fontFamily:"'Inter',sans-serif",fontSize:10,letterSpacing:.5,
-                      padding:"6px 14px",cursor:"pointer",borderRadius:4,fontWeight:newTunnel.shift===t.v?600:400,
-                    }}>{t.l}</button>
-                  ))}
+                  {(function(){
+                    const slots=[{v:"00:00",l:"12 AM"},{v:"04:00",l:"4 AM"},{v:"08:00",l:"8 AM"},{v:"12:00",l:"12 PM"},{v:"16:00",l:"4 PM"},{v:"20:00",l:"8 PM"}];
+                    const hours=[0,4,8,12,16,20];
+                    const rh=cycleConfig?(cycleConfig.rolloverHour||0):0;
+                    const idx=hours.findIndex(function(h){return h>=rh;});
+                    const start=idx===-1?0:idx;
+                    const ordered=slots.slice(start).concat(slots.slice(0,start));
+                    return ordered.map(function(t){
+                      return (
+                        <button key={t.v} onClick={()=>setNewTunnel(p=>({...p,shift:t.v}))} style={{
+                          background:newTunnel.shift===t.v?"#5B86E520":"none", border:"1px solid "+(newTunnel.shift===t.v?"#5B86E560":"#CBD5E1"), color:newTunnel.shift===t.v?"#5B86E5":"#64748B", fontFamily:"'Inter',sans-serif",fontSize:10,letterSpacing:.5,
+                          padding:"6px 14px",cursor:"pointer",borderRadius:4,fontWeight:newTunnel.shift===t.v?600:400,
+                        }}>{t.l}</button>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:10}}>

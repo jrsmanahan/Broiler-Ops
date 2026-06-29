@@ -907,6 +907,44 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [cycleHistory, setCycleHistory] = useLocalStorage("cycleHistory", []);
   const [historySubTab, setHistorySubTab] = useState("cycles");
   const [expandedCycle, setExpandedCycle] = useState(null);
+
+  // ── Cycle history sync ──────────────────────────────────────────────────────
+  // Each completed cycle is stored as one row in sync_entries (data_type = "cycleHistory",
+  // local_id = cycleNumber). Append-only — no tombstones needed.
+  useEffect(function() {
+    if (!isOnline || !houseId) return;
+    const sb = getSupabaseClient();
+    if (!sb) return;
+    sb.from("sync_entries").select("local_id,payload")
+      .eq("house_id", houseId).eq("data_type", "cycleHistory")
+      .then(function(res) {
+        if (res.error) { console.warn("cycleHistory pull error:", res.error.message); return; }
+        const remoteNums = {};
+        if (res.data) res.data.forEach(function(r){ remoteNums[r.local_id] = true; });
+        // Pull remote cycles not in local
+        if (res.data && res.data.length > 0) {
+          setCycleHistory(function(prev) {
+            const localNums = {};
+            prev.forEach(function(c){ localNums[c.cycleNumber] = true; });
+            const toAdd = res.data.filter(function(r){ return !localNums[r.local_id]; }).map(function(r){ return r.payload; });
+            if (toAdd.length === 0) return prev;
+            return [...prev, ...toAdd].sort(function(a,b){ return a.cycleNumber - b.cycleNumber; });
+          });
+        }
+        // Push local cycles not in remote
+        const toPush = cycleHistory.filter(function(c){ return !remoteNums[c.cycleNumber]; });
+        if (toPush.length > 0) {
+          sb.from("sync_entries").upsert(
+            toPush.map(function(cycle){ return {
+              house_id: houseId, user_id: userId,
+              data_type: "cycleHistory", local_id: cycle.cycleNumber,
+              payload: cycle
+            }; }),
+            { onConflict: "house_id,data_type,local_id" }
+          ).then(function(r){ if (r.error) console.warn("cycleHistory push error:", r.error.message); });
+        }
+      });
+  }, [isOnline, houseId, syncTick]);
   const [showCycleMenu, setShowCycleMenu] = useState(false);
   const [showEditRollover, setShowEditRollover] = useState(false);
   const [showStartCycle, setShowStartCycle] = useState(false);
@@ -978,7 +1016,22 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
           finalHR: netPlacedBirds > 0 ? ((netPlacedBirds - shiftLogs.reduce(function(s,l){return s+l.mortality;},0)) / netPlacedBirds * 100).toFixed(2) : null,
         }
       };
-      setCycleHistory(function(p){ return [...p, snap]; });
+      setCycleHistory(function(p){
+        const updated = [...p, snap];
+        // Push to Supabase immediately so history is safe even if device is lost
+        if (isOnline && houseId) {
+          const sb = getSupabaseClient();
+          if (sb) {
+            sb.from("sync_entries").upsert([{
+              house_id: houseId, user_id: userId,
+              data_type: "cycleHistory", local_id: snap.cycleNumber,
+              payload: snap
+            }], { onConflict: "house_id,data_type,local_id" })
+            .then(function(r){ if (r.error) console.warn("cycleHistory save error:", r.error.message); });
+          }
+        }
+        return updated;
+      });
     }
     const NS = ACTIVE_NS;
     OPS_KEYS.forEach(function(k){ localStorage.removeItem(NS+k); });

@@ -793,8 +793,8 @@ function DailyLogRows({ logs, currentDay, getPhase, placementDate, FEED_FC, netP
     }
     rows.push(
       <tr key={day} style={{borderBottom:"1px solid #F0F2F5",background:isToday?"#C4960C08":"transparent"}}>
-        <td style={{padding:"7px 8px",color:"#64748B",whiteSpace:"nowrap"}}>{dateStr}</td>
-        <td style={{padding:"7px 8px",fontFamily:"'Inter',sans-serif",fontWeight:700,color:dp.color,textAlign:"center"}}>D{day}</td>
+        <td style={{padding:"7px 8px",color:"#64748B",whiteSpace:"nowrap",position:"sticky",left:0,background:isToday?"#FFF8EC":"#FFFFFF",zIndex:2,borderRight:"1px solid #E2E8F050"}}>{dateStr}</td>
+        <td style={{padding:"7px 8px",fontFamily:"'Inter',sans-serif",fontWeight:700,color:dp.color,textAlign:"center",position:"sticky",left:52,background:isToday?"#FFF8EC":"#FFFFFF",zIndex:2,borderRight:"1px solid #E2E8F0"}}>D{day}</td>
         {/* Mortality AM/PM/Total/Cum */}
         <td style={{padding:"7px 8px",textAlign:"center",color:"#334155",borderLeft:"1px solid #E2E8F0"}}>{amMort!==null?amMort:"—"}</td>
         <td style={{padding:"7px 8px",textAlign:"center",color:"#334155"}}>{pmMort!==null?pmMort:"—"}</td>
@@ -1353,20 +1353,21 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
         .pill{display:inline-flex;align-items:center;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;letter-spacing:.5px;}
       `}</style>
       {/* ── HEADER ── */}
-      <div style={{ background:"#FFFFFF", borderBottom:"1px solid #E2E8F0", padding:"14px 20px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:50 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-          <div style={{ background:phase.color, color:"#F5F7FA", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:10, padding:"3px 8px", letterSpacing:1.5, borderRadius:2 }}>
-            {phase.short}
-          </div>
-          <div>
-            <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:14, letterSpacing:.5, color:"#1E293B" }}>
+      <div style={{ background:"#FFFFFF", borderBottom:"1px solid #E2E8F0", padding:"10px 14px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:50 }}>
+        {/* Left: phase badge above name, switch above online */}
+        <div style={{ display:"flex", alignItems:"flex-start", gap:10, minWidth:0 }}>
+          <div style={{ display:"flex", flexDirection:"column", gap:4, minWidth:0, flex:1 }}>
+            <div style={{ background:phase.color, color:"#F5F7FA", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:10, padding:"2px 7px", letterSpacing:1.5, borderRadius:2, alignSelf:"flex-start" }}>
+              {phase.short}
+            </div>
+            <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:14, letterSpacing:.3, color:"#1E293B", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
               {CYCLE_CONFIG.building} · Supervisor
             </div>
-            <div style={{ fontSize:10, color:"#64748B" }}>{CYCLE_CONFIG.breed} · {CYCLE_CONFIG.flockSize.toLocaleString()} heads</div>
+            <div style={{ fontSize:9, color:"#64748B" }}>{CYCLE_CONFIG.breed} · {CYCLE_CONFIG.flockSize.toLocaleString()} heads</div>
           </div>
-          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-            <button onClick={onSwitchHouse} style={{ background:"none", border:"1px solid #CBD5E1", color:"#64748B", fontFamily:"'Inter',sans-serif", fontSize:10, padding:"5px 10px", cursor:"pointer", borderRadius:6 }}>⇄ SWITCH HOUSE</button>
-            {syncStatus && <span style={{ fontSize:9, color:syncStatus==="online"?"#2E7D52":"#D4652A", border:"1px solid "+(syncStatus==="online"?"#2E7D52":"#D4652A")+"40", padding:"4px 8px", borderRadius:6 }}>{syncStatus==="online"?"● ONLINE":"○ OFFLINE"}</span>}
+          <div style={{ display:"flex", flexDirection:"column", gap:4, flexShrink:0 }}>
+            <button onClick={onSwitchHouse} style={{ background:"none", border:"1px solid #CBD5E1", color:"#64748B", fontFamily:"'Inter',sans-serif", fontSize:9, padding:"4px 8px", cursor:"pointer", borderRadius:5, whiteSpace:"nowrap" }}>⇄ SWITCH</button>
+            {syncStatus && <span style={{ fontSize:9, color:syncStatus==="online"?"#2E7D52":"#D4652A", border:"1px solid "+(syncStatus==="online"?"#2E7D52":"#D4652A")+"40", padding:"3px 7px", borderRadius:5, textAlign:"center" }}>{syncStatus==="online"?"● ONLINE":"○ OFFLINE"}</span>}
           </div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:12 }}>
@@ -1685,8 +1686,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,minWidth:1100}}>
                   <thead>
                     <tr style={{background:"#F5F7FA",borderBottom:"1px solid #E2E8F0"}}>
-                      <th rowSpan={2} style={{padding:"7px 8px",textAlign:"left",color:"#64748B",fontSize:8,letterSpacing:1,fontWeight:600,whiteSpace:"nowrap",borderRight:"1px solid #E2E8F0"}}>DATE</th>
-                      <th rowSpan={2} style={{padding:"7px 8px",textAlign:"center",color:"#64748B",fontSize:8,letterSpacing:1,fontWeight:600,borderRight:"1px solid #E2E8F0"}}>DAY</th>
+                      <th rowSpan={2} style={{padding:"7px 8px",textAlign:"left",color:"#64748B",fontSize:8,letterSpacing:1,fontWeight:600,whiteSpace:"nowrap",borderRight:"1px solid #E2E8F0",position:"sticky",left:0,zIndex:3,background:"#F5F7FA"}}>DATE</th>
+                      <th rowSpan={2} style={{padding:"7px 8px",textAlign:"center",color:"#64748B",fontSize:8,letterSpacing:1,fontWeight:600,borderRight:"1px solid #E2E8F0",position:"sticky",left:52,zIndex:3,background:"#F5F7FA"}}>DAY</th>
                       <th colSpan={4} style={{padding:"5px 8px",textAlign:"center",color:"#D4652A",fontSize:8,letterSpacing:1,fontWeight:700,borderBottom:"1px solid #E2E8F0",borderRight:"1px solid #E2E8F0"}}>MORTALITY</th>
                       <th colSpan={4} style={{padding:"5px 8px",textAlign:"center",color:"#2E7D52",fontSize:8,letterSpacing:1,fontWeight:700,borderBottom:"1px solid #E2E8F0",borderRight:"1px solid #E2E8F0"}}>FEEDS</th>
                       <th colSpan={2} style={{padding:"5px 8px",textAlign:"center",color:"#5B86E5",fontSize:8,letterSpacing:1,fontWeight:700,borderBottom:"1px solid #E2E8F0",borderRight:"1px solid #E2E8F0"}}>WATER</th>

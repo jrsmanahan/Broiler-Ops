@@ -203,37 +203,57 @@ function clearTombstones(dataType) {
   localStorage.removeItem(ACTIVE_NS + "tomb_" + dataType);
 }
 // useSyncedConfig: syncs object-type persistent configs (e.g. tasksByBracket)
-// across devices. Stores as a single row in sync_entries (local_id=1).
-// Last-write-wins — acceptable for configs typically managed by one user.
+// Uses timestamp-based last-write-wins so the newer device's data always wins.
+// Payload is wrapped as { _ts: timestamp, data: actualValue } in Supabase.
 function useSyncedConfig(key, defaultValue, houseId, userId, isOnline, syncTick) {
   const [value, setValue] = useLocalStorage(key, defaultValue);
+  const [localTs, setLocalTs] = useLocalStorage(key + "_ts", 0);
+
+  const pushToRemote = function(ts, data) {
+    const sb = getSupabaseClient();
+    if (!sb || !houseId || !userId) return;
+    sb.from("sync_entries").upsert([{
+      house_id: houseId, user_id: userId, data_type: key, local_id: 1,
+      payload: { _ts: ts, data: data }
+    }], { onConflict: "house_id,data_type,local_id" }).then(function(res) {
+      if (res.error) console.warn("useSyncedConfig push failed for " + key + ":", res.error.message);
+    });
+  };
+
   useEffect(function() {
     if (!isOnline || !houseId) return;
     const sb = getSupabaseClient();
     if (!sb) return;
-    sb.from("sync_entries").select("payload,updated_at").eq("house_id", houseId).eq("data_type", key).eq("local_id", 1)
+    sb.from("sync_entries").select("payload").eq("house_id", houseId).eq("data_type", key).eq("local_id", 1)
       .then(function(res) {
+        if (res.error) { console.warn("useSyncedConfig pull failed for " + key + ":", res.error.message); return; }
         if (res.data && res.data.length > 0) {
-          setValue(res.data[0].payload);
+          const remote = res.data[0].payload;
+          const remoteTs = remote._ts || 0;
+          if (remoteTs > localTs) {
+            // Remote is newer — take it
+            setValue(remote.data);
+            setLocalTs(remoteTs);
+          } else if (localTs > remoteTs) {
+            // Local is newer — push up to sync other devices
+            pushToRemote(localTs, value);
+          }
+          // If equal, already in sync — do nothing
         } else {
-          // No remote record yet — push local up
-          sb.from("sync_entries").upsert([{
-            house_id: houseId, user_id: userId, data_type: key, local_id: 1, payload: value
-          }], { onConflict: "house_id,data_type,local_id" });
+          // No remote record yet — only push if we have real non-default data
+          if (localTs > 0) {
+            pushToRemote(localTs, value);
+          }
         }
       });
   }, [isOnline, houseId, syncTick]);
+
   const setSyncedConfig = function(updater) {
+    const ts = Date.now();
     setValue(function(prev) {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      if (isOnline && houseId) {
-        const sb = getSupabaseClient();
-        if (sb) {
-          sb.from("sync_entries").upsert([{
-            house_id: houseId, user_id: userId, data_type: key, local_id: 1, payload: next
-          }], { onConflict: "house_id,data_type,local_id" });
-        }
-      }
+      setLocalTs(ts);
+      if (isOnline && houseId) pushToRemote(ts, next);
       return next;
     });
   };
@@ -251,25 +271,54 @@ function useSyncedLog(key, houseId, userId, isOnline, syncTick) {
     const sb = getSupabaseClient();
     if (!sb) return;
     flushPendingSync(key, houseId, userId);
-    sb.from("sync_entries").select("local_id,payload").eq("house_id", houseId).eq("data_type", key)
+    const tombType = "tomb_" + key;
+    // Phase 1: sync tombstones bidirectionally so deleted entries stay deleted on all devices
+    sb.from("sync_entries").select("local_id")
+      .eq("house_id", houseId).eq("data_type", tombType)
+      .then(function(tombRes) {
+        // Pull remote tombstones into local list
+        if (tombRes.data && tombRes.data.length > 0) {
+          var remoteTombIds = tombRes.data.map(function(r){ return Number(r.local_id); });
+          addTombstones(key, remoteTombIds);
+        }
+        // Push local tombstones to remote so other devices learn about them
+        var localTombs = getTombstones(key);
+        if (localTombs.length > 0) {
+          sb.from("sync_entries").upsert(
+            localTombs.map(function(t){ return {
+              house_id: houseId, user_id: userId,
+              data_type: tombType, local_id: t.id,
+              payload: { _tombstone: true, deletedAt: t.deletedAt }
+            }; }),
+            { onConflict: "house_id,data_type,local_id" }
+          );
+        }
+        // Phase 2: sync actual log entries
+        return sb.from("sync_entries").select("local_id,payload")
+          .eq("house_id", houseId).eq("data_type", key);
+      })
       .then(function(res) {
-        if (!res.data) return;
+        if (!res || !res.data) return;
         var tombArr = getTombstones(key);
         var tombIds = {};
         tombArr.forEach(function(t){ tombIds[t.id] = true; });
         var remoteIds = {};
         res.data.forEach(function(r){ remoteIds[r.local_id] = true; });
-        // If any tombstoned entries are still in remote, retry the delete
+        // Retry deleting tombstoned entries still on remote
         var staleRemote = tombArr.map(function(t){return t.id;}).filter(function(id){return remoteIds[id];});
         if (staleRemote.length > 0) deleteEntriesFromSync(key, houseId, staleRemote);
         setValue(function(localArr) {
           var localIds = {};
           localArr.forEach(function(e){ localIds[e.id] = true; });
-          // Only pull entries that are not tombstoned and not already local
-          var toAdd = res.data.filter(function(r){ return !localIds[r.local_id] && !tombIds[r.local_id]; }).map(function(r){ return r.payload; });
-          var merged = toAdd.length ? localArr.concat(toAdd) : localArr;
+          // Pull remote entries not local and not tombstoned
+          var toAdd = res.data
+            .filter(function(r){ return !localIds[r.local_id] && !tombIds[r.local_id]; })
+            .map(function(r){ return r.payload; });
+          var merged = localArr.concat(toAdd);
+          // Remove any local entries now known to be tombstoned (from remote tombstones just pulled)
+          merged = merged.filter(function(e){ return !tombIds[e.id]; });
           // Push local entries not in remote and not tombstoned
-          var toPush = localArr.filter(function(e){ return !remoteIds[e.id] && !tombIds[e.id]; });
+          var toPush = merged.filter(function(e){ return !remoteIds[e.id]; });
           if (toPush.length > 0) pushEntriesToSync(key, houseId, userId, toPush);
           return merged;
         });
@@ -2347,8 +2396,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 <div style={{fontSize:11,color:"#64748B",marginBottom:10}}>Beracah Farm · AM 9:00 · PM 21:00 · today highlighted · tap ✎ to edit</div>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                   <thead><tr style={{background:"#F5F7FA",borderBottom:"1px solid #CBD5E1"}}>
-                    {["DAY","SES","MEDICINE","DOSE","UNIT","WATER","",""].map(h=>(
-                      <th key={h} style={{padding:"5px 8px",textAlign:"left",color:"#64748B",fontSize:8,letterSpacing:1}}>{h}</th>
+                    {["DAY","SES","MEDICINE","DOSE","UNIT","WATER","",""].map((h,hi)=>(
+                      <th key={hi} style={{padding:"5px 8px",textAlign:"left",color:"#64748B",fontSize:8,letterSpacing:1}}>{h}</th>
                     ))}
                   </tr></thead>
                   <tbody>
@@ -2384,14 +2433,23 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                           <td style={{padding:"5px 8px",color:"#64748B"}}>{m.dose}</td>
                           <td style={{padding:"5px 8px",color:"#64748B"}}>{m.unit}</td>
                           <td style={{padding:"5px 8px",color:"#5B86E5"}}>{m.waterL>0?m.waterL+"L":"—"}</td>
-                          <td style={{padding:"5px 8px"}} colSpan={2}>
+                          <td style={{padding:"5px 8px"}}>
                             <button onClick={()=>{setEditingMedIdx(i);setMedDraft({day:m.day,session:m.session,medicine:m.medicine,dose:m.dose,unit:m.unit,waterL:m.waterL});}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,width:24,height:24,cursor:"pointer",borderRadius:4,padding:0}}>✎</button>
+                          </td>
+                          <td style={{padding:"5px 8px"}}>
+                            <button onClick={()=>setMedProgram(p=>p.filter((_,j)=>j!==i))} style={{background:"none",border:"1px solid #E91E6340",color:"#E91E6380",fontFamily:"'Inter',sans-serif",fontSize:10,width:24,height:24,cursor:"pointer",borderRadius:4,padding:0}}>×</button>
                           </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
+                <button onClick={()=>{
+                  const last=medProgram.length?medProgram[medProgram.length-1]:{day:0,session:"AM"};
+                  setMedProgram(p=>[...p,{day:last.day,session:last.session==="AM"?"PM":"AM",medicine:"",dose:0,unit:"ml",waterL:20}]);
+                  setEditingMedIdx(medProgram.length);
+                  setMedDraft({day:last.day,session:last.session==="AM"?"PM":"AM",medicine:"",dose:"",unit:"ml",waterL:"20"});
+                }} style={{marginTop:10,background:"none",border:"1px solid #C4960C",color:"#C4960C",fontFamily:"'Inter',sans-serif",fontSize:10,fontWeight:600,padding:"6px 14px",cursor:"pointer",borderRadius:6}}>+ ADD ROW</button>
               </div>
             )}
             {fgSection==="lighting" && (

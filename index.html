@@ -525,13 +525,13 @@ function buildDefaultTaskMap() {
   return out;
 }
 function getCurrentDay(placementDateStr, rolloverHour) {
-  // Day 0 starts at rolloverHour on placement date (PHT = UTC+8)
-  const PH_OFFSET_MS = 8 * 60 * 60 * 1000;
+  // day0Start = first rollover time on placement day (PHT).
+  // Before this moment = Day 0. After = Day 1, 2, 3...
   const rolloverMs = (rolloverHour || 0) * 60 * 60 * 1000;
   const day0Start = new Date(placementDateStr + "T00:00:00+08:00").getTime() + rolloverMs;
-  return Math.max(0, Math.floor((Date.now() - day0Start) / 86400000));
-}
-function getPhase(day) {
+  const elapsed = Date.now() - day0Start;
+  if (elapsed < 0) return 0; // before first rollover = still Day 0
+  return Math.floor(elapsed / 86400000) + 1; // Day 1 starts at rollover
   if (day === 0) return { label: "PLACEMENT", color: "#E5B80B", short: "PLACE" };
   if (day <= 14)  return { label: "BROODING",  color: "#D4652A", short: "BROOD" };
   if (day <= 35)  return { label: "TUNNEL",    color: "#2E86AB", short: "VENT"};

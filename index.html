@@ -1060,19 +1060,20 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [newCrate, setNewCrate] = useState({ grossWeight:"", numCrates:"3", notes:"" });
   const [placementTrucks, setPlacementTrucks] = useSyncedLog("placementTrucks", houseId, userId, isOnline, syncTick);
   const [newTruck, setNewTruck] = useState({ arrivalTime:"", plate:"", qty:"", initWeight:"", doa:"", notes:"" });
-  // Auto-rollover: check on mount, on syncTick (fires on focus + every 60s), and on timer
+  // Auto-rollover: check on mount, on syncTick (fires on focus/visible + every 60s), and on timer
   useEffect(() => {
     if (!cycleConfig) return;
-    // Check immediately — catches up when app comes to foreground after rollover time
     const check = function() {
       const autoDay = getCurrentDay(cycleConfig.placementDate, cycleConfig.rolloverHour);
       const effective = Math.max(cycleConfig.dayOverride || 0, autoDay);
       if (effective > currentDay) setCurrentDay(effective);
     };
     check();
-    // Also poll every 60s as a fallback
     const t = setInterval(check, 60000);
-    return function(){ clearInterval(t); };
+    // Belt-and-suspenders: also check directly on visibility change
+    const onVisible = function() { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return function(){ clearInterval(t); document.removeEventListener("visibilitychange", onVisible); };
   }, [cycleConfig, currentDay, syncTick]);
   // Migration: carry over old dayAnchor/dayOverride data into cycleConfig
   useEffect(function() {
@@ -3134,17 +3135,22 @@ function AppShell() {
     const sub = sb.auth.onAuthStateChange(function(event, newSession) { setSession(newSession || null); });
     const goOnline = () => { setIsOnline(true); setSyncTick(function(t){return t+1;}); };
     const goOffline = () => setIsOnline(false);
-    const onFocus = () => { if (navigator.onLine) setSyncTick(function(t){return t+1;}); };
+    // Fire syncTick on focus AND visibilitychange — both needed for mobile reliability
+    // Day check uses syncTick so must fire regardless of connectivity
+    const onFocus = () => setSyncTick(function(t){return t+1;});
+    const onVisible = () => { if (document.visibilityState === "visible") setSyncTick(function(t){return t+1;}); };
     window.addEventListener("online", goOnline);
     window.addEventListener("offline", goOffline);
     window.addEventListener("focus", onFocus);
-    // Also re-sync every 60 seconds while online
+    document.addEventListener("visibilitychange", onVisible);
+    // Re-sync every 60 seconds while online
     const interval = setInterval(function(){ if (navigator.onLine) setSyncTick(function(t){return t+1;}); }, 60000);
     return () => {
       if (sub && sub.data && sub.data.subscription) sub.data.subscription.unsubscribe();
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
       window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
       clearInterval(interval);
     };
   }, []);

@@ -895,13 +895,13 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [incidentFilter, setIncidentFilter] = useState("all");
   const [fgSection, setFgSection]         = useState("incidents"); // "incidents" | "kb" | "meds" | "lighting"
   // Editable Field Guide data
-  const [medProgram, setMedProgram] = useLocalStorage("medProgram", MED_PROGRAM_DEFAULT);
+  const [medProgram, setMedProgram] = useSyncedConfig("medProgram", MED_PROGRAM_DEFAULT, houseId, userId, isOnline, syncTick);
   const [editingMedIdx, setEditingMedIdx] = useState(null);
   const [medDraft, setMedDraft] = useState(null);
-  const [lightingProgram, setLightingProgram] = useLocalStorage("lightingProgram", LIGHTING_DEFAULT);
+  const [lightingProgram, setLightingProgram] = useSyncedConfig("lightingProgram", LIGHTING_DEFAULT, houseId, userId, isOnline, syncTick);
   const [editingLightIdx, setEditingLightIdx] = useState(null);
   const [lightDraft, setLightDraft] = useState(null);
-  const [feedingGuide, setFeedingGuide] = useLocalStorage("feedingGuide", FEEDING_GUIDE_DEFAULT);
+  const [feedingGuide, setFeedingGuide] = useSyncedConfig("feedingGuide", FEEDING_GUIDE_DEFAULT, houseId, userId, isOnline, syncTick);
   const [editingFeedIdx, setEditingFeedIdx] = useState(null);
   const [feedDraft, setFeedDraft] = useState(null);
   const [cycleHistory, setCycleHistory] = useLocalStorage("cycleHistory", []);

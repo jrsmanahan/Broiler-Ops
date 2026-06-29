@@ -205,7 +205,7 @@ function clearTombstones(dataType) {
 // useSyncedConfig: syncs object-type persistent configs (e.g. tasksByBracket)
 // across devices. Stores as a single row in sync_entries (local_id=1).
 // Last-write-wins — acceptable for configs typically managed by one user.
-function useSyncedConfig(key, defaultValue, houseId, userId, isOnline) {
+function useSyncedConfig(key, defaultValue, houseId, userId, isOnline, syncTick) {
   const [value, setValue] = useLocalStorage(key, defaultValue);
   useEffect(function() {
     if (!isOnline || !houseId) return;
@@ -222,7 +222,7 @@ function useSyncedConfig(key, defaultValue, houseId, userId, isOnline) {
           }], { onConflict: "house_id,data_type,local_id" });
         }
       });
-  }, [isOnline, houseId]);
+  }, [isOnline, houseId, syncTick]);
   const setSyncedConfig = function(updater) {
     setValue(function(prev) {
       const next = typeof updater === "function" ? updater(prev) : updater;
@@ -244,7 +244,7 @@ function useSyncedConfig(key, defaultValue, houseId, userId, isOnline) {
 // On mount/online, does a two-way merge: local-only entries push up,
 // remote-only entries pull down. Tombstoned IDs (intentionally deleted)
 // are never pulled back from remote, even if the delete failed earlier.
-function useSyncedLog(key, houseId, userId, isOnline) {
+function useSyncedLog(key, houseId, userId, isOnline, syncTick) {
   const [value, setValue] = useLocalStorage(key, []);
   useEffect(function() {
     if (!isOnline || !houseId) return;
@@ -274,7 +274,7 @@ function useSyncedLog(key, houseId, userId, isOnline) {
           return merged;
         });
       });
-  }, [isOnline, houseId]);
+  }, [isOnline, houseId, syncTick]);
   const setSyncedValue = function(updater) {
     setValue(function(prev) {
       const next = typeof updater === "function" ? updater(prev) : updater;
@@ -778,7 +778,7 @@ function DailyLogRows({ logs, currentDay, getPhase, placementDate, FEED_FC, netP
   return rows;
 }
 // ═════════════════════════════════════════════════════════════════════════════
-function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
+function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick }) {
   const isOnline = syncStatus === "online";
   const houseId = house.id;
   const userId = house.user_id;
@@ -804,24 +804,24 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
     return 0;
   });
   // Daily records — two shifts per day
-  const [shiftLogs, setShiftLogs] = useSyncedLog("shiftLogs", houseId, userId, isOnline);
+  const [shiftLogs, setShiftLogs] = useSyncedLog("shiftLogs", houseId, userId, isOnline, syncTick);
   const [newLog, setNewLog] = useState({ shift:"DAY", mortality:"", feedsConsumed:"", feedBalance:"", waterEnd:"", alw:"", notes:"" });
   const [logDay, setLogDay] = useState(String(currentDay));
   const [editingLogId, setEditingLogId] = useState(null);
   // Feed receive log
   // Brooding tasks — per bracket, per task
   const [taskChecks, setTaskChecks] = useLocalStorage("taskChecks", {});
-  const [tasksByBracket, setTasksByBracket] = useSyncedConfig("tasksByBracket", buildDefaultTaskMap(), houseId, userId, isOnline);
+  const [tasksByBracket, setTasksByBracket] = useSyncedConfig("tasksByBracket", buildDefaultTaskMap(), houseId, userId, isOnline, syncTick);
   const [newTaskText, setNewTaskText] = useState("");
   const [activeBracket, setActiveBracket] = useState(getBroodBracket(currentDay));
   // Tunnel logs
-  const [tunnelLogs, setTunnelLogs] = useSyncedLog("tunnelLogs", houseId, userId, isOnline);
+  const [tunnelLogs, setTunnelLogs] = useSyncedLog("tunnelLogs", houseId, userId, isOnline, syncTick);
   const [newTunnel, setNewTunnel] = useState({ shift:"04:00", targetTemp:"", actualTemp:"", outsideTemp:"", sensor1:"", sensor2:"", actualVent:"", minVent:"", maxVent:"", humidity:"", heatersOn:"", padCurtain1:"", padCurtain2:"", padsOn:false, notes:"" });
   const [tunnelLogDay, setTunnelLogDay] = useState("");
   // Placement
   // Season for ventilation guide
   // Crop fill log
-  const [cropLogs, setCropLogs] = useSyncedLog("cropLogs", houseId, userId, isOnline);
+  const [cropLogs, setCropLogs] = useSyncedLog("cropLogs", houseId, userId, isOnline, syncTick);
   const [newCrop, setNewCrop] = useState({ time:"", shift:"DAY", pen:"", filled:"", checked:"10", notes:"" });
   // Litter evaluation log
   const LITTER_ZONES = [
@@ -829,18 +829,18 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
     { id:"B", label:"Zone B", desc:"Top Right (facing fans)" },
     { id:"C", label:"Zone C", desc:"Bottom Left" },
     { id:"D", label:"Zone D", desc:"Bottom Right" }, ];
-  const [litterLogs, setLitterLogs] = useSyncedLog("litterLogs", houseId, userId, isOnline);
+  const [litterLogs, setLitterLogs] = useSyncedLog("litterLogs", houseId, userId, isOnline, syncTick);
   const [newLitter, setNewLitter] = useState({ bracket:"", pen:"", scores:{}, flags:[], flagInput:"", notes:"" });
   const [litterScores, setLitterScores] = useLocalStorage("litterScores", {});
   const [litterFlags, setLitterFlags] = useLocalStorage("litterFlags", []);
   const [litterNotes, setLitterNotes] = useLocalStorage("litterNotes", "");
   // Drinker flushing log
   const DRINKER_LINES = ["Line 1","Line 2","Line 3","Line 4","Line 5"];
-  const [flushLogs, setFlushLogs] = useSyncedLog("flushLogs", houseId, userId, isOnline);
+  const [flushLogs, setFlushLogs] = useSyncedLog("flushLogs", houseId, userId, isOnline, syncTick);
   const [newFlush, setNewFlush] = useState({ time:"", shift:"DAY", linesFlushed:[], flowRate:"good", issues:"", notes:"" });
   const [metricsOpen, setMetricsOpen] = useState(false);
   // Field Guide state
-  const [incidents, setIncidents]     = useSyncedLog("incidents", houseId, userId, isOnline);
+  const [incidents, setIncidents]     = useSyncedLog("incidents", houseId, userId, isOnline, syncTick);
   const [newIncident, setNewIncident] = useState({ shift:"DAY", category:"health", description:"", action:"", resolved:false });
   const [incidentSearch, setIncidentSearch] = useState("");
   const [incidentFilter, setIncidentFilter] = useState("all");
@@ -872,12 +872,12 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   const [migrationDone, setMigrationDone] = useLocalStorage("migrationDone", false);
   const [showCrate, setShowCrate] = useState(false);
   const [placementSection, setPlacementSection] = useState("placement");
-  const [feedDeliveries, setFeedDeliveries] = useSyncedLog("feedDeliveries", houseId, userId, isOnline);
+  const [feedDeliveries, setFeedDeliveries] = useSyncedLog("feedDeliveries", houseId, userId, isOnline, syncTick);
   const [newDelivery, setNewDelivery] = useState({ type:"CBC", qty:"", notes:"" });
-  const [harvestTrucks, setHarvestTrucks] = useSyncedLog("harvestTrucks", houseId, userId, isOnline);
+  const [harvestTrucks, setHarvestTrucks] = useSyncedLog("harvestTrucks", houseId, userId, isOnline, syncTick);
   const [newHarvest, setNewHarvest] = useState({ plate:"", heads:"", kg:"", day:String(currentDay), notes:"" });
   const [surplusFeedBags, setSurplusFeedBags] = useLocalStorage("surplusFeedBags", 0);
-  const [medInventoryLog, setMedInventoryLog] = useSyncedLog("medInventoryLog", houseId, userId, isOnline);
+  const [medInventoryLog, setMedInventoryLog] = useSyncedLog("medInventoryLog", houseId, userId, isOnline, syncTick);
   const [newMedEntry, setNewMedEntry] = useState({ type:"delivery", medicine:"", qty:"", unit:"", notes:"" });
   const [checksSection, setChecksSection] = useState("cropfill");
   const OPS_KEYS = ["shiftLogs","taskChecks","tunnelLogs","cropLogs","litterLogs","flushLogs","crateEntries","placementTrucks","crateWeight","chicksPerCrate","activeBracket","litterScores","litterFlags","litterNotes","feedDeliveries","medInventoryLog","harvestTrucks","surplusFeedBags","dayOverride_legacy","dayAnchor_legacy"];
@@ -942,20 +942,24 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
   // Crate weighing for chick ALW
   const [crateWeight, setCrateWeight] = useLocalStorage("crateWeight", "1.8");   // kg per crate (tare)
   const [chicksPerCrate, setChicksPerCrate] = useLocalStorage("chicksPerCrate", "100");
-  const [crateEntries, setCrateEntries] = useSyncedLog("crateEntries", houseId, userId, isOnline);
+  const [crateEntries, setCrateEntries] = useSyncedLog("crateEntries", houseId, userId, isOnline, syncTick);
   const [newCrate, setNewCrate] = useState({ grossWeight:"", numCrates:"3", notes:"" });
-  const [placementTrucks, setPlacementTrucks] = useSyncedLog("placementTrucks", houseId, userId, isOnline);
+  const [placementTrucks, setPlacementTrucks] = useSyncedLog("placementTrucks", houseId, userId, isOnline, syncTick);
   const [newTruck, setNewTruck] = useState({ arrivalTime:"", plate:"", qty:"", initWeight:"", doa:"", notes:"" });
-  // Auto-rollover: every minute, catch up to real elapsed time
+  // Auto-rollover: check on mount, on syncTick (fires on focus + every 60s), and on timer
   useEffect(() => {
     if (!cycleConfig) return;
-    const t = setInterval(function() {
+    // Check immediately — catches up when app comes to foreground after rollover time
+    const check = function() {
       const autoDay = getCurrentDay(cycleConfig.placementDate, cycleConfig.rolloverHour);
       const effective = Math.max(cycleConfig.dayOverride || 0, autoDay);
       if (effective > currentDay) setCurrentDay(effective);
-    }, 60000);
+    };
+    check();
+    // Also poll every 60s as a fallback
+    const t = setInterval(check, 60000);
     return function(){ clearInterval(t); };
-  }, [cycleConfig, currentDay]);
+  }, [cycleConfig, currentDay, syncTick]);
   // Migration: carry over old dayAnchor/dayOverride data into cycleConfig
   useEffect(function() {
     if (!cycleConfig && !migrationDone) {
@@ -1260,7 +1264,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
           </div>
           <div style={{ display:"flex", gap:6, alignItems:"center" }}>
             <button onClick={onSwitchHouse} style={{ background:"none", border:"1px solid #CBD5E1", color:"#64748B", fontFamily:"'Inter',sans-serif", fontSize:10, padding:"5px 10px", cursor:"pointer", borderRadius:6 }}>⇄ SWITCH HOUSE</button>
-            {syncStatus && <span style={{ fontSize:9, color:syncStatus==="online"?"#2E7D52":"#D4652A", border:"1px solid "+(syncStatus==="online"?"#2E7D52":"#D4652A")+"40", padding:"4px 8px", borderRadius:6 }}>{syncStatus==="online"?"● SYNCED":"○ OFFLINE"}</span>}
+            {syncStatus && <span style={{ fontSize:9, color:syncStatus==="online"?"#2E7D52":"#D4652A", border:"1px solid "+(syncStatus==="online"?"#2E7D52":"#D4652A")+"40", padding:"4px 8px", borderRadius:6 }}>{syncStatus==="online"?"● ONLINE":"○ OFFLINE"}</span>}
           </div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:12 }}>
@@ -1286,22 +1290,21 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
               </div>
             )}
           </div>
-          <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-            <button onClick={()=>{setCycleDraft({placementDate:house.placement_date||"",flockSize:String(house.flock_size||""),rolloverHour:String(cycleConfig?cycleConfig.rolloverHour||0:0)});setShowStartCycle(true);setShowCycleMenu(false);}} style={{ background:"#2E7D52", border:"none", color:"#FFFFFF", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:9, padding:"5px 10px", cursor:"pointer", borderRadius:5, letterSpacing:.5 }}>
-              {cycleConfig ? "↺ NEW CYCLE" : "▶ START CYCLE"}
-            </button>
-            {cycleConfig && (
-              <button onClick={()=>setShowEndCycle(true)} style={{ background:"none", border:"1px solid #E91E6340", color:"#E91E6380", fontFamily:"'Inter',sans-serif", fontSize:9, padding:"5px 10px", cursor:"pointer", borderRadius:5, letterSpacing:.5 }}>■ END CYCLE</button>
+          <div style={{ position:"relative", flexShrink:0 }}>
+            <button onClick={()=>setShowCycleMenu(v=>!v)} style={{ background:"#1E293B", border:"none", color:"#FFFFFF", fontFamily:"'Inter',sans-serif", fontSize:9, padding:"6px 10px", cursor:"pointer", borderRadius:6, letterSpacing:.5 }}>⚙ MENU</button>
+            {showCycleMenu && (
+              <div style={{ position:"absolute", right:0, top:34, background:"#FFFFFF", border:"1px solid #E2E8F0", borderRadius:8, padding:8, zIndex:300, width:170, boxShadow:"0 6px 20px #00000020" }}>
+                <button onClick={function(){setCycleDraft({placementDate:house.placement_date||"",flockSize:String(house.flock_size||""),rolloverHour:String(cycleConfig?cycleConfig.rolloverHour||0:0)});setShowStartCycle(true);setShowCycleMenu(false);}} style={{ width:"100%", background:"#2E7D5212", border:"none", color:"#2E7D52", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:12, padding:"10px 12px", cursor:"pointer", textAlign:"left", borderRadius:6, marginBottom:4 }}>
+                  {cycleConfig ? "↺ New Cycle" : "▶ Start Cycle"}
+                </button>
+                {cycleConfig && (
+                  <button onClick={function(){setShowEndCycle(true);setShowCycleMenu(false);}} style={{ width:"100%", background:"#E91E6308", border:"none", color:"#E91E63", fontFamily:"'Inter',sans-serif", fontWeight:600, fontSize:12, padding:"10px 12px", cursor:"pointer", textAlign:"left", borderRadius:6, marginBottom:4 }}>■ End Cycle</button>
+                )}
+                <div style={{ height:1, background:"#F0F2F5", margin:"4px 0" }}/>
+                {onLogout && <button onClick={onLogout} style={{ width:"100%", background:"none", border:"none", color:"#64748B", fontFamily:"'Inter',sans-serif", fontSize:12, padding:"9px 12px", cursor:"pointer", textAlign:"left", borderRadius:4 }}>Log Out</button>}
+                <button onClick={()=>setShowCycleMenu(false)} style={{ width:"100%", background:"none", border:"none", color:"#CBD5E1", fontFamily:"'Inter',sans-serif", fontSize:10, padding:"6px 12px", cursor:"pointer", textAlign:"left" }}>close</button>
+              </div>
             )}
-            <div style={{ position:"relative" }}>
-              <button onClick={()=>setShowCycleMenu(v=>!v)} style={{ width:"100%", background:"none", border:"1px solid #CBD5E1", color:"#94A3B8", fontFamily:"'Inter',sans-serif", fontSize:9, padding:"4px 8px", cursor:"pointer", borderRadius:4 }}>⚙</button>
-              {showCycleMenu && (
-                <div style={{ position:"absolute", right:0, top:30, background:"#FFFFFF", border:"1px solid #E2E8F0", borderRadius:6, padding:10, zIndex:200, width:150, boxShadow:"0 4px 12px #00000018" }}>
-                  {onLogout && <button onClick={onLogout} style={{ width:"100%", background:"none", border:"none", color:"#64748B", fontFamily:"'Inter',sans-serif", fontSize:11, padding:"7px", cursor:"pointer", textAlign:"left", borderRadius:4 }}>LOG OUT</button>}
-                  <button onClick={()=>setShowCycleMenu(false)} style={{ width:"100%", background:"none", border:"none", color:"#94A3B8", fontFamily:"'Inter',sans-serif", fontSize:10, padding:"6px", cursor:"pointer", textAlign:"left" }}>close</button>
-                </div>
-              )}
-            </div>
           </div>
         </div>
       </div>
@@ -1785,7 +1788,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
               </button>
             </div>
             {/* Session log table */}
-            <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflow:"hidden"}}>
+            <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto"}}>
+              <div style={{minWidth:780}}>
               <div style={{display:"grid",gridTemplateColumns:"40px 55px 70px 65px 65px 60px 60px 60px 60px 65px 55px 55px 55px 1fr 36px",padding:"8px 16px",borderBottom:"1px solid #E2E8F0",fontSize:8,color:"#64748B",letterSpacing:.8}}>
                 <div>DAY</div><div>TIME</div><div>ACTUAL°C</div><div>OUTSIDE°C</div><div>TARGET°C</div><div>S1</div><div>S2</div><div>ACT V%</div><div>MIN V%</div><div>MAX V%</div><div>HUM%</div><div>HTR</div><div>PAD</div><div>NOTES</div><div></div>
               </div>
@@ -1809,6 +1813,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus }) {
                     style={{background:"none",border:"1px solid #E91E6340",color:"#E91E6380",fontFamily:"'Inter',sans-serif",fontSize:11,width:28,height:28,cursor:"pointer",borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>
                 </div>
               ))}
+              </div>
             </div>
           </div>
         )}
@@ -2926,6 +2931,7 @@ function AppShell() {
   const [showSetupForm, setShowSetupForm] = useState(false);
   const [setupDraft, setSetupDraft] = useState({ building_name:"", breed:"Ross 308", flock_size:"", placement_date:"", flockman_names:"", importLegacy:true });
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [syncTick, setSyncTick] = useState(0);
   const [editingHouseId, setEditingHouseId] = useState(null);
   const [editHouseDraft, setEditHouseDraft] = useState(null);
 
@@ -2936,14 +2942,20 @@ function AppShell() {
     if (!sb) { setSession(null); setAuthError("Supabase failed to load — check your internet connection and refresh."); return; }
     sb.auth.getSession().then(function(res) { setSession(res.data.session || null); });
     const sub = sb.auth.onAuthStateChange(function(event, newSession) { setSession(newSession || null); });
-    const goOnline = () => setIsOnline(true);
+    const goOnline = () => { setIsOnline(true); setSyncTick(function(t){return t+1;}); };
     const goOffline = () => setIsOnline(false);
+    const onFocus = () => { if (navigator.onLine) setSyncTick(function(t){return t+1;}); };
     window.addEventListener("online", goOnline);
     window.addEventListener("offline", goOffline);
+    window.addEventListener("focus", onFocus);
+    // Also re-sync every 60 seconds while online
+    const interval = setInterval(function(){ if (navigator.onLine) setSyncTick(function(t){return t+1;}); }, 60000);
     return () => {
       if (sub && sub.data && sub.data.subscription) sub.data.subscription.unsubscribe();
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
+      window.removeEventListener("focus", onFocus);
+      clearInterval(interval);
     };
   }, []);
 
@@ -3236,7 +3248,7 @@ function AppShell() {
   const house = houses.find(function(h){return h.id===selectedHouseId;});
   if (!house) return <div style={PAGE}><div style={{color:"#64748B"}}>House not found.</div></div>;
   setActiveNamespace("beracah_house_" + house.id + "_");
-  return <ErrorBoundary><SupervisorApp house={house} onSwitchHouse={function(){setSelectedHouseId(null);}} onLogout={handleLogout} syncStatus={isOnline?"online":"offline"} /></ErrorBoundary>;
+  return <ErrorBoundary><SupervisorApp house={house} onSwitchHouse={function(){setSelectedHouseId(null);}} onLogout={handleLogout} syncStatus={isOnline?"online":"offline"} syncTick={syncTick} /></ErrorBoundary>;
 }
 
 </script>

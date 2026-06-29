@@ -532,6 +532,8 @@ function getCurrentDay(placementDateStr, rolloverHour) {
   const elapsed = Date.now() - day0Start;
   if (elapsed < 0) return 0; // before first rollover = still Day 0
   return Math.floor(elapsed / 86400000) + 1; // Day 1 starts at rollover
+}
+function getPhase(day) {
   if (day === 0) return { label: "PLACEMENT", color: "#E5B80B", short: "PLACE" };
   if (day <= 14)  return { label: "BROODING",  color: "#D4652A", short: "BROOD" };
   if (day <= 35)  return { label: "TUNNEL",    color: "#2E86AB", short: "VENT"};

@@ -971,8 +971,14 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const startCycle = (draft) => {
     const NS = ACTIVE_NS;
     OPS_KEYS.forEach(function(k){ localStorage.removeItem(NS+k); });
-    // Clear tombstones for all synced log types — fresh cycle starts clean
-    ["shiftLogs","tunnelLogs","cropLogs","litterLogs","flushLogs","incidents","feedDeliveries","medInventoryLog","crateEntries","placementTrucks","harvestTrucks"].forEach(function(k){ clearTombstones(k); });
+    ["shiftLogs","tunnelLogs","cropLogs","litterLogs","flushLogs","incidents","feedDeliveries","medInventoryLog","crateEntries","placementTrucks","harvestTrucks"].forEach(function(k){
+      clearTombstones(k);
+      // Also purge remote tombstones for this house — keeps sync_entries clean between cycles
+      if (isOnline && houseId) {
+        const sb = getSupabaseClient();
+        if (sb) sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", "tomb_"+k);
+      }
+    });
     const newConfig = {
       placementDate: draft.placementDate,
       flockSize: parseInt(draft.flockSize) || house.flock_size,
@@ -1035,7 +1041,13 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
     }
     const NS = ACTIVE_NS;
     OPS_KEYS.forEach(function(k){ localStorage.removeItem(NS+k); });
-    ["shiftLogs","tunnelLogs","cropLogs","litterLogs","flushLogs","incidents","feedDeliveries","medInventoryLog","crateEntries","placementTrucks","harvestTrucks"].forEach(function(k){ clearTombstones(k); });
+    ["shiftLogs","tunnelLogs","cropLogs","litterLogs","flushLogs","incidents","feedDeliveries","medInventoryLog","crateEntries","placementTrucks","harvestTrucks"].forEach(function(k){
+      clearTombstones(k);
+      if (isOnline && houseId) {
+        const sb = getSupabaseClient();
+        if (sb) sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", "tomb_"+k);
+      }
+    });
     setCycleConfig(null);
     setShowEndCycle(false);
     window.location.reload();
@@ -1255,7 +1267,14 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
       setShiftLogs(p => p.map(x => x.id===editingLogId ? { ...parsed, id:editingLogId } : x));
       setEditingLogId(null);
     } else {
-      setShiftLogs(p => [...p, { ...parsed, id:Date.now() }]);
+      // If an entry already exists for this day+shift, update it instead of creating a duplicate
+      setShiftLogs(function(p) {
+        const existing = p.find(function(l){ return l.day===parsed.day && l.shift===parsed.shift; });
+        if (existing) {
+          return p.map(function(l){ return l.id===existing.id ? {...parsed, id:existing.id} : l; });
+        }
+        return [...p, { ...parsed, id:Date.now() }];
+      });
     }
     setNewLog({ shift:"DAY", mortality:"", feedsConsumed:"", feedBalance:"", waterEnd:"", alw:"", notes:"" });
     setLogDay(String(currentDay));

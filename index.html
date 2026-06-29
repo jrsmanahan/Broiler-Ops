@@ -1521,6 +1521,46 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 </div>
               )}
             </div>
+            {/* ── Daily log status banner ── */}
+            {(function(){
+              var todayAM = shiftLogs.find(function(l){return l.day===currentDay && l.shift==="DAY";});
+              var todayPM = shiftLogs.find(function(l){return l.day===currentDay && l.shift==="NIGHT";});
+              var bothLogged = todayAM && todayPM;
+              var noneLogged = !todayAM && !todayPM;
+              if (bothLogged) return (
+                <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"#2E7D5210",border:"1px solid #2E7D5230",borderRadius:8,marginBottom:12}}>
+                  <span style={{fontSize:16}}>✓</span>
+                  <div style={{flex:1}}>
+                    <span style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:12,color:"#2E7D52"}}>Both shifts logged</span>
+                    <span style={{fontSize:11,color:"#64748B",marginLeft:8}}>Day {currentDay} complete</span>
+                  </div>
+                </div>
+              );
+              return (
+                <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"#C4960C0E",border:"1px solid #C4960C40",borderRadius:8,marginBottom:12}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:12,color:"#C4960C",marginBottom:3}}>
+                      {noneLogged ? "No shifts logged yet — Day " + currentDay : (todayAM ? "PM shift not logged yet" : "AM shift not logged yet")}
+                    </div>
+                    <div style={{display:"flex",gap:6}}>
+                      <span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:todayAM?"#2E7D5220":"#E91E6315",color:todayAM?"#2E7D52":"#E91E63",fontWeight:600}}>
+                        {todayAM?"AM ✓":"AM —"}
+                      </span>
+                      <span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:todayPM?"#2E7D5220":"#E91E6315",color:todayPM?"#2E7D52":"#E91E63",fontWeight:600}}>
+                        {todayPM?"PM ✓":"PM —"}
+                      </span>
+                    </div>
+                  </div>
+                  <button onClick={function(){
+                    setActiveTab("records");
+                    setNewLog(function(p){return {...p,shift:todayAM?"NIGHT":"DAY"};});
+                    setLogDay(String(currentDay));
+                  }} style={{background:"#C4960C",border:"none",color:"#FFFFFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"8px 14px",cursor:"pointer",borderRadius:6,whiteSpace:"nowrap",flexShrink:0}}>
+                    LOG NOW
+                  </button>
+                </div>
+              );
+            })()}
             {/* ── 3-card strip: Target ALW · Feed Target · Feed Balance ── */}
             <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
               {/* Target ALW */}

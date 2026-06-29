@@ -3225,7 +3225,7 @@ function AppShell() {
   };
 
   const saveHouseEdit = () => {
-    if (!editHouseDraft.building_name || !editHouseDraft.flock_size || !editHouseDraft.placement_date) return;
+    if (!editHouseDraft.building_name || !editHouseDraft.placement_date) return;
     const original = houses.find(function(h){ return h.id===editingHouseId; });
     const updatedHouse = {
       ...original,
@@ -3255,7 +3255,7 @@ function AppShell() {
     setEditHouseDraft(null);
   };
   const submitSetup = () => {
-    if (!setupDraft.building_name || !setupDraft.flock_size || !setupDraft.placement_date) return;
+    if (!setupDraft.building_name || !setupDraft.placement_date) return;
     const newHouse = {
       id: crypto.randomUUID(),
       user_id: session.user.id,
@@ -3392,9 +3392,7 @@ function AppShell() {
           <div style={{fontSize:12,color:"#64748B",marginBottom:18}}>Each house tracks its own cycle and data</div>
           <label style={LBL2}>HOUSE / BUILDING NAME</label>
           <input value={setupDraft.building_name} onChange={function(e){setSetupDraft(function(p){return {...p,building_name:e.target.value};});}} placeholder="e.g. House 1" style={INP2} />
-          <label style={LBL2}>BREED</label>
-          <input value={setupDraft.breed} onChange={function(e){setSetupDraft(function(p){return {...p,breed:e.target.value};});}} placeholder="e.g. Ross 308" style={INP2} />
-          <label style={LBL2}>FLOCK SIZE (heads placed)</label>
+          <label style={LBL2}>BUILDING CAPACITY (heads)</label>
           <input type="number" value={setupDraft.flock_size} onChange={function(e){setSetupDraft(function(p){return {...p,flock_size:e.target.value};});}} placeholder="e.g. 36000" style={INP2} />
           <label style={LBL2}>PLACEMENT DATE (Day 0)</label>
           <input type="date" value={setupDraft.placement_date} onChange={function(e){setSetupDraft(function(p){return {...p,placement_date:e.target.value};});}} style={INP2} />
@@ -3441,9 +3439,7 @@ function AppShell() {
                 <div key={h.id} style={{background:"#5B86E512",border:"1px solid #5B86E540",borderRadius:8,padding:"14px"}}>
                   <label style={LBL2}>HOUSE / BUILDING NAME</label>
                   <input value={editHouseDraft.building_name} onChange={function(e){setEditHouseDraft(function(p){return {...p,building_name:e.target.value};});}} style={INP2} />
-                  <label style={LBL2}>BREED</label>
-                  <input value={editHouseDraft.breed} onChange={function(e){setEditHouseDraft(function(p){return {...p,breed:e.target.value};});}} style={INP2} />
-                  <label style={LBL2}>FLOCK SIZE (heads placed)</label>
+                  <label style={LBL2}>BUILDING CAPACITY (heads)</label>
                   <input type="number" value={editHouseDraft.flock_size} onChange={function(e){setEditHouseDraft(function(p){return {...p,flock_size:e.target.value};});}} style={INP2} />
                   <label style={LBL2}>PLACEMENT DATE (Day 0)</label>
                   <input type="date" value={editHouseDraft.placement_date} onChange={function(e){setEditHouseDraft(function(p){return {...p,placement_date:e.target.value};});}} style={INP2} />

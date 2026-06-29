@@ -1502,10 +1502,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                     <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
                       <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:12, color:c }}>{sess}</div>
                       <div style={{ fontSize:10, color:"#64748B" }}>{time}</div>
-                      {meds[0] && meds[0].waterL > 0 && <div style={{ fontSize:10, color:"#5B86E5" }}>{meds[0].waterL}L water</div>}
                     </div>
                     <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-                      {meds.filter(m=>m.waterL>0||meds.indexOf(m)===0).map((m,i) => (
+                      {meds.map((m,i) => (
                         <div key={i} style={{ background:(c)+"14", border:"1px solid "+(c)+"30", borderRadius:4, padding:"4px 10px", fontSize:11, color:c }}>
                           {m.medicine} — {m.dose} {m.unit}{m.waterL>0?" / "+(m.waterL)+"L":""}
                         </div>

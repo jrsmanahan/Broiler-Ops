@@ -3119,11 +3119,11 @@ function AppShell() {
       .then(function(res) {
         if (res.error || !res.data) {
           // No subscription record — create a trial
-          const trialEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+          const trialEnd = null; // starts when they log their first entry
           const userEmail = session.user.email || "";
           sb.from("subscriptions").insert({ user_id: session.user.id, status: "trial", trial_ends_at: trialEnd, email: userEmail })
             .then(function() {
-              setSubscription({ status: "trial", trial_ends_at: trialEnd, daysLeft: 30, nickname: null, email: userEmail });
+              setSubscription({ status: "trial", trial_ends_at: null, daysLeft: null, nickname: null, email: userEmail, trialStarted: false });
             });
           return;
         }
@@ -3133,7 +3133,9 @@ function AppShell() {
           daysLeft = Math.ceil((new Date(d.trial_ends_at) - Date.now()) / 86400000);
           if (daysLeft < 0) daysLeft = 0;
         }
-        setSubscription({ status: d.status, trial_ends_at: d.trial_ends_at, daysLeft: daysLeft, nickname: d.nickname || null, email: d.email || session.user.email || "" });
+        // trial_ends_at = null means they haven't logged anything yet — trial hasn't started
+        var trialStarted = d.status !== "trial" || d.trial_ends_at !== null;
+        setSubscription({ status: d.status, trial_ends_at: d.trial_ends_at, daysLeft: daysLeft, nickname: d.nickname || null, email: d.email || session.user.email || "", trialStarted: trialStarted });
       });
   }, [session]);
 
@@ -3314,7 +3316,7 @@ function AppShell() {
           <div style={{fontSize:12,color:"#64748B",marginBottom:4}}>made by Tunnel Vent Experts</div>
           <div style={{background:"#2E7D5212",border:"1px solid #2E7D5230",borderRadius:6,padding:"8px 12px",marginBottom:20,textAlign:"center"}}>
             <span style={{fontSize:12,color:"#2E7D52",fontWeight:600}}>30-day free trial</span>
-            <span style={{fontSize:11,color:"#64748B"}}> · no credit card required</span>
+            <span style={{fontSize:11,color:"#64748B"}}> · starts on your first log entry · no credit card required</span>
           </div>
           {magicLinkSent ? (
             <div>
@@ -3366,7 +3368,7 @@ function AppShell() {
       </div>
     );
   }
-  if (subscription.status === "trial" && subscription.daysLeft <= 0) {
+  if (subscription.status === "trial" && subscription.trial_ends_at && subscription.daysLeft <= 0) {
     return (
       <div style={PAGE}>
         <div style={CARD}>
@@ -3420,7 +3422,12 @@ function AppShell() {
         <div style={{...CARD, maxWidth:460}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
             <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:18,color:"#1E293B"}}>Your Houses</div>
-            {subscription && subscription.status === "trial" && subscription.daysLeft !== null && (
+            {subscription && subscription.status === "trial" && !subscription.trial_ends_at && (
+              <div style={{fontSize:11,color:"#2E7D52",background:"#2E7D5210",border:"1px solid #2E7D5230",borderRadius:6,padding:"4px 10px"}}>
+                Trial starts on your first log entry
+              </div>
+            )}
+            {subscription && subscription.status === "trial" && subscription.trial_ends_at && subscription.daysLeft !== null && (
               <div style={{fontSize:11,color:subscription.daysLeft<=7?"#E91E63":"#C4960C",background:subscription.daysLeft<=7?"#E91E6310":"#C4960C10",border:"1px solid "+(subscription.daysLeft<=7?"#E91E6330":"#C4960C30"),borderRadius:6,padding:"4px 10px"}}>
                 {subscription.daysLeft} day{subscription.daysLeft!==1?"s":""} left in trial
               </div>

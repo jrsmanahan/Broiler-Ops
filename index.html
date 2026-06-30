@@ -3436,7 +3436,10 @@ function AppShell() {
     return (
       <div style={PAGE}>
         <div style={CARD}>
-          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:18,color:"#1E293B",marginBottom:4}}>Set up your house</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:18,color:"#1E293B"}}>Set up your house</div>
+            <button onClick={handleLogout} style={{background:"none",border:"1px solid #CBD5E1",color:"#94A3B8",fontFamily:"'Inter',sans-serif",fontSize:10,padding:"5px 10px",cursor:"pointer",borderRadius:6,flexShrink:0}}>LOG OUT</button>
+          </div>
           <div style={{fontSize:12,color:"#64748B",marginBottom:18}}>Each house tracks its own cycle and data</div>
           <label style={LBL2}>HOUSE / BUILDING NAME</label>
           <input value={setupDraft.building_name} onChange={function(e){setSetupDraft(function(p){return {...p,building_name:e.target.value};});}} placeholder="e.g. House 1" style={INP2} />

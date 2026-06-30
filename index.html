@@ -3153,7 +3153,13 @@ function AppShell() {
   const [verifyingOtp, setVerifyingOtp] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [houses, setHouses] = useState(null); // null=loading
-  const [selectedHouseId, setSelectedHouseId] = useState(null);
+  const [selectedHouseId, setSelectedHouseId] = useState(function(){
+    try { return localStorage.getItem("beracah_last_house_id") || null; } catch(e) { return null; }
+  });
+  function selectHouse(id) {
+    setSelectedHouseId(id);
+    try { if (id) localStorage.setItem("beracah_last_house_id", id); else localStorage.removeItem("beracah_last_house_id"); } catch(e) {}
+  }
   const [showSetupForm, setShowSetupForm] = useState(false);
   const [setupDraft, setSetupDraft] = useState({ building_name:"", breed:"Ross 308", flock_size:"", placement_date:"", flockman_names:"", importLegacy:true });
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -3305,7 +3311,7 @@ function AppShell() {
     getSupabaseClient().auth.signOut().then(function() {
       setSession(null);
       setHouses(null);
-      setSelectedHouseId(null);
+      selectHouse(null);
     });
   };
 
@@ -3375,7 +3381,7 @@ function AppShell() {
     setHouses(updated);
     localStorage.setItem("beracah_houses_" + session.user.id, JSON.stringify(updated));
     setActiveNamespace(newNS);
-    setSelectedHouseId(newHouse.id);
+    selectHouse(newHouse.id);
     setShowSetupForm(false);
     setSetupDraft({ building_name:"", breed:"Ross 308", flock_size:"", placement_date:"", flockman_names:"", importLegacy:true });
   };
@@ -3540,7 +3546,7 @@ function AppShell() {
               );
               return (
                 <div key={h.id} style={{background:"#F5F7FA",border:"1px solid #E2E8F0",borderRadius:8,padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <div onClick={function(){setActiveNamespace("beracah_house_"+h.id+"_");setSelectedHouseId(h.id);}} style={{cursor:"pointer",flex:1}}>
+                  <div onClick={function(){setActiveNamespace("beracah_house_"+h.id+"_");selectHouse(h.id);}} style={{cursor:"pointer",flex:1}}>
                     <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:14,color:"#1E293B"}}>{h.building_name}</div>
                     <div style={{fontSize:11,color:"#64748B",marginTop:2}}>{h.breed} · {h.flock_size.toLocaleString()} heads · placed {h.placement_date}</div>
                   </div>
@@ -3559,7 +3565,7 @@ function AppShell() {
   const house = houses.find(function(h){return h.id===selectedHouseId;});
   if (!house) return <div style={PAGE}><div style={{color:"#64748B"}}>House not found.</div></div>;
   setActiveNamespace("beracah_house_" + house.id + "_");
-  return <ErrorBoundary><SupervisorApp house={house} onSwitchHouse={function(){setSelectedHouseId(null);}} onLogout={handleLogout} syncStatus={isOnline?"online":"offline"} syncTick={syncTick} /></ErrorBoundary>;
+  return <ErrorBoundary><SupervisorApp house={house} onSwitchHouse={function(){selectHouse(null);}} onLogout={handleLogout} syncStatus={isOnline?"online":"offline"} syncTick={syncTick} /></ErrorBoundary>;
 }
 
 </script>

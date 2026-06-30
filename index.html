@@ -991,10 +991,14 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
     OPS_KEYS.forEach(function(k){ localStorage.removeItem(NS+k); });
     ["shiftLogs","tunnelLogs","cropLogs","litterLogs","flushLogs","incidents","feedDeliveries","medInventoryLog","crateEntries","placementTrucks","harvestTrucks"].forEach(function(k){
       clearTombstones(k);
-      // Also purge remote tombstones for this house — keeps sync_entries clean between cycles
       if (isOnline && houseId) {
         const sb = getSupabaseClient();
-        if (sb) sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", "tomb_"+k);
+        if (sb) {
+          // Delete both the tombstone records AND the actual data rows — otherwise
+          // old-cycle entries get pulled right back down on the next sync.
+          sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", "tomb_"+k);
+          sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", k);
+        }
       }
     });
     const newConfig = {
@@ -1063,7 +1067,12 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
       clearTombstones(k);
       if (isOnline && houseId) {
         const sb = getSupabaseClient();
-        if (sb) sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", "tomb_"+k);
+        if (sb) {
+          // Delete both tombstones AND the actual archived data — it's already
+          // safely saved in cycleHistory above, so the live sync_entries copy must go.
+          sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", "tomb_"+k);
+          sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", k);
+        }
       }
     });
     setCycleConfig(null);

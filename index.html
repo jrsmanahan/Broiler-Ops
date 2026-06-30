@@ -967,6 +967,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [showEditRollover, setShowEditRollover] = useState(false);
   const [showStartCycle, setShowStartCycle] = useState(false);
   const [showEndCycle, setShowEndCycle] = useState(false);
+  const [isCycleProcessing, setIsCycleProcessing] = useState(false);
   const [saveHistoryOnEnd, setSaveHistoryOnEnd] = useState(true);
   const [cycleDraft, setCycleDraft] = useState({
     placementDate: house.placement_date || "",
@@ -986,21 +987,26 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [newMedEntry, setNewMedEntry] = useState({ type:"delivery", medicine:"", qty:"", unit:"", notes:"" });
   const [checksSection, setChecksSection] = useState("cropfill");
   const OPS_KEYS = ["shiftLogs","taskChecks","tunnelLogs","cropLogs","litterLogs","flushLogs","crateEntries","placementTrucks","crateWeight","chicksPerCrate","activeBracket","litterScores","litterFlags","litterNotes","feedDeliveries","medInventoryLog","harvestTrucks","surplusFeedBags","dayOverride_legacy","dayAnchor_legacy"];
-  const startCycle = (draft) => {
+  const startCycle = async (draft) => {
+    setIsCycleProcessing(true);
     const NS = ACTIVE_NS;
     OPS_KEYS.forEach(function(k){ localStorage.removeItem(NS+k); });
-    ["shiftLogs","tunnelLogs","cropLogs","litterLogs","flushLogs","incidents","feedDeliveries","medInventoryLog","crateEntries","placementTrucks","harvestTrucks"].forEach(function(k){
-      clearTombstones(k);
-      if (isOnline && houseId) {
-        const sb = getSupabaseClient();
-        if (sb) {
-          // Delete both the tombstone records AND the actual data rows — otherwise
-          // old-cycle entries get pulled right back down on the next sync.
-          sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", "tomb_"+k);
-          sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", k);
-        }
+    const deleteKeys = ["shiftLogs","tunnelLogs","cropLogs","litterLogs","flushLogs","incidents","feedDeliveries","medInventoryLog","crateEntries","placementTrucks","harvestTrucks"];
+    deleteKeys.forEach(function(k){ clearTombstones(k); });
+    if (isOnline && houseId) {
+      const sb = getSupabaseClient();
+      if (sb) {
+        // Delete both the tombstone records AND the actual data rows — otherwise
+        // old-cycle entries get pulled right back down on the next sync.
+        // MUST await these before reload, or the page navigation cancels the requests mid-flight.
+        const deletePromises = [];
+        deleteKeys.forEach(function(k){
+          deletePromises.push(sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", "tomb_"+k));
+          deletePromises.push(sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", k));
+        });
+        await Promise.all(deletePromises);
       }
-    });
+    }
     const newConfig = {
       placementDate: draft.placementDate,
       flockSize: parseInt(draft.flockSize) || house.flock_size,
@@ -1016,7 +1022,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
     setShowCycleMenu(false);
     window.location.reload();
   };
-  const endCycle = () => {
+  const endCycle = async () => {
+    setIsCycleProcessing(true);
     if (saveHistoryOnEnd && cycleConfig) {
       const snap = {
         cycleNumber: cycleConfig.cycleNumber || (cycleHistory.length + 1),
@@ -1044,37 +1051,38 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
           finalHR: netPlacedBirds > 0 ? ((netPlacedBirds - shiftLogs.reduce(function(s,l){return s+l.mortality;},0)) / netPlacedBirds * 100).toFixed(2) : null,
         }
       };
-      setCycleHistory(function(p){
-        const updated = [...p, snap];
-        // Push to Supabase immediately so history is safe even if device is lost
-        if (isOnline && houseId) {
-          const sb = getSupabaseClient();
-          if (sb) {
-            sb.from("sync_entries").upsert([{
-              house_id: houseId, user_id: userId,
-              data_type: "cycleHistory", local_id: snap.cycleNumber,
-              payload: snap
-            }], { onConflict: "house_id,data_type,local_id" })
-            .then(function(r){ if (r.error) console.warn("cycleHistory save error:", r.error.message); });
-          }
-        }
-        return updated;
-      });
-    }
-    const NS = ACTIVE_NS;
-    OPS_KEYS.forEach(function(k){ localStorage.removeItem(NS+k); });
-    ["shiftLogs","tunnelLogs","cropLogs","litterLogs","flushLogs","incidents","feedDeliveries","medInventoryLog","crateEntries","placementTrucks","harvestTrucks"].forEach(function(k){
-      clearTombstones(k);
+      setCycleHistory(function(p){ return [...p, snap]; });
+      // Push to Supabase immediately so history is safe even if device is lost.
+      // Awaited below (outside setCycleHistory) so reload doesn't cancel this request.
       if (isOnline && houseId) {
         const sb = getSupabaseClient();
         if (sb) {
-          // Delete both tombstones AND the actual archived data — it's already
-          // safely saved in cycleHistory above, so the live sync_entries copy must go.
-          sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", "tomb_"+k);
-          sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", k);
+          await sb.from("sync_entries").upsert([{
+            house_id: houseId, user_id: userId,
+            data_type: "cycleHistory", local_id: snap.cycleNumber,
+            payload: snap
+          }], { onConflict: "house_id,data_type,local_id" });
         }
       }
-    });
+    }
+    const NS = ACTIVE_NS;
+    OPS_KEYS.forEach(function(k){ localStorage.removeItem(NS+k); });
+    const deleteKeys = ["shiftLogs","tunnelLogs","cropLogs","litterLogs","flushLogs","incidents","feedDeliveries","medInventoryLog","crateEntries","placementTrucks","harvestTrucks"];
+    deleteKeys.forEach(function(k){ clearTombstones(k); });
+    if (isOnline && houseId) {
+      const sb = getSupabaseClient();
+      if (sb) {
+        // Delete both tombstones AND the actual archived data — it's already
+        // safely saved in cycleHistory above, so the live sync_entries copy must go.
+        // MUST await these before reload, or the page navigation cancels the requests mid-flight.
+        const deletePromises = [];
+        deleteKeys.forEach(function(k){
+          deletePromises.push(sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", "tomb_"+k));
+          deletePromises.push(sb.from("sync_entries").delete().eq("house_id", houseId).eq("data_type", k));
+        });
+        await Promise.all(deletePromises);
+      }
+    }
     setCycleConfig(null);
     setShowEndCycle(false);
     window.location.reload();
@@ -1373,7 +1381,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               return <option key={i} value={String(i)}>{label}</option>;
             })}
           </select>
-          <button onClick={function(){startCycle(cycleDraft);}} style={{ width:"100%", background:"#2E7D52", border:"none", color:"#FFFFFF", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:14, padding:"12px", cursor:"pointer", borderRadius:8 }}>▶ START CYCLE</button>
+          <button disabled={isCycleProcessing} onClick={function(){startCycle(cycleDraft);}} style={{ width:"100%", background:isCycleProcessing?"#94A3B8":"#2E7D52", border:"none", color:"#FFFFFF", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:14, padding:"12px", cursor:isCycleProcessing?"default":"pointer", borderRadius:8 }}>{isCycleProcessing?"SAVING...":"▶ START CYCLE"}</button>
           <button onClick={onSwitchHouse} style={{ width:"100%", background:"none", border:"none", color:"#94A3B8", fontFamily:"'Inter',sans-serif", fontSize:12, padding:"10px", cursor:"pointer", marginTop:6 }}>← Back to house selection</button>
         </div>
       </div>
@@ -1477,7 +1485,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               })}
             </select>
             <div style={{ display:"flex", gap:8 }}>
-              <button onClick={function(){startCycle(cycleDraft);}} style={{ flex:1, background:"#2E7D52", border:"none", color:"#FFFFFF", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:14, padding:"11px", cursor:"pointer", borderRadius:8 }}>START CYCLE</button>
+              <button disabled={isCycleProcessing} onClick={function(){startCycle(cycleDraft);}} style={{ flex:1, background:isCycleProcessing?"#94A3B8":"#2E7D52", border:"none", color:"#FFFFFF", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:14, padding:"11px", cursor:isCycleProcessing?"default":"pointer", borderRadius:8 }}>{isCycleProcessing?"SAVING...":"START CYCLE"}</button>
               <button onClick={function(){setShowStartCycle(false);}} style={{ flex:1, background:"none", border:"1px solid #CBD5E1", color:"#64748B", fontFamily:"'Inter',sans-serif", fontSize:13, padding:"11px", cursor:"pointer", borderRadius:8 }}>CANCEL</button>
             </div>
           </div>
@@ -1508,7 +1516,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               </div>
             </div>
             <div style={{ display:"flex", gap:8 }}>
-              <button onClick={endCycle} style={{ flex:1, background:"#E91E63", border:"none", color:"#FFFFFF", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:13, padding:"11px", cursor:"pointer", borderRadius:8 }}>END CYCLE</button>
+              <button disabled={isCycleProcessing} onClick={endCycle} style={{ flex:1, background:isCycleProcessing?"#94A3B8":"#E91E63", border:"none", color:"#FFFFFF", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:13, padding:"11px", cursor:isCycleProcessing?"default":"pointer", borderRadius:8 }}>{isCycleProcessing?"SAVING...":"END CYCLE"}</button>
               <button onClick={function(){setShowEndCycle(false);}} style={{ flex:1, background:"none", border:"1px solid #CBD5E1", color:"#64748B", fontFamily:"'Inter',sans-serif", fontSize:13, padding:"11px", cursor:"pointer", borderRadius:8 }}>CANCEL</button>
             </div>
           </div>

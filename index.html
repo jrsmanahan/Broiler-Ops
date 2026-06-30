@@ -533,6 +533,22 @@ function getCurrentDay(placementDateStr, rolloverHour) {
   if (elapsed < 0) return 0; // before first rollover = still Day 0
   return Math.floor(elapsed / 86400000) + 1; // Day 1 starts at rollover
 }
+function getDeviceLabel() {
+  const ua = navigator.userAgent || "";
+  var os = "Unknown";
+  if (/Android/i.test(ua)) os = "Android";
+  else if (/iPhone|iPad|iPod/i.test(ua)) os = "iOS";
+  else if (/Windows/i.test(ua)) os = "Windows";
+  else if (/Macintosh/i.test(ua)) os = "Mac";
+  else if (/Linux/i.test(ua)) os = "Linux";
+  var browser = "Unknown";
+  if (/Edg\//i.test(ua)) browser = "Edge";
+  else if (/Chrome\//i.test(ua) && !/Edg\//i.test(ua)) browser = "Chrome";
+  else if (/Firefox\//i.test(ua)) browser = "Firefox";
+  else if (/Safari\//i.test(ua) && !/Chrome\//i.test(ua)) browser = "Safari";
+  var isMobile = /Mobi|Android|iPhone|iPad/i.test(ua);
+  return os + " · " + browser + (isMobile ? " · Mobile" : " · Desktop");
+}
 function getPhase(day) {
   if (day === 0) return { label: "PLACEMENT", color: "#E5B80B", short: "PLACE" };
   if (day <= 14)  return { label: "BROODING",  color: "#D4652A", short: "BROOD" };
@@ -3162,6 +3178,7 @@ function AppShell() {
     if (!session) { setSubscription(null); return; }
     const sb = getSupabaseClient();
     if (!sb) return;
+    const deviceLabel = getDeviceLabel();
     sb.from("subscriptions").select("status,trial_ends_at,activated_at,nickname,email")
       .eq("user_id", session.user.id).single()
       .then(function(res) {
@@ -3169,7 +3186,7 @@ function AppShell() {
           // No subscription record — create a trial
           const trialEnd = null; // starts when they log their first entry
           const userEmail = session.user.email || "";
-          sb.from("subscriptions").insert({ user_id: session.user.id, status: "trial", trial_ends_at: trialEnd, email: userEmail })
+          sb.from("subscriptions").insert({ user_id: session.user.id, status: "trial", trial_ends_at: trialEnd, email: userEmail, last_device: deviceLabel, last_seen_at: new Date().toISOString() })
             .then(function() {
               setSubscription({ status: "trial", trial_ends_at: null, daysLeft: null, nickname: null, email: userEmail, trialStarted: false });
             });
@@ -3183,6 +3200,9 @@ function AppShell() {
         }
         // trial_ends_at = null means they haven't logged anything yet — trial hasn't started
         var trialStarted = d.status !== "trial" || d.trial_ends_at !== null;
+        // Update device + last seen every time the app checks subscription status
+        sb.from("subscriptions").update({ last_device: deviceLabel, last_seen_at: new Date().toISOString() })
+          .eq("user_id", session.user.id).then(function(){});
         setSubscription({ status: d.status, trial_ends_at: d.trial_ends_at, daysLeft: daysLeft, nickname: d.nickname || null, email: d.email || session.user.email || "", trialStarted: trialStarted });
       });
   }, [session]);

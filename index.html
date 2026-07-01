@@ -375,18 +375,18 @@ const VENT_GUIDE = [
   { day: 8, target:30.9, minVent:8,    maxVent:40  },
   { day: 9, target:30.6, minVent:9,    maxVent:45  },
   { day:10, target:30.3, minVent:10,   maxVent:50  },
-  { day:11, target:30.0, minVent:11,   maxVent:55  },
-  { day:12, target:29.7, minVent:12.5, maxVent:60  },
-  { day:13, target:29.4, minVent:15,   maxVent:65  },
-  { day:14, target:29.1, minVent:20,   maxVent:70  },
-  { day:15, target:28.8, minVent:30,   maxVent:75  },
-  { day:16, target:28.5, minVent:35,   maxVent:80  },
-  { day:17, target:28.2, minVent:40,   maxVent:85  },
-  { day:18, target:27.9, minVent:45,   maxVent:90  },
-  { day:19, target:27.6, minVent:50,   maxVent:95  },
-  { day:20, target:27.3, minVent:55,   maxVent:100 },
-  { day:21, target:27.0, minVent:60,   maxVent:100 },
-  { day:22, target:26.7, minVent:70,   maxVent:110 },
+  { day:11, target:30.0, minVent:15,   maxVent:55  },
+  { day:12, target:29.7, minVent:20,   maxVent:60  },
+  { day:13, target:29.4, minVent:25,   maxVent:65  },
+  { day:14, target:29.1, minVent:30,   maxVent:70  },
+  { day:15, target:28.8, minVent:35,   maxVent:75  },
+  { day:16, target:28.5, minVent:40,   maxVent:80  },
+  { day:17, target:28.2, minVent:45,   maxVent:85  },
+  { day:18, target:27.9, minVent:50,   maxVent:90  },
+  { day:19, target:27.6, minVent:55,   maxVent:95  },
+  { day:20, target:27.3, minVent:60,   maxVent:100 },
+  { day:21, target:27.0, minVent:65,   maxVent:100 },
+  { day:22, target:26.7, minVent:70,   maxVent:100 },
   { day:23, target:26.4, minVent:75,   maxVent:100 },
   { day:24, target:26.1, minVent:80,   maxVent:100 },
   { day:25, target:25.8, minVent:85,   maxVent:100 },
@@ -399,7 +399,7 @@ const VENT_GUIDE = [
   { day:32, target:23.7, minVent:95,   maxVent:100 },
   { day:33, target:23.4, minVent:95,   maxVent:100 },
   { day:34, target:23.1, minVent:95,   maxVent:100 },
-  { day:35, target:22.8, minVent:95,   maxVent:100 },
+  { day:35, target:23.1, minVent:95,   maxVent:100 },
 ];
 // ─── ROSS 308 ALW STANDARD CURVE (g) — exact from ventilation_guide.xlsx ────
 const ALW_STANDARD = [
@@ -1239,13 +1239,48 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
     const todayCumFeedKg = canonicalCumFeed(currentDay);
     const todayCumMort = canonicalCumMort(currentDay);
     const todayRemainingPop = netPlacedBirds - todayCumMort;
-    if (todayRemainingPop <= 0 || todayCumFeedKg <= 0) return null;
-    const projALWkg = todayCumFeedKg / (todayRemainingPop * projectedFCR);
-    const projALWg  = Math.round(projALWkg * 1000);
+    if (todayRemainingPop <= 0) return null;
     const lastWeigh = alwHistory[alwHistory.length - 1];
+    const lastActualG = Math.round(lastWeigh.alw * 1000);
+    // If no feed logged today yet, nothing new to project from — carry last actual forward
+    const prevCumFeedKg = canonicalCumFeed(currentDay - 1);
+    const todayFeedAdded = todayCumFeedKg - prevCumFeedKg;
+    if (todayFeedAdded <= 0 || todayCumFeedKg <= 0) {
+      return {
+        value: lastActualG, fcrPoints: fcrPoints.map(p => ({ day: p.day, fcr: p.fcr.toFixed(3) })),
+        lastDay: lastWeigh.day, lastActualG: lastActualG, noNewFeed: true,
+        weighPoints: fcrPoints.length, todayCumFeedKg, todayRemainingPop,
+      };
+    }
+    // Anchor to last actual FCR, then increment forward by the regression slope only
+    // This prevents wild extrapolation from an early-grow regression line
+    const lastCumFeedKg = canonicalCumFeed(lastWeigh.day);
+    const lastRemainingPop = netPlacedBirds - canonicalCumMort(lastWeigh.day);
+    const lastActualFCR = lastRemainingPop > 0 && lastWeigh.alw > 0
+      ? lastCumFeedKg / (lastRemainingPop * lastWeigh.alw)
+      : projectedFCR;
+    // Get slope from linear regression (b coefficient)
+    let fcrSlope = 0;
+    if (fcrPoints.length >= 2) {
+      const n = fcrPoints.length;
+      const sumX = fcrPoints.reduce(function(s,p){return s+p.day;},0);
+      const sumY = fcrPoints.reduce(function(s,p){return s+p.fcr;},0);
+      const sumXY = fcrPoints.reduce(function(s,p){return s+p.day*p.fcr;},0);
+      const sumX2 = fcrPoints.reduce(function(s,p){return s+p.day*p.day;},0);
+      const denom = n*sumX2 - sumX*sumX;
+      if (denom !== 0) fcrSlope = (n*sumXY - sumX*sumY) / denom;
+    }
+    // Project FCR from last actual + slope × days elapsed
+    const daysElapsed = currentDay - lastWeigh.day;
+    const anchoredFCR = lastActualFCR + fcrSlope * daysElapsed;
+    const safeFCR = Math.max(anchoredFCR, lastActualFCR); // FCR never decreases
+    const projALWkg = todayCumFeedKg / (todayRemainingPop * safeFCR);
+    const projALWg  = Math.round(projALWkg * 1000);
+    // Birds don't lose weight — clamp to last actual
+    const clampedProjG = Math.max(projALWg, lastActualG);
     return {
-      value: projALWg, projectedFCR: projectedFCR.toFixed(3), fcrPoints: fcrPoints.map(p => ({ day: p.day, fcr: p.fcr.toFixed(3) })),
-      lastDay: lastWeigh.day, lastActualG: Math.round(lastWeigh.alw * 1000),
+      value: clampedProjG, fcrPoints: fcrPoints.map(p => ({ day: p.day, fcr: p.fcr.toFixed(3) })),
+      lastDay: lastWeigh.day, lastActualG: lastActualG, noNewFeed: false,
       weighPoints: fcrPoints.length, todayCumFeedKg, todayRemainingPop,
     };
   })();
@@ -1616,7 +1651,12 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                     actual: <span style={{ color:(todayAlw.alw*1000)>=targetALW?"#2E7D52":"#E91E63", fontWeight:600 }}>{(todayAlw.alw*1000).toFixed(0)}g {(todayAlw.alw*1000)>=targetALW?"✓":"↓"}</span>
                   </div>
                 ) : projectedALW ? (
-                  <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>projected: {projectedALW.value}g</div>
+                  <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>
+                    {projectedALW.noNewFeed
+                      ? <span>last weighed D{projectedALW.lastDay}: {projectedALW.lastActualG}g <span style={{color:"#94A3B8"}}>(no feed logged today yet)</span></span>
+                      : <span>projected: {projectedALW.value}g <span style={{color:"#94A3B8", marginLeft:4}}>· last weighed D{projectedALW.lastDay}: {projectedALW.lastActualG}g</span></span>
+                    }
+                  </div>
                 ) : (
                   <div style={{ fontSize:9, color:"#94A3B8" }}>no weigh data yet</div>
                 )}

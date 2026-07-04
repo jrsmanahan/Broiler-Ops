@@ -1242,10 +1242,11 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
     if (todayRemainingPop <= 0) return null;
     const lastWeigh = alwHistory[alwHistory.length - 1];
     const lastActualG = Math.round(lastWeigh.alw * 1000);
-    // If no feed logged today yet, nothing new to project from — carry last actual forward
-    const prevCumFeedKg = canonicalCumFeed(currentDay - 1);
-    const todayFeedAdded = todayCumFeedKg - prevCumFeedKg;
-    if (todayFeedAdded <= 0 || todayCumFeedKg <= 0) {
+    // Only skip projection if NO new feed has been logged since the last weigh-in —
+    // any feed after that point is new information worth projecting from
+    const feedAtLastWeigh = canonicalCumFeed(lastWeigh.day);
+    const feedSinceWeigh = todayCumFeedKg - feedAtLastWeigh;
+    if (feedSinceWeigh <= 0 || todayCumFeedKg <= 0) {
       return {
         value: lastActualG, fcrPoints: fcrPoints.map(p => ({ day: p.day, fcr: p.fcr.toFixed(3) })),
         lastDay: lastWeigh.day, lastActualG: lastActualG, noNewFeed: true,

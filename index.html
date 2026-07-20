@@ -973,6 +973,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
     placementDate: house.placement_date || "",
     flockSize: String(house.flock_size || ""),
     rolloverHour: "0",
+    harvestTargetKg: "2.1",
   });
   // If user has legacy dayAnchor data, migrate it into cycleConfig automatically
   const [migrationDone, setMigrationDone] = useLocalStorage("migrationDone", false);
@@ -1011,6 +1012,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
       placementDate: draft.placementDate,
       flockSize: parseInt(draft.flockSize) || house.flock_size,
       rolloverHour: parseInt(draft.rolloverHour) || 0,
+      harvestTargetG: Math.round((parseFloat(draft.harvestTargetKg) || 2.1) * 1000),
       dayOverride: 0,
       cycleNumber: cycleHistory.length + 1,
       startedAt: new Date().toISOString(),
@@ -1411,6 +1413,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
           <input type="date" value={cycleDraft.placementDate} onChange={function(e){setCycleDraft(function(p){return {...p,placementDate:e.target.value};});}} style={{ width:"100%", background:"#F5F7FA", border:"1px solid #CBD5E1", color:"#1E293B", fontFamily:"'Inter',sans-serif", fontSize:14, padding:"10px 12px", outline:"none", borderRadius:8, marginBottom:12 }} />
           <label style={{ fontSize:11, color:"#64748B", fontWeight:600, marginBottom:5, display:"block" }}>ACTUAL FLOCK SIZE (heads)</label>
           <input type="number" value={cycleDraft.flockSize} onChange={function(e){setCycleDraft(function(p){return {...p,flockSize:e.target.value};});}} placeholder="e.g. 36000" style={{ width:"100%", background:"#F5F7FA", border:"1px solid #CBD5E1", color:"#1E293B", fontFamily:"'Inter',sans-serif", fontSize:14, padding:"10px 12px", outline:"none", borderRadius:8, marginBottom:12 }} />
+          <label style={{ fontSize:11, color:"#64748B", fontWeight:600, marginBottom:5, display:"block" }}>TARGET HARVEST WEIGHT (kg)</label>
+          <input type="number" step="0.1" value={cycleDraft.harvestTargetKg} onChange={function(e){setCycleDraft(function(p){return {...p,harvestTargetKg:e.target.value};});}} placeholder="e.g. 2.1" style={{ width:"100%", background:"#F5F7FA", border:"1px solid #CBD5E1", color:"#1E293B", fontFamily:"'Inter',sans-serif", fontSize:14, padding:"10px 12px", outline:"none", borderRadius:8, marginBottom:12 }} />
           <label style={{ fontSize:11, color:"#64748B", fontWeight:600, marginBottom:5, display:"block" }}>DAY ROLLS OVER AT (PHT)</label>
           <select value={cycleDraft.rolloverHour} onChange={function(e){setCycleDraft(function(p){return {...p,rolloverHour:e.target.value};});}} style={{ width:"100%", background:"#F5F7FA", border:"1px solid #CBD5E1", color:"#1E293B", fontFamily:"'Inter',sans-serif", fontSize:14, padding:"10px 12px", outline:"none", borderRadius:8, marginBottom:20 }}>
             {["12:00 AM (midnight)","1:00 AM","2:00 AM","3:00 AM","4:00 AM","5:00 AM","6:00 AM","7:00 AM","8:00 AM","9:00 AM","10:00 AM","11:00 AM","12:00 PM (noon)","1:00 PM","2:00 PM","3:00 PM","4:00 PM","5:00 PM","6:00 PM","7:00 PM","8:00 PM","9:00 PM","10:00 PM","11:00 PM"].map(function(label,i){
@@ -1514,6 +1518,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
             <input type="date" value={cycleDraft.placementDate} onChange={function(e){setCycleDraft(function(p){return {...p,placementDate:e.target.value};});}} style={{ width:"100%", background:"#F5F7FA", border:"1px solid #CBD5E1", color:"#1E293B", fontFamily:"'Inter',sans-serif", fontSize:14, padding:"10px 12px", outline:"none", borderRadius:8, marginBottom:12 }} />
             <label style={{ fontSize:11, color:"#64748B", fontWeight:600, marginBottom:5, display:"block" }}>ACTUAL FLOCK SIZE (heads placed)</label>
             <input type="number" value={cycleDraft.flockSize} onChange={function(e){setCycleDraft(function(p){return {...p,flockSize:e.target.value};});}} placeholder="e.g. 36000" style={{ width:"100%", background:"#F5F7FA", border:"1px solid #CBD5E1", color:"#1E293B", fontFamily:"'Inter',sans-serif", fontSize:14, padding:"10px 12px", outline:"none", borderRadius:8, marginBottom:12 }} />
+            <label style={{ fontSize:11, color:"#64748B", fontWeight:600, marginBottom:5, display:"block" }}>TARGET HARVEST WEIGHT (kg)</label>
+            <input type="number" step="0.1" value={cycleDraft.harvestTargetKg} onChange={function(e){setCycleDraft(function(p){return {...p,harvestTargetKg:e.target.value};});}} placeholder="e.g. 2.1" style={{ width:"100%", background:"#F5F7FA", border:"1px solid #CBD5E1", color:"#1E293B", fontFamily:"'Inter',sans-serif", fontSize:14, padding:"10px 12px", outline:"none", borderRadius:8, marginBottom:12 }} />
             <label style={{ fontSize:11, color:"#64748B", fontWeight:600, marginBottom:5, display:"block" }}>DAY ROLLS OVER AT (PHT)</label>
             <select value={cycleDraft.rolloverHour} onChange={function(e){setCycleDraft(function(p){return {...p,rolloverHour:e.target.value};});}} style={{ width:"100%", background:"#F5F7FA", border:"1px solid #CBD5E1", color:"#1E293B", fontFamily:"'Inter',sans-serif", fontSize:14, padding:"10px 12px", outline:"none", borderRadius:8, marginBottom:20 }}>
               {["12:00 AM (midnight)","1:00 AM","2:00 AM","3:00 AM","4:00 AM","5:00 AM","6:00 AM","7:00 AM","8:00 AM","9:00 AM","10:00 AM","11:00 AM","12:00 PM (noon)","1:00 PM","2:00 PM","3:00 PM","4:00 PM","5:00 PM","6:00 PM","7:00 PM","8:00 PM","9:00 PM","10:00 PM","11:00 PM"].map(function(label, i){
@@ -1581,7 +1587,29 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 <div style={{ fontSize:11, color:"#64748B", marginTop:2 }}>
                   {currentDay===0 && "Chick placement day. Record truck arrivals, DOA, and controller setup."}
                   {currentDay>=1 && currentDay<=14 && "Brooding stage · Bracket "+(getBroodBracket(currentDay))+" · "+(14-currentDay)+" days to tunnel transition"}
-                  {currentDay>14 && currentDay<=35 && "Tunnel stage · "+(35-currentDay)+" days to target harvest weight"}
+                  {currentDay>14 && currentDay<=35 && (function(){
+                    // Harvest day = when projected weight reaches 2.1kg.
+                    // Scale the Ross standard curve by this flock's actual performance ratio.
+                    var HARVEST_TARGET_G = (cycleConfig && cycleConfig.harvestTargetG) || 2100;
+                    var ratio = 1;
+                    if (projectedALW && projectedALW.lastDay >= 7 && projectedALW.lastActualG > 0) {
+                      var stdAtWeigh = ALW_STANDARD.find(function(r){return r.day===projectedALW.lastDay;});
+                      if (stdAtWeigh && stdAtWeigh.std > 0) ratio = projectedALW.lastActualG / stdAtWeigh.std;
+                    }
+                    var harvestDay = null;
+                    for (var i=0;i<ALW_STANDARD.length;i++){
+                      if (ALW_STANDARD[i].std * ratio >= HARVEST_TARGET_G) { harvestDay = ALW_STANDARD[i].day; break; }
+                    }
+                    if (harvestDay === null) {
+                      // Behind standard enough that 2.1kg lands past D35 — extrapolate with late-stage daily gain scaled to this flock
+                      var lastStd = ALW_STANDARD[ALW_STANDARD.length-1];
+                      var dailyGain = 100 * ratio;
+                      harvestDay = lastStd.day + Math.ceil((HARVEST_TARGET_G - lastStd.std*ratio) / dailyGain);
+                    }
+                    var daysLeft = harvestDay - currentDay;
+                    if (daysLeft <= 0) return "Tunnel stage · flock at " + (HARVEST_TARGET_G/1000) + "kg harvest target now";
+                    return "Tunnel stage · " + daysLeft + " day" + (daysLeft!==1?"s":"") + " to " + (HARVEST_TARGET_G/1000) + "kg harvest weight (D" + harvestDay + ")";
+                  })()}
                   {currentDay>35 && "Harvest window. Contact supervisor for truck coordination."}
                 </div>
               </div>

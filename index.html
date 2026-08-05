@@ -1049,7 +1049,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
         surplusFeedBags: surplusFeedBags || 0,
         summary: {
           totalMortality: shiftLogs.reduce(function(s,l){return s+l.mortality;},0),
-          totalFeedBags: shiftLogs.reduce(function(s,l){return s+l.feedsConsumed;},0),
+          totalFeedBags: feedDeliveries.reduce(function(s,d){return s+(d.qty||0);},0) - (surplusFeedBags||0),
           finalHR: netPlacedBirds > 0 ? ((netPlacedBirds - shiftLogs.reduce(function(s,l){return s+l.mortality;},0)) / netPlacedBirds * 100).toFixed(2) : null,
         }
       };
@@ -1544,7 +1544,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
                 <div><div style={{ fontSize:9, color:"#94A3B8" }}>DAYS</div><div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, color:"#1E293B" }}>{currentDay}</div></div>
                 <div><div style={{ fontSize:9, color:"#94A3B8" }}>MORTALITY</div><div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, color:"#E91E63" }}>{shiftLogs.reduce(function(s,l){return s+l.mortality;},0)}</div></div>
-                <div><div style={{ fontSize:9, color:"#94A3B8" }}>TOTAL FEED</div><div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, color:"#2E7D52" }}>{shiftLogs.reduce(function(s,l){return s+l.feedsConsumed;},0)} bags</div></div>
+                <div><div style={{ fontSize:9, color:"#94A3B8" }}>TOTAL FEED (NET)</div><div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, color:"#2E7D52" }}>{feedDeliveries.reduce(function(s,d){return s+(d.qty||0);},0) - (surplusFeedBags||0)} bags</div></div>
                 <div><div style={{ fontSize:9, color:"#94A3B8" }}>DAILY LOGS</div><div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, color:"#1E293B" }}>{shiftLogs.length} entries</div></div>
               </div>
             </div>

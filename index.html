@@ -2806,7 +2806,10 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               var totalHarvestKg = harvestTrucks.reduce(function(s,t){return s+(t.kg||0);},0);
               if (totalHarvestedHeads === 0) return null;
               var harvestALW = totalHarvestKg / totalHarvestedHeads;
-              var harvestRecovery = netPlacedBirds > 0 ? (totalHarvestedHeads / netPlacedBirds * 100) : null;
+              // Recovery is based on ORDERED chicks (cycle flock size), not delivered heads.
+              // Hatcheries deliver ~2% extra free; the contract count is what recovery is measured against.
+              var orderedBirds = (cycleConfig && cycleConfig.flockSize) || netPlacedBirds;
+              var harvestRecovery = orderedBirds > 0 ? (totalHarvestedHeads / orderedBirds * 100) : null;
               var weightedAge = harvestTrucks.reduce(function(s,t){return s+((t.day||0)*(t.heads||0));},0) / totalHarvestedHeads;
               var totalFeedDeliveredBags = feedDeliveries.reduce(function(s,d){return s+(d.qty||0);},0);
               var totalFeedKgConsumed = (totalFeedDeliveredBags - (surplusFeedBags||0)) * 50;
@@ -2839,7 +2842,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                     <div style={{background:"#FFFFFF",border:"1px solid #2E7D5220",borderRadius:8,padding:"11px 13px"}}>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>HARVEST RECOVERY</div>
                       <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#2E7D52"}}>{harvestRecovery?harvestRecovery.toFixed(2)+"%":"—"}</div>
-                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{totalHarvestedHeads.toLocaleString()} of {netPlacedBirds.toLocaleString()} birds</div>
+                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{totalHarvestedHeads.toLocaleString()} of {orderedBirds.toLocaleString()} ordered</div>
                     </div>
                     <div style={{background:"#FFFFFF",border:"1px solid #C4960C20",borderRadius:8,padding:"11px 13px"}}>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>HARVEST ALW</div>

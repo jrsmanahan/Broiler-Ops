@@ -1277,14 +1277,37 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
     const daysElapsed = currentDay - lastWeigh.day;
     const anchoredFCR = lastActualFCR + fcrSlope * daysElapsed;
     const safeFCR = Math.max(anchoredFCR, lastActualFCR); // FCR never decreases
-    const projALWkg = todayCumFeedKg / (todayRemainingPop * safeFCR);
-    const projALWg  = Math.round(projALWkg * 1000);
+    const feedProjKg = todayCumFeedKg / (todayRemainingPop * safeFCR);
+    const feedProjG  = Math.round(feedProjKg * 1000);
+
+    // Ross-standard-scaled projection: take this flock's performance ratio at the
+    // last weigh-in, apply it to the standard weight for today.
+    let stdProjG = feedProjG;
+    const stdAtWeigh = ALW_STANDARD.find(function(r){return r.day===lastWeigh.day;});
+    const stdToday = ALW_STANDARD.find(function(r){return r.day===currentDay;});
+    if (stdAtWeigh && stdAtWeigh.std > 0 && stdToday && stdToday.std > 0) {
+      const perfRatio = lastActualG / stdAtWeigh.std;
+      stdProjG = Math.round(stdToday.std * perfRatio);
+    }
+
+    // Blend: trust the standard curve when few weigh-ins exist, shift toward the
+    // feed-based FCR model as data accumulates. 1 weigh-in = mostly standard;
+    // 4+ weigh-ins = mostly feed model.
+    const wp = fcrPoints.length;
+    let feedWeight;
+    if (wp <= 1) feedWeight = 0.25;
+    else if (wp === 2) feedWeight = 0.5;
+    else if (wp === 3) feedWeight = 0.75;
+    else feedWeight = 1.0;
+    const blendedG = Math.round(feedProjG * feedWeight + stdProjG * (1 - feedWeight));
+
     // Birds don't lose weight — clamp to last actual
-    const clampedProjG = Math.max(projALWg, lastActualG);
+    const clampedProjG = Math.max(blendedG, lastActualG);
     return {
       value: clampedProjG, fcrPoints: fcrPoints.map(p => ({ day: p.day, fcr: p.fcr.toFixed(3) })),
       lastDay: lastWeigh.day, lastActualG: lastActualG, noNewFeed: false,
       weighPoints: fcrPoints.length, todayCumFeedKg, todayRemainingPop,
+      feedProjG: feedProjG, stdProjG: stdProjG, feedWeight: feedWeight,
     };
   })();
   // Running performance metrics
@@ -1683,7 +1706,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>
                     {projectedALW.noNewFeed
                       ? <span>last weighed D{projectedALW.lastDay}: {projectedALW.lastActualG}g <span style={{color:"#94A3B8"}}>(no feed logged today yet)</span></span>
-                      : <span>projected: {projectedALW.value}g <span style={{color:"#94A3B8", marginLeft:4}}>· last weighed D{projectedALW.lastDay}: {projectedALW.lastActualG}g</span></span>
+                      : <span>projected: {projectedALW.value}g <span style={{color:"#94A3B8", marginLeft:4}}>· last weighed D{projectedALW.lastDay}: {projectedALW.lastActualG}g{projectedALW.feedWeight < 1 ? " · "+Math.round(projectedALW.feedWeight*100)+"% feed model" : ""}</span></span>
                     }
                   </div>
                 ) : (

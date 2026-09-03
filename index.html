@@ -549,6 +549,15 @@ function getDeviceLabel() {
   var isMobile = /Mobi|Android|iPhone|iPad/i.test(ua);
   return os + " · " + browser + (isMobile ? " · Mobile" : " · Desktop");
 }
+function todayPHT() {
+  // YYYY-MM-DD for "today" in Philippine time, for date input defaults
+  var now = new Date();
+  var pht = new Date(now.getTime() + (now.getTimezoneOffset()*60000) + (8*3600000));
+  var y = pht.getFullYear();
+  var m = String(pht.getMonth()+1).padStart(2,"0");
+  var d = String(pht.getDate()).padStart(2,"0");
+  return y + "-" + m + "-" + d;
+}
 function getPhase(day) {
   if (day === 0) return { label: "PLACEMENT", color: "#E5B80B", short: "PLACE" };
   if (day <= 14)  return { label: "BROODING",  color: "#D4652A", short: "BROOD" };
@@ -1001,7 +1010,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [isCycleProcessing, setIsCycleProcessing] = useState(false);
   const [saveHistoryOnEnd, setSaveHistoryOnEnd] = useState(true);
   const [cycleDraft, setCycleDraft] = useState({
-    placementDate: house.placement_date || "",
+    placementDate: house.placement_date || todayPHT(),
     flockSize: String(house.flock_size || ""),
     rolloverHour: "0",
     harvestTargetKg: "2.1",
@@ -3287,7 +3296,7 @@ function AppShell() {
     try { if (id) localStorage.setItem("beracah_last_house_id", id); else localStorage.removeItem("beracah_last_house_id"); } catch(e) {}
   }
   const [showSetupForm, setShowSetupForm] = useState(false);
-  const [setupDraft, setSetupDraft] = useState({ building_name:"", breed:"Ross 308", flock_size:"", placement_date:"", flockman_names:"", importLegacy:true });
+  const [setupDraft, setSetupDraft] = useState({ building_name:"", breed:"Ross 308", flock_size:"", placement_date:todayPHT(), flockman_names:"", importLegacy:true });
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncTick, setSyncTick] = useState(0);
   const [editingHouseId, setEditingHouseId] = useState(null);
@@ -3462,11 +3471,22 @@ function AppShell() {
         if (res.error) setAuthError("Could not sync the update to the server — it's saved on this device and will retry when online.");
       });
     }
-    // If placement date changed, update cycleConfig to match — without touching logged data
-    if (original.placement_date !== editHouseDraft.placement_date && cycleConfig) {
-      const correctedDay = getCurrentDay(editHouseDraft.placement_date, cycleConfig.rolloverHour || 0);
-      setCycleConfig(function(p){ return p ? {...p, placementDate: editHouseDraft.placement_date, dayOverride: correctedDay} : p; });
-      setCurrentDay(correctedDay);
+    // If placement date changed, correct the stored cycleConfig for this house directly
+    // in localStorage (cycleConfig React state lives in SupervisorApp, not here).
+    if (original.placement_date !== editHouseDraft.placement_date) {
+      try {
+        const ns = "beracah_house_" + editingHouseId + "_";
+        const raw = localStorage.getItem(ns + "cycleConfig");
+        if (raw) {
+          const cfg = JSON.parse(raw);
+          if (cfg) {
+            const correctedDay = getCurrentDay(editHouseDraft.placement_date, cfg.rolloverHour || 0);
+            cfg.placementDate = editHouseDraft.placement_date;
+            cfg.dayOverride = correctedDay;
+            localStorage.setItem(ns + "cycleConfig", JSON.stringify(cfg));
+          }
+        }
+      } catch (e) {}
     }
     setEditingHouseId(null);
     setEditHouseDraft(null);
@@ -3676,7 +3696,7 @@ function AppShell() {
                     <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:14,color:"#1E293B"}}>{h.building_name}</div>
                     <div style={{fontSize:11,color:"#64748B",marginTop:2}}>{h.breed} · {h.flock_size.toLocaleString()} heads · placed {h.placement_date}</div>
                   </div>
-                  <button onClick={function(e){e.stopPropagation();setEditingHouseId(h.id);setEditHouseDraft({building_name:h.building_name,breed:h.breed,flock_size:String(h.flock_size),placement_date:h.placement_date});}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,width:28,height:28,cursor:"pointer",borderRadius:6,padding:0,flexShrink:0,marginLeft:10}}>✎</button>
+                  <button onClick={function(e){e.stopPropagation();setEditingHouseId(h.id);setEditHouseDraft({building_name:h.building_name,breed:h.breed,flock_size:String(h.flock_size),placement_date:h.placement_date||todayPHT()});}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,width:28,height:28,cursor:"pointer",borderRadius:6,padding:0,flexShrink:0,marginLeft:10}}>✎</button>
                 </div>
               );
             })}

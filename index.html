@@ -1005,6 +1005,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   }, [isOnline, houseId, syncTick]);
   const [showCycleMenu, setShowCycleMenu] = useState(false);
   const [showEditRollover, setShowEditRollover] = useState(false);
+  const [showEditPlacement, setShowEditPlacement] = useState(false);
   const [showStartCycle, setShowStartCycle] = useState(false);
   const [showEndCycle, setShowEndCycle] = useState(false);
   const [isCycleProcessing, setIsCycleProcessing] = useState(false);
@@ -1543,6 +1544,27 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
             ) : (
               <div onClick={function(){if(cycleConfig)setShowEditRollover(true);}} style={{ fontSize:9, color:"#64748B", letterSpacing:1, cursor:cycleConfig?"pointer":"default", textDecoration:cycleConfig?"underline dotted":"none" }}>
                 {cycleConfig ? ("ROLLS " + ["12AM","1AM","2AM","3AM","4AM","5AM","6AM","7AM","8AM","9AM","10AM","11AM","12PM","1PM","2PM","3PM","4PM","5PM","6PM","7PM","8PM","9PM","10PM","11PM"][(cycleConfig.rolloverHour||0)] + " PHT ✎") : "NO ACTIVE CYCLE"}
+              </div>
+            )}
+            {cycleConfig && (
+              <div style={{ marginTop:3 }}>
+                {showEditPlacement ? (
+                  <div style={{ display:"flex", alignItems:"center", gap:4, justifyContent:"flex-end" }}>
+                    <input type="date" defaultValue={cycleConfig.placementDate} onChange={function(e){
+                      var newDate = e.target.value;
+                      if (!newDate) return;
+                      var correctedDay = getCurrentDay(newDate, cycleConfig.rolloverHour || 0);
+                      setCycleConfig(function(p){ return p ? {...p, placementDate:newDate, dayOverride:0} : p; });
+                      setCurrentDay(correctedDay);
+                      setShowEditPlacement(false);
+                    }} style={{ fontSize:9, background:"#F5F7FA", border:"1px solid #CBD5E1", color:"#1E293B", borderRadius:4, padding:"2px 4px" }} />
+                    <button onClick={function(){setShowEditPlacement(false);}} style={{ fontSize:9, background:"none", border:"none", color:"#94A3B8", cursor:"pointer" }}>✕</button>
+                  </div>
+                ) : (
+                  <div onClick={function(){setShowEditPlacement(true);}} style={{ fontSize:9, color:"#64748B", letterSpacing:.5, cursor:"pointer", textDecoration:"underline dotted" }}>
+                    D0 {cycleConfig.placementDate} ✎
+                  </div>
+                )}
               </div>
             )}
             {cycleConfig && (

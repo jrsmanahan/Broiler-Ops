@@ -555,6 +555,30 @@ function getPhase(day) {
   if (day <= 35)  return { label: "TUNNEL",    color: "#2E86AB", short: "VENT"};
   return              { label: "HARVEST",   color: "#5C4F8A", short: "HARV" };
 }
+// Acceptable feed reference: cumulative bags-per-1000-chicks (BT) anchor points.
+// Daily acceptable BT = cumBT(day) - cumBT(day-1), giving a smooth ramp scaled to any flock size.
+var BT_POINTS = [{day:7,bt:3.3},{day:14,bt:11.4},{day:21,bt:25.1},{day:28,bt:44.1},{day:30,bt:50.6}];
+function cumBTForDay(day) {
+  if (day <= 0) return 0;
+  var pts = BT_POINTS;
+  if (day <= pts[0].day) return pts[0].bt * day / pts[0].day; // origin to first point
+  for (var i=0;i<pts.length-1;i++){
+    if (day >= pts[i].day && day <= pts[i+1].day) {
+      var d0=pts[i].day, d1=pts[i+1].day, v0=pts[i].bt, v1=pts[i+1].bt;
+      return v0 + (v1-v0)*(day-d0)/(d1-d0);
+    }
+  }
+  // beyond last point: extrapolate with the final segment slope
+  var a=pts[pts.length-2], b=pts[pts.length-1];
+  var slope=(b.bt-a.bt)/(b.day-a.day);
+  return b.bt + slope*(day-b.day);
+}
+function feedBTForDay(day) {
+  // daily acceptable bags per 1000 chicks
+  if (day < 1) return null;
+  return cumBTForDay(day) - cumBTForDay(day-1);
+}
+
 function getBroodBracket(day) {
   if (day === 0)  return "Day 0";
   if (day <= 3)   return "Day 1–3";
@@ -795,9 +819,16 @@ function DailyLogRows({ logs, currentDay, getPhase, placementDate, FEED_FC, netP
     const dp = getPhase(day);
     const dateStr = new Date(new Date(placementDate + "T00:00:00+08:00").getTime()+day*86400000).toLocaleDateString("en-PH",{month:"short",day:"numeric"});
     const fcRow = FEED_FC.find(r=>r.day===day);
-    const feedUnder = fcRow && dayFeed < fcRow.fc;
-    const mortTarget = Math.round(netPlacedBirds*0.001);
+    // Week-based acceptable daily mortality rate (% of net placed):
+    // Week 1 (D1-7): 0.2%/day (hatchery chick defects), Week 2 (D8-14): 0.15%, Week 3+ (D15+): 0.1%
+    var mortRatePct = day <= 7 ? 0.002 : day <= 14 ? 0.0015 : 0.001;
+    const mortTarget = Math.round(netPlacedBirds * mortRatePct);
     const mortOver = dayMort > mortTarget;
+    // Acceptable daily feed via bags-per-thousand-chicks (BT) linear progression, scaled to flock size
+    const btRate = feedBTForDay(day); // bags per 1000 chicks for this day
+    const feedTarget = btRate !== null ? Math.round(btRate * netPlacedBirds / 1000) : null;
+    const feedUnder = feedTarget !== null && dayFeed > 0 && dayFeed < feedTarget * 0.85;
+    const feedOver = feedTarget !== null && dayFeed > feedTarget * 1.15;
     // water consumed = today's waterEnd minus previous day's waterEnd
     let waterConsumed = null;
     if (waterEnd !== null) {
@@ -821,7 +852,7 @@ function DailyLogRows({ logs, currentDay, getPhase, placementDate, FEED_FC, netP
         {/* Feeds AM/PM/Total/Cum */}
         <td style={{padding:"7px 8px",textAlign:"center",color:"#334155"}}>{amFeed!==null?amFeed:"—"}</td>
         <td style={{padding:"7px 8px",textAlign:"center",color:"#334155"}}>{pmFeed!==null?pmFeed:"—"}</td>
-        <td style={{padding:"7px 8px",textAlign:"center",fontWeight:700,color:feedUnder?"#C4960C":"#2E7D52"}}>{dayFeed||"—"}</td>
+        <td style={{padding:"7px 8px",textAlign:"center",fontWeight:700,color:feedOver?"#E91E63":feedUnder?"#C4960C":"#2E7D52"}}>{dayFeed||"—"}</td>
         <td style={{padding:"7px 8px",textAlign:"center",color:"#2E7D52",fontWeight:600,borderRight:"1px solid #E2E8F0"}}>{cumFeed}</td>
         {/* Water */}
         <td style={{padding:"7px 8px",textAlign:"center",color:"#5B86E5"}}>{waterEnd!==null?waterEnd:"—"}</td>

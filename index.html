@@ -2834,31 +2834,45 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   const totCbc = feedingGuide.reduce((s,r)=>s+(r.cbcBt||0),0)*scale;
                   const totBsc = feedingGuide.reduce((s,r)=>s+(r.bscBt||0),0)*scale;
                   const totBfp = feedingGuide.reduce((s,r)=>s+(r.bfpBt||0),0)*scale;
+                  const totBt = feedingGuide.reduce((s,r)=>s+(r.dailyBt||0),0);
+                  const totBags = totBt*scale;
                   return (
-                    <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
-                      <div style={{flex:1,minWidth:90,background:"#E5B80B15",border:"1px solid #E5B80B40",borderRadius:8,padding:"8px 10px"}}>
-                        <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>CBC TOTAL</div>
-                        <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#B8940B"}}>{Math.ceil(totCbc)}</div>
-                        <div style={{fontSize:9,color:"#94A3B8"}}>bags · to D16</div>
+                    <div>
+                      <div style={{background:"#2E7D5212",border:"1px solid #2E7D5230",borderRadius:8,padding:"10px 12px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <div>
+                          <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>TOTAL FEED ORDER</div>
+                          <div style={{fontSize:10,color:"#64748B"}}>{totBt.toFixed(1)} BT · {(feedBasisBirds/1000).toFixed(0)}k ordered birds</div>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:22,color:"#2E7D52"}}>{Math.ceil(totBags)}</div>
+                          <div style={{fontSize:9,color:"#94A3B8"}}>bags total</div>
+                        </div>
                       </div>
-                      <div style={{flex:1,minWidth:90,background:"#D4652A15",border:"1px solid #D4652A40",borderRadius:8,padding:"8px 10px"}}>
-                        <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>BSC TOTAL</div>
-                        <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#D4652A"}}>{Math.ceil(totBsc)}</div>
-                        <div style={{fontSize:9,color:"#94A3B8"}}>bags · D14–22</div>
-                      </div>
-                      <div style={{flex:1,minWidth:90,background:"#5B86E515",border:"1px solid #5B86E540",borderRadius:8,padding:"8px 10px"}}>
-                        <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>BFP TOTAL</div>
-                        <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#5B86E5"}}>{Math.ceil(totBfp)}</div>
-                        <div style={{fontSize:9,color:"#94A3B8"}}>bags · D20–harvest</div>
+                      <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+                        <div style={{flex:1,minWidth:90,background:"#E5B80B15",border:"1px solid #E5B80B40",borderRadius:8,padding:"8px 10px"}}>
+                          <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>CBC TOTAL</div>
+                          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#B8940B"}}>{Math.ceil(totCbc)}</div>
+                          <div style={{fontSize:9,color:"#94A3B8"}}>bags · to D16</div>
+                        </div>
+                        <div style={{flex:1,minWidth:90,background:"#D4652A15",border:"1px solid #D4652A40",borderRadius:8,padding:"8px 10px"}}>
+                          <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>BSC TOTAL</div>
+                          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#D4652A"}}>{Math.ceil(totBsc)}</div>
+                          <div style={{fontSize:9,color:"#94A3B8"}}>bags · D14–22</div>
+                        </div>
+                        <div style={{flex:1,minWidth:90,background:"#5B86E515",border:"1px solid #5B86E540",borderRadius:8,padding:"8px 10px"}}>
+                          <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>BFP TOTAL</div>
+                          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#5B86E5"}}>{Math.ceil(totBfp)}</div>
+                          <div style={{fontSize:9,color:"#94A3B8"}}>bags · D20–harvest</div>
+                        </div>
                       </div>
                     </div>
                   );
                 })()}
                 <div style={{overflowX:"auto"}}>
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,minWidth:560}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,minWidth:580}}>
                     <thead>
                       <tr style={{background:"#F5F7FA",borderBottom:"1px solid #CBD5E1"}}>
-                        {["DAY","ALW g","BT/1000","CBC","BSC","BFP","FC/day","CUMM"].map(h=>(
+                        {["DAY","ALW g","FC/DAY","CUMM FC","CUMM BT","CBC","BSC","BFP"].map(h=>(
                           <th key={h} style={{padding:"6px 10px",textAlign:"right",color:"#64748B",fontSize:8,letterSpacing:1,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
                         ))}
                       </tr>
@@ -2879,12 +2893,12 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                             <tr key={i} style={{borderBottom:"1px solid #F0F2F5",background:isToday?"#2E7D5215":"transparent"}}>
                               <td style={{padding:"5px 10px",textAlign:"right",fontFamily:"'Inter',sans-serif",fontWeight:isToday?700:400,color:isToday?"#2E7D52":"#64748B"}}>D{r.day}{isToday?" ◉":""}</td>
                               <td style={{padding:"5px 10px",textAlign:"right",color:isToday?"#C4960C":"#334155",fontWeight:isToday?600:400}}>{r.alw}</td>
-                              <td style={{padding:"5px 10px",textAlign:"right",color:"#94A3B8"}}>{(r.dailyBt||0).toFixed(2)}</td>
+                              <td style={{padding:"5px 10px",textAlign:"right",color:"#334155",fontWeight:isToday?700:400}}>{dailyBags.toFixed(0)}</td>
+                              <td style={{padding:"5px 10px",textAlign:"right",color:"#64748B"}}>{cumm.toFixed(0)}</td>
+                              <td style={{padding:"5px 10px",textAlign:"right",color:"#94A3B8"}}>{(r.cummBt||0).toFixed(1)}</td>
                               <td style={{padding:"5px 10px",textAlign:"right",color:cbcBags>0?"#B8940B":"#CBD5E1"}}>{fmt(cbcBags)}</td>
                               <td style={{padding:"5px 10px",textAlign:"right",color:bscBags>0?"#D4652A":"#CBD5E1"}}>{fmt(bscBags)}</td>
                               <td style={{padding:"5px 10px",textAlign:"right",color:bfpBags>0?"#5B86E5":"#CBD5E1"}}>{fmt(bfpBags)}</td>
-                              <td style={{padding:"5px 10px",textAlign:"right",color:"#334155",fontWeight:isToday?700:400}}>{dailyBags.toFixed(0)}</td>
-                              <td style={{padding:"5px 10px",textAlign:"right",color:"#64748B"}}>{cumm.toFixed(0)}</td>
                             </tr>
                           );
                         });

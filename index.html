@@ -403,14 +403,14 @@ const VENT_GUIDE = [
 ];
 // ─── ROSS 308 ALW STANDARD CURVE (g) — exact from ventilation_guide.xlsx ────
 const ALW_STANDARD = [
-  {day:0,std:44},{day:1,std:62},{day:2,std:81},{day:3,std:102},{day:4,std:125},
-  {day:5,std:151},{day:6,std:181},{day:7,std:213},{day:8,std:249},{day:9,std:288},
-  {day:10,std:330},{day:11,std:376},{day:12,std:425},{day:13,std:477},{day:14,std:533},
-  {day:15,std:592},{day:16,std:655},{day:17,std:720},{day:18,std:789},{day:19,std:860},
-  {day:20,std:935},{day:21,std:1012},{day:22,std:1092},{day:23,std:1174},{day:24,std:1258},
-  {day:25,std:1345},{day:26,std:1434},{day:27,std:1524},{day:28,std:1616},{day:29,std:1710},
-  {day:30,std:1805},{day:31,std:1901},{day:32,std:1999},{day:33,std:2097},{day:34,std:2196},
-  {day:35,std:2296},
+  {day:0,std:40},{day:1,std:63},{day:2,std:86},{day:3,std:109},{day:4,std:131},
+  {day:5,std:154},{day:6,std:177},{day:7,std:200},{day:8,std:243},{day:9,std:286},
+  {day:10,std:329},{day:11,std:371},{day:12,std:414},{day:13,std:457},{day:14,std:500},
+  {day:15,std:571},{day:16,std:643},{day:17,std:714},{day:18,std:786},{day:19,std:857},
+  {day:20,std:929},{day:21,std:1000},{day:22,std:1086},{day:23,std:1171},{day:24,std:1257},
+  {day:25,std:1343},{day:26,std:1429},{day:27,std:1514},{day:28,std:1600},{day:29,std:1700},
+  {day:30,std:1800},{day:31,std:1900},{day:32,std:2000},{day:33,std:2100},{day:34,std:2200},
+  {day:35,std:2300},
 ];
 // ─── MEDICINE PROGRAM (exact from medicine_program.xlsx) ────────────────────
 const MED_PROGRAM_DEFAULT = [
@@ -676,42 +676,42 @@ const TABS = [
 ];
 // ─── FEEDING GUIDE ────────────────────────────────────────────────────────────
 const FEEDING_GUIDE_DEFAULT = [
-  {day:0,  alw:44,   cbc:0,   bsc:0,   bfp:0,   fc:0,   cumm:0,    bt:0.0},
-  {day:1,  alw:62,   cbc:10,  bsc:0,   bfp:0,   fc:10,  cumm:10,   bt:0.3},
-  {day:2,  alw:81,   cbc:12,  bsc:0,   bfp:0,   fc:12,  cumm:22,   bt:0.6},
-  {day:3,  alw:102,  cbc:14,  bsc:0,   bfp:0,   fc:14,  cumm:36,   bt:1.0},
-  {day:4,  alw:125,  cbc:16,  bsc:0,   bfp:0,   fc:16,  cumm:52,   bt:1.4},
-  {day:5,  alw:151,  cbc:18,  bsc:0,   bfp:0,   fc:18,  cumm:70,   bt:1.9},
-  {day:6,  alw:181,  cbc:22,  bsc:0,   bfp:0,   fc:22,  cumm:92,   bt:2.6},
-  {day:7,  alw:213,  cbc:26,  bsc:0,   bfp:0,   fc:26,  cumm:118,  bt:3.3},
-  {day:8,  alw:249,  cbc:30,  bsc:0,   bfp:0,   fc:30,  cumm:148,  bt:4.1},
-  {day:9,  alw:288,  cbc:34,  bsc:0,   bfp:0,   fc:34,  cumm:182,  bt:5.1},
-  {day:10, alw:330,  cbc:38,  bsc:0,   bfp:0,   fc:38,  cumm:220,  bt:6.1},
-  {day:11, alw:376,  cbc:42,  bsc:0,   bfp:0,   fc:42,  cumm:262,  bt:7.3},
-  {day:12, alw:425,  cbc:35,  bsc:11,  bfp:0,   fc:46,  cumm:308,  bt:8.6},
-  {day:13, alw:477,  cbc:25,  bsc:25,  bfp:0,   fc:50,  cumm:358,  bt:9.9},
-  {day:14, alw:533,  cbc:27,  bsc:27,  bfp:0,   fc:54,  cumm:412,  bt:11.4},
-  {day:15, alw:592,  cbc:11,  bsc:47,  bfp:0,   fc:58,  cumm:470,  bt:13.1},
-  {day:16, alw:655,  cbc:0,   bsc:62,  bfp:0,   fc:62,  cumm:532,  bt:14.8},
-  {day:17, alw:720,  cbc:0,   bsc:66,  bfp:0,   fc:66,  cumm:598,  bt:16.6},
-  {day:18, alw:789,  cbc:0,   bsc:70,  bfp:0,   fc:70,  cumm:668,  bt:18.6},
-  {day:19, alw:860,  cbc:0,   bsc:74,  bfp:0,   fc:74,  cumm:742,  bt:20.6},
-  {day:20, alw:935,  cbc:0,   bsc:58,  bfp:20,  fc:78,  cumm:820,  bt:22.8},
-  {day:21, alw:1012, cbc:0,   bsc:41,  bfp:41,  fc:82,  cumm:902,  bt:25.1},
-  {day:22, alw:1092, cbc:0,   bsc:43,  bfp:43,  fc:86,  cumm:988,  bt:27.4},
-  {day:23, alw:1174, cbc:0,   bsc:16,  bfp:74,  fc:90,  cumm:1078, bt:29.9},
-  {day:24, alw:1258, cbc:0,   bsc:0,   bfp:94,  fc:94,  cumm:1172, bt:32.6},
-  {day:25, alw:1345, cbc:0,   bsc:0,   bfp:98,  fc:98,  cumm:1270, bt:35.3},
-  {day:26, alw:1434, cbc:0,   bsc:0,   bfp:102, fc:102, cumm:1372, bt:38.1},
-  {day:27, alw:1524, cbc:0,   bsc:0,   bfp:104, fc:106, cumm:1478, bt:41.1},
-  {day:28, alw:1616, cbc:0,   bsc:0,   bfp:110, fc:110, cumm:1588, bt:44.1},
-  {day:29, alw:1710, cbc:0,   bsc:0,   bfp:114, fc:114, cumm:1702, bt:47.3},
-  {day:30, alw:1805, cbc:0,   bsc:0,   bfp:118, fc:118, cumm:1820, bt:50.6},
-  {day:31, alw:1901, cbc:0,   bsc:0,   bfp:122, fc:122, cumm:1942, bt:53.9},
-  {day:32, alw:1999, cbc:0,   bsc:0,   bfp:126, fc:126, cumm:2068, bt:57.4},
-  {day:33, alw:2097, cbc:0,   bsc:0,   bfp:130, fc:130, cumm:2198, bt:61.1},
-  {day:34, alw:2196, cbc:0,   bsc:0,   bfp:134, fc:134, cumm:2332, bt:64.8},
-  {day:35, alw:2296, cbc:0,   bsc:0,   bfp:138, fc:138, cumm:2470, bt:68.6},
+  {day:0, alw:40, dailyBt:0.0, cummBt:0.0, cbcBt:0.0, bscBt:0.0, bfpBt:0.0},
+  {day:1, alw:63, dailyBt:0.471, cummBt:0.5, cbcBt:0.471, bscBt:0.0, bfpBt:0.0},
+  {day:2, alw:86, dailyBt:0.471, cummBt:0.9, cbcBt:0.471, bscBt:0.0, bfpBt:0.0},
+  {day:3, alw:109, dailyBt:0.471, cummBt:1.4, cbcBt:0.471, bscBt:0.0, bfpBt:0.0},
+  {day:4, alw:131, dailyBt:0.471, cummBt:1.9, cbcBt:0.471, bscBt:0.0, bfpBt:0.0},
+  {day:5, alw:154, dailyBt:0.471, cummBt:2.4, cbcBt:0.471, bscBt:0.0, bfpBt:0.0},
+  {day:6, alw:177, dailyBt:0.471, cummBt:2.8, cbcBt:0.471, bscBt:0.0, bfpBt:0.0},
+  {day:7, alw:200, dailyBt:0.471, cummBt:3.3, cbcBt:0.471, bscBt:0.0, bfpBt:0.0},
+  {day:8, alw:243, dailyBt:1.157, cummBt:4.5, cbcBt:1.157, bscBt:0.0, bfpBt:0.0},
+  {day:9, alw:286, dailyBt:1.157, cummBt:5.6, cbcBt:1.157, bscBt:0.0, bfpBt:0.0},
+  {day:10, alw:329, dailyBt:1.157, cummBt:6.8, cbcBt:1.157, bscBt:0.0, bfpBt:0.0},
+  {day:11, alw:371, dailyBt:1.157, cummBt:7.9, cbcBt:1.157, bscBt:0.0, bfpBt:0.0},
+  {day:12, alw:414, dailyBt:1.157, cummBt:9.1, cbcBt:1.157, bscBt:0.0, bfpBt:0.0},
+  {day:13, alw:457, dailyBt:1.157, cummBt:10.2, cbcBt:1.157, bscBt:0.0, bfpBt:0.0},
+  {day:14, alw:500, dailyBt:1.157, cummBt:11.4, cbcBt:0.868, bscBt:0.289, bfpBt:0.0},
+  {day:15, alw:571, dailyBt:1.957, cummBt:13.4, cbcBt:0.979, bscBt:0.979, bfpBt:0.0},
+  {day:16, alw:643, dailyBt:1.957, cummBt:15.3, cbcBt:0.489, bscBt:1.468, bfpBt:0.0},
+  {day:17, alw:714, dailyBt:1.957, cummBt:17.3, cbcBt:0.0, bscBt:1.957, bfpBt:0.0},
+  {day:18, alw:786, dailyBt:1.957, cummBt:19.2, cbcBt:0.0, bscBt:1.957, bfpBt:0.0},
+  {day:19, alw:857, dailyBt:1.957, cummBt:21.2, cbcBt:0.0, bscBt:1.957, bfpBt:0.0},
+  {day:20, alw:929, dailyBt:1.957, cummBt:23.1, cbcBt:0.0, bscBt:1.468, bfpBt:0.489},
+  {day:21, alw:1000, dailyBt:1.957, cummBt:25.1, cbcBt:0.0, bscBt:0.979, bfpBt:0.979},
+  {day:22, alw:1086, dailyBt:2.714, cummBt:27.8, cbcBt:0.0, bscBt:0.678, bfpBt:2.035},
+  {day:23, alw:1171, dailyBt:2.714, cummBt:30.5, cbcBt:0.0, bscBt:0.0, bfpBt:2.714},
+  {day:24, alw:1257, dailyBt:2.714, cummBt:33.2, cbcBt:0.0, bscBt:0.0, bfpBt:2.714},
+  {day:25, alw:1343, dailyBt:2.714, cummBt:36.0, cbcBt:0.0, bscBt:0.0, bfpBt:2.714},
+  {day:26, alw:1429, dailyBt:2.714, cummBt:38.7, cbcBt:0.0, bscBt:0.0, bfpBt:2.714},
+  {day:27, alw:1514, dailyBt:2.714, cummBt:41.4, cbcBt:0.0, bscBt:0.0, bfpBt:2.714},
+  {day:28, alw:1600, dailyBt:2.714, cummBt:44.1, cbcBt:0.0, bscBt:0.0, bfpBt:2.714},
+  {day:29, alw:1700, dailyBt:3.25, cummBt:47.4, cbcBt:0.0, bscBt:0.0, bfpBt:3.25},
+  {day:30, alw:1800, dailyBt:3.25, cummBt:50.6, cbcBt:0.0, bscBt:0.0, bfpBt:3.25},
+  {day:31, alw:1900, dailyBt:3.25, cummBt:53.9, cbcBt:0.0, bscBt:0.0, bfpBt:3.25},
+  {day:32, alw:2000, dailyBt:3.25, cummBt:57.1, cbcBt:0.0, bscBt:0.0, bfpBt:3.25},
+  {day:33, alw:2100, dailyBt:3.25, cummBt:60.4, cbcBt:0.0, bscBt:0.0, bfpBt:3.25},
+  {day:34, alw:2200, dailyBt:3.25, cummBt:63.6, cbcBt:0.0, bscBt:0.0, bfpBt:3.25},
+  {day:35, alw:2300, dailyBt:3.25, cummBt:66.8, cbcBt:0.0, bscBt:0.0, bfpBt:3.25},
 ];
 
 // ─── LIGHTING PROGRAM (default) ────────────────────────────────────────────
@@ -827,7 +827,6 @@ function DailyLogRows({ logs, currentDay, getPhase, placementDate, FEED_FC, netP
     const isToday = day === currentDay;
     const dp = getPhase(day);
     const dateStr = new Date(new Date(placementDate + "T00:00:00+08:00").getTime()+day*86400000).toLocaleDateString("en-PH",{month:"short",day:"numeric"});
-    const fcRow = FEED_FC.find(r=>r.day===day);
     // Week-based acceptable daily mortality rate (% of net placed):
     // Week 1 (D1-7): 0.2%/day (hatchery chick defects), Week 2 (D8-14): 0.15%, Week 3+ (D15+): 0.1%
     var mortRatePct = day <= 7 ? 0.002 : day <= 14 ? 0.0015 : 0.001;
@@ -2821,61 +2820,77 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
             )}
             {fgSection==="feeding" && (
               <div>
-                <div style={{fontSize:11,color:"#64748B",marginBottom:4}}>Daily feeding guide · BT = bags per 1,000 birds · tap ✎ to edit</div>
-                <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Actual target today: <strong style={{color:"#2E7D52"}}>{feedingGuide.find(x=>x.day===currentDay) ? (feedingGuide.find(x=>x.day===currentDay).bt*(netPlacedBirds/1000)).toFixed(0) : "—"}</strong> bags (Day {currentDay})</div>
+                <div style={{fontSize:11,color:"#64748B",marginBottom:4}}>Daily feeding guide · scaled to {(netPlacedBirds/1000).toFixed(1)}k birds · BT = bags per 1,000</div>
+                {(function(){
+                  const row = feedingGuide.find(x=>x.day===currentDay);
+                  const scale = netPlacedBirds/1000;
+                  const todayBags = row ? (row.dailyBt*scale) : null;
+                  return <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Today's target: <strong style={{color:"#2E7D52"}}>{todayBags!==null?todayBags.toFixed(0):"—"}</strong> bags (Day {currentDay})</div>;
+                })()}
+                {(function(){
+                  const scale = netPlacedBirds/1000;
+                  const totCbc = feedingGuide.reduce((s,r)=>s+(r.cbcBt||0),0)*scale;
+                  const totBsc = feedingGuide.reduce((s,r)=>s+(r.bscBt||0),0)*scale;
+                  const totBfp = feedingGuide.reduce((s,r)=>s+(r.bfpBt||0),0)*scale;
+                  return (
+                    <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+                      <div style={{flex:1,minWidth:90,background:"#E5B80B15",border:"1px solid #E5B80B40",borderRadius:8,padding:"8px 10px"}}>
+                        <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>CBC TOTAL</div>
+                        <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#B8940B"}}>{Math.ceil(totCbc)}</div>
+                        <div style={{fontSize:9,color:"#94A3B8"}}>bags · to D16</div>
+                      </div>
+                      <div style={{flex:1,minWidth:90,background:"#D4652A15",border:"1px solid #D4652A40",borderRadius:8,padding:"8px 10px"}}>
+                        <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>BSC TOTAL</div>
+                        <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#D4652A"}}>{Math.ceil(totBsc)}</div>
+                        <div style={{fontSize:9,color:"#94A3B8"}}>bags · D14–22</div>
+                      </div>
+                      <div style={{flex:1,minWidth:90,background:"#5B86E515",border:"1px solid #5B86E540",borderRadius:8,padding:"8px 10px"}}>
+                        <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>BFP TOTAL</div>
+                        <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#5B86E5"}}>{Math.ceil(totBfp)}</div>
+                        <div style={{fontSize:9,color:"#94A3B8"}}>bags · D20–harvest</div>
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div style={{overflowX:"auto"}}>
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,minWidth:600}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,minWidth:560}}>
                     <thead>
                       <tr style={{background:"#F5F7FA",borderBottom:"1px solid #CBD5E1"}}>
-                        {["DAY","ALW g","CBC","BSC","BFP","FC/day","CUMM","BT/1000","BAGS*",""].map(h=>(
+                        {["DAY","ALW g","BT/1000","CBC","BSC","BFP","FC/day","CUMM"].map(h=>(
                           <th key={h} style={{padding:"6px 10px",textAlign:"right",color:"#64748B",fontSize:8,letterSpacing:1,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {feedingGuide.map((r,i)=>{
-                        const isToday=r.day===currentDay;
-                        const actualBags=(r.bt*(netPlacedBirds/1000)).toFixed(0);
-                        const editing=editingFeedIdx===i;
-                        const ic={width:"100%",background:"#F5F7FA",border:"1px solid #CBD5E1",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:10,padding:"4px 5px",outline:"none",borderRadius:4,textAlign:"right"};
-                        if(editing) return (
-                          <tr key={i} style={{borderBottom:"1px solid #F0F2F5",background:"#5B86E512"}}>
-                            <td style={{padding:"4px 5px"}}><input type="number" value={feedDraft.day} onChange={e=>setFeedDraft(p=>({...p,day:e.target.value}))} style={{...ic,width:44}} /></td>
-                            <td style={{padding:"4px 5px"}}><input type="number" value={feedDraft.alw} onChange={e=>setFeedDraft(p=>({...p,alw:e.target.value}))} style={{...ic,width:54}} /></td>
-                            <td style={{padding:"4px 5px"}}><input type="number" value={feedDraft.cbc} onChange={e=>setFeedDraft(p=>({...p,cbc:e.target.value}))} style={{...ic,width:44}} /></td>
-                            <td style={{padding:"4px 5px"}}><input type="number" value={feedDraft.bsc} onChange={e=>setFeedDraft(p=>({...p,bsc:e.target.value}))} style={{...ic,width:44}} /></td>
-                            <td style={{padding:"4px 5px"}}><input type="number" value={feedDraft.bfp} onChange={e=>setFeedDraft(p=>({...p,bfp:e.target.value}))} style={{...ic,width:44}} /></td>
-                            <td style={{padding:"4px 5px"}}><input type="number" value={feedDraft.fc} onChange={e=>setFeedDraft(p=>({...p,fc:e.target.value}))} style={{...ic,width:50}} /></td>
-                            <td style={{padding:"4px 5px"}}><input type="number" value={feedDraft.cumm} onChange={e=>setFeedDraft(p=>({...p,cumm:e.target.value}))} style={{...ic,width:54}} /></td>
-                            <td style={{padding:"4px 5px"}}><input type="number" value={feedDraft.bt} onChange={e=>setFeedDraft(p=>({...p,bt:e.target.value}))} style={{...ic,width:50}} /></td>
-                            <td style={{padding:"4px 5px",color:"#94A3B8"}}>—</td>
-                            <td style={{padding:"4px 5px",display:"flex",gap:4}}>
-                              <button onClick={()=>{setFeedingGuide(p=>p.map((row,j)=>j===i?{day:parseInt(feedDraft.day)||0,alw:parseFloat(feedDraft.alw)||0,cbc:parseFloat(feedDraft.cbc)||0,bsc:parseFloat(feedDraft.bsc)||0,bfp:parseFloat(feedDraft.bfp)||0,fc:parseFloat(feedDraft.fc)||0,cumm:parseFloat(feedDraft.cumm)||0,bt:parseFloat(feedDraft.bt)||0}:row));setEditingFeedIdx(null);}} style={{background:"#2E7D52",border:"none",color:"#FFFFFF",fontFamily:"'Inter',sans-serif",fontSize:9,padding:"4px 7px",cursor:"pointer",borderRadius:4,fontWeight:600}}>SAVE</button>
-                              <button onClick={()=>setEditingFeedIdx(null)} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,padding:"4px 7px",cursor:"pointer",borderRadius:4}}>X</button>
-                            </td>
-                          </tr>
-                        );
-                        return (
-                          <tr key={i} style={{borderBottom:"1px solid #F0F2F5",background:isToday?"#2E7D5215":"transparent"}}>
-                            <td style={{padding:"5px 10px",textAlign:"right",fontFamily:"'Inter',sans-serif",fontWeight:isToday?700:400,color:isToday?"#2E7D52":"#64748B"}}>D{r.day}{isToday?" ◉":""}</td>
-                            <td style={{padding:"5px 10px",textAlign:"right",color:isToday?"#C4960C":"#334155",fontWeight:isToday?600:400}}>{r.alw}</td>
-                            <td style={{padding:"5px 10px",textAlign:"right",color:r.cbc>0?"#E5B80B":"#CBD5E1"}}>{r.cbc||"—"}</td>
-                            <td style={{padding:"5px 10px",textAlign:"right",color:r.bsc>0?"#D4652A":"#CBD5E1"}}>{r.bsc||"—"}</td>
-                            <td style={{padding:"5px 10px",textAlign:"right",color:r.bfp>0?"#5B86E5":"#CBD5E1"}}>{r.bfp||"—"}</td>
-                            <td style={{padding:"5px 10px",textAlign:"right",color:"#334155",fontWeight:isToday?700:400}}>{r.fc}</td>
-                            <td style={{padding:"5px 10px",textAlign:"right",color:"#64748B"}}>{r.cumm}</td>
-                            <td style={{padding:"5px 10px",textAlign:"right",color:"#64748B"}}>{r.bt}</td>
-                            <td style={{padding:"5px 10px",textAlign:"right",color:isToday?"#2E7D52":"#334155",fontWeight:isToday?700:400}}>{actualBags}</td>
-                            <td style={{padding:"5px 10px",textAlign:"right"}}>
-                              <button onClick={()=>{setEditingFeedIdx(i);setFeedDraft({day:r.day,alw:r.alw,cbc:r.cbc,bsc:r.bsc,bfp:r.bfp,fc:r.fc,cumm:r.cumm,bt:r.bt});}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,width:22,height:22,cursor:"pointer",borderRadius:4,padding:0}}>✎</button>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {(function(){
+                        const scale = netPlacedBirds/1000;
+                        let cumm = 0;
+                        return feedingGuide.map((r,i)=>{
+                          const isToday=r.day===currentDay;
+                          const dailyBags = (r.dailyBt||0)*scale;
+                          cumm += dailyBags;
+                          const cbcBags = (r.cbcBt||0)*scale;
+                          const bscBags = (r.bscBt||0)*scale;
+                          const bfpBags = (r.bfpBt||0)*scale;
+                          const fmt = (n)=> n>0 ? (n>=10?n.toFixed(0):n.toFixed(1)) : "—";
+                          return (
+                            <tr key={i} style={{borderBottom:"1px solid #F0F2F5",background:isToday?"#2E7D5215":"transparent"}}>
+                              <td style={{padding:"5px 10px",textAlign:"right",fontFamily:"'Inter',sans-serif",fontWeight:isToday?700:400,color:isToday?"#2E7D52":"#64748B"}}>D{r.day}{isToday?" ◉":""}</td>
+                              <td style={{padding:"5px 10px",textAlign:"right",color:isToday?"#C4960C":"#334155",fontWeight:isToday?600:400}}>{r.alw}</td>
+                              <td style={{padding:"5px 10px",textAlign:"right",color:"#94A3B8"}}>{(r.dailyBt||0).toFixed(2)}</td>
+                              <td style={{padding:"5px 10px",textAlign:"right",color:cbcBags>0?"#B8940B":"#CBD5E1"}}>{fmt(cbcBags)}</td>
+                              <td style={{padding:"5px 10px",textAlign:"right",color:bscBags>0?"#D4652A":"#CBD5E1"}}>{fmt(bscBags)}</td>
+                              <td style={{padding:"5px 10px",textAlign:"right",color:bfpBags>0?"#5B86E5":"#CBD5E1"}}>{fmt(bfpBags)}</td>
+                              <td style={{padding:"5px 10px",textAlign:"right",color:"#334155",fontWeight:isToday?700:400}}>{dailyBags.toFixed(0)}</td>
+                              <td style={{padding:"5px 10px",textAlign:"right",color:"#64748B"}}>{cumm.toFixed(0)}</td>
+                            </tr>
+                          );
+                        });
+                      })()}
                     </tbody>
                   </table>
                 </div>
-                <div style={{fontSize:9,color:"#94A3B8",marginTop:8}}>* BAGS = BT × {(netPlacedBirds/1000).toFixed(1)}k birds</div>
+                <div style={{fontSize:9,color:"#94A3B8",marginTop:8}}>CBC/BSC/BFP shown as bags for {(netPlacedBirds/1000).toFixed(1)}k birds · 3-day transitions blend feed types · totals rounded up for ordering</div>
               </div>
             )}
           </div>

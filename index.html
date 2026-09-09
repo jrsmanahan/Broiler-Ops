@@ -1197,7 +1197,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
     const withBal = sorted.find(function(l){ return l.feedBalance !== null && l.feedBalance !== undefined; });
     return withBal ? withBal.feedBalance : null;
   })();
-  const todayFC    = (function(){ const r = FEED_FC.find(r => r.day === currentDay); return r ? r.fc : null; })();
+  // todayFC computed after feedBasisBirds (below)
   const todayConsumed  = shiftLogs.filter(l => l.day === currentDay).reduce((s,l) => s + l.feedsConsumed, 0);
   // Target ALW = 95% of Cobb standard for current day
   const alwStdToday    = ALW_STANDARD.find(r => r.day === currentDay);
@@ -1206,6 +1206,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   // Feed is planned against the ORDERED quantity (contract), not delivered heads.
   // Hatcheries give ~2% free extra birds that aren't part of the feed plan.
   const feedBasisBirds = (cycleConfig && cycleConfig.flockSize) ? cycleConfig.flockSize : netPlacedBirds;
+  const todayFC = (function(){ const r = feedingGuide.find(r => r.day === currentDay); return r ? Math.round((r.dailyBt||0) * (feedBasisBirds/1000)) : null; })();
   const medStockMap = (() => {
     const map = {};
     medInventoryLog.forEach(function(e) {
@@ -1377,7 +1378,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const mortRate       = totalMort > 0 ? (totalMort / daysElapsed).toFixed(1) : "0.0";
   const runningHR      = netPlacedBirds > 0 ? (((netPlacedBirds - totalMort) / netPlacedBirds) * 100).toFixed(1) : null;
   const cumFeedConsumed= shiftLogs.reduce((s,l) => s + l.feedsConsumed, 0);
-  const cumFCTarget    = FEED_FC.filter(r => r.day <= currentDay).reduce((s,r) => s + r.fc, 0);
+  const cumFCTarget    = Math.round(feedingGuide.filter(r => r.day <= currentDay).reduce((s,r) => s + (r.dailyBt||0), 0) * (feedBasisBirds/1000));
   const fcDiff         = cumFeedConsumed - cumFCTarget;
   const btActual       = feedBasisBirds > 0 ? (cumFeedConsumed / (feedBasisBirds / 1000)).toFixed(2) : null;
   const runningFCR     = (() => {
@@ -1785,6 +1786,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 </div>
                 <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>
                   cumul target: {cumFCTarget} bags
+                </div>
+                <div style={{ fontSize:11, color: cumFeedConsumed > cumFCTarget*1.05 ? "#E91E63" : cumFeedConsumed < cumFCTarget*0.95 ? "#C4960C" : "#2E7D52", marginTop:1 }}>
+                  actual cumul: {cumFeedConsumed} bags
                 </div>
               </div>
               {/* Harvest Rate */}

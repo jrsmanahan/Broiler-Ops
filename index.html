@@ -887,7 +887,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const isOnline = syncStatus === "online";
   const houseId = house.id;
   const userId = house.user_id;
-  const [cycleConfig, setCycleConfig] = useLocalStorage("cycleConfig", null);
+  const [cycleConfig, setCycleConfig] = useSyncedConfig("cycleConfig", null, houseId, userId, isOnline, syncTick);
   const CYCLE_CONFIG = {
     placementDate: cycleConfig ? new Date(cycleConfig.placementDate + "T00:00:00+08:00") : new Date(),
     flockSize: cycleConfig ? cycleConfig.flockSize : (house.flock_size || 0),
@@ -910,8 +910,31 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   });
   // Daily records — two shifts per day
   const [shiftLogs, setShiftLogs] = useSyncedLog("shiftLogs", houseId, userId, isOnline, syncTick);
+  // Find the next entry that SHOULD be logged, so the form defaults to it (avoids
+  // human error of forgetting to change day/shift when logging a shift late).
+  function nextExpectedEntry() {
+    // Scan from Day 1 up to currentDay; first missing AM then PM is the next slot.
+    for (var d = 1; d <= currentDay; d++) {
+      var hasAM = shiftLogs.some(function(l){ return l.day===d && l.shift==="DAY"; });
+      if (!hasAM) return { day: d, shift: "DAY" };
+      var hasPM = shiftLogs.some(function(l){ return l.day===d && l.shift==="NIGHT"; });
+      if (!hasPM) return { day: d, shift: "NIGHT" };
+    }
+    // All caught up through today → default to today's AM (next thing to come)
+    return { day: currentDay, shift: "DAY" };
+  }
   const [newLog, setNewLog] = useState({ shift:"DAY", mortality:"", feedsConsumed:"", feedBalance:"", waterEnd:"", alw:"", notes:"" });
   const [logDay, setLogDay] = useState(String(currentDay));
+  // On first load / when not editing, point the form at the next expected slot
+  const [logDefaultInit, setLogDefaultInit] = useState(false);
+  useEffect(function(){
+    if (logDefaultInit || editingLogId) return;
+    if (!shiftLogs) return;
+    var slot = nextExpectedEntry();
+    setNewLog(function(p){ return {...p, shift: slot.shift}; });
+    setLogDay(String(slot.day));
+    setLogDefaultInit(true);
+  }, [shiftLogs, currentDay]);
   const [editingLogId, setEditingLogId] = useState(null);
   // Feed receive log
   // Brooding tasks — per bracket, per task
@@ -1005,6 +1028,22 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [showEditRollover, setShowEditRollover] = useState(false);
   const [showEditPlacement, setShowEditPlacement] = useState(false);
   const [showStartCycle, setShowStartCycle] = useState(false);
+  // Guard: when this device has no local cycle, check whether the house already has
+  // active data in Supabase (e.g. signing in on a new device mid-grow). If so, we must
+  // NOT let the user start a fresh cycle and wipe it — offer to pull it down instead.
+  const [remoteActiveData, setRemoteActiveData] = useState(null); // null=checking, false=none, {counts} = found
+  useEffect(function(){
+    if (cycleConfig) { setRemoteActiveData(false); return; } // have local cycle, no guard needed
+    if (!isOnline || !houseId) { setRemoteActiveData(false); return; }
+    var sb = getSupabaseClient();
+    if (!sb) { setRemoteActiveData(false); return; }
+    var LIVE = ["shiftLogs","tunnelLogs","cropLogs","litterLogs","flushLogs","incidents","feedDeliveries","crateEntries","placementTrucks","harvestTrucks"];
+    sb.from("sync_entries").select("data_type").eq("house_id", houseId).in("data_type", LIVE)
+      .then(function(res){
+        if (res.error || !res.data || res.data.length === 0) { setRemoteActiveData(false); return; }
+        setRemoteActiveData({ count: res.data.length });
+      });
+  }, [cycleConfig, houseId, isOnline, syncTick]);
   const [showEndCycle, setShowEndCycle] = useState(false);
   const [isCycleProcessing, setIsCycleProcessing] = useState(false);
   const [saveHistoryOnEnd, setSaveHistoryOnEnd] = useState(true);
@@ -1416,8 +1455,18 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
         return [...p, { ...parsed, id:Date.now() }];
       });
     }
-    setNewLog({ shift:"DAY", mortality:"", feedsConsumed:"", feedBalance:"", waterEnd:"", alw:"", notes:"" });
-    setLogDay(String(currentDay));
+    // Default the form to the NEXT expected slot after what was just logged,
+    // so logging late (a day behind) doesn't require manually fixing day/shift.
+    var nextSlot;
+    if (parsed.shift === "DAY") {
+      nextSlot = { day: parsed.day, shift: "NIGHT" }; // just did AM → PM same day
+    } else {
+      nextSlot = { day: parsed.day + 1, shift: "DAY" }; // just did PM → next day AM
+    }
+    // Don't advance past today
+    if (nextSlot.day > currentDay) nextSlot = { day: currentDay, shift: "DAY" };
+    setNewLog({ shift:nextSlot.shift, mortality:"", feedsConsumed:"", feedBalance:"", waterEnd:"", alw:"", notes:"" });
+    setLogDay(String(nextSlot.day));
   };
 
   const toggleTask = (taskId) => {
@@ -1469,6 +1518,42 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
 
   // ── No active cycle → show Start Cycle screen ──
   if (!cycleConfig && migrationDone) {
+    // Guard: if the house has active data in Supabase, this is almost certainly a
+    // new device signing into an ongoing grow. Do NOT show the fresh Start Cycle form
+    // (which would wipe the data) — offer recovery instead.
+    if (remoteActiveData && remoteActiveData.count > 0) {
+      return (
+        <div style={{ fontFamily:"'Inter',sans-serif", minHeight:"100vh", background:"#F5F7FA", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+          <div style={{ background:"#FFFFFF", border:"1px solid #E2E8F0", borderRadius:12, padding:28, maxWidth:400, width:"100%" }}>
+            <img src={TVE_LOGO} alt="Tunnel Vent Experts" style={{height:36,marginBottom:14,display:"block"}} />
+            <div style={{ fontWeight:800, fontSize:18, color:"#1E293B", marginBottom:4 }}>{house.building_name}</div>
+            <div style={{ background:"#C4960C12", border:"1px solid #C4960C40", borderRadius:8, padding:"12px 14px", marginBottom:16 }}>
+              <div style={{ fontWeight:700, fontSize:13, color:"#B8940B", marginBottom:4 }}>⚠ Existing grow found</div>
+              <div style={{ fontSize:12, color:"#64748B", lineHeight:1.5 }}>
+                This house has {remoteActiveData.count} saved records in the cloud but nothing on this device — you're likely signing in on a new phone or browser. Tap below to load the existing grow. <strong>Do not start a new cycle</strong> unless you want to erase it.
+              </div>
+            </div>
+            <button onClick={function(){ window.location.reload(); }} style={{ width:"100%", background:"#2E7D52", border:"none", color:"#FFFFFF", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:14, padding:"12px", cursor:"pointer", borderRadius:8, marginBottom:10 }}>⟳ LOAD EXISTING GROW</button>
+            <details style={{ marginTop:4 }}>
+              <summary style={{ fontSize:11, color:"#94A3B8", cursor:"pointer", padding:"6px 0" }}>Start a new cycle anyway (erases the saved grow)</summary>
+              <div style={{ marginTop:10 }}>
+                <div style={{ fontSize:11, color:"#E91E63", marginBottom:10 }}>This permanently deletes the {remoteActiveData.count} saved records for this house. Only do this if the grow has truly ended and wasn't archived.</div>
+                <button disabled={isCycleProcessing} onClick={function(){ if(window.confirm("Erase the existing grow and start fresh? This cannot be undone.")){ setRemoteActiveData(false); } }} style={{ width:"100%", background:"none", border:"1px solid #E91E63", color:"#E91E63", fontFamily:"'Inter',sans-serif", fontWeight:600, fontSize:12, padding:"9px", cursor:"pointer", borderRadius:8 }}>Continue to new cycle setup</button>
+              </div>
+            </details>
+            <button onClick={onSwitchHouse} style={{ width:"100%", background:"none", border:"none", color:"#94A3B8", fontFamily:"'Inter',sans-serif", fontSize:12, padding:"10px", cursor:"pointer", marginTop:10 }}>← Back to house selection</button>
+          </div>
+        </div>
+      );
+    }
+    // Still checking Supabase — show a brief loading state to avoid flashing the form
+    if (remoteActiveData === null) {
+      return (
+        <div style={{ fontFamily:"'Inter',sans-serif", minHeight:"100vh", background:"#F5F7FA", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+          <div style={{ color:"#94A3B8", fontSize:13 }}>Checking for existing grow…</div>
+        </div>
+      );
+    }
     return (
       <div style={{ fontFamily:"'Inter',sans-serif", minHeight:"100vh", background:"#F5F7FA", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
         <div style={{ background:"#FFFFFF", border:"1px solid #E2E8F0", borderRadius:12, padding:28, maxWidth:400, width:"100%" }}>

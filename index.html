@@ -2003,15 +2003,6 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 <div><label style={LBL}>MORTALITY (birds)</label><input value={newLog.mortality} onChange={e=>setNewLog(p=>({...p,mortality:e.target.value}))} placeholder="dead birds this shift" style={{...INP,width:"100%"}} /></div>
                 <div><label style={LBL}>FEEDS CONSUMED (bags pulled)</label><input value={newLog.feedsConsumed} onChange={e=>setNewLog(p=>({...p,feedsConsumed:e.target.value}))} placeholder="bags pulled from warehouse" style={{...INP,width:"100%"}} /></div>
                 <div><label style={LBL}>WATER METER END (m³) — optional</label><input value={newLog.waterEnd} onChange={e=>setNewLog(p=>({...p,waterEnd:e.target.value}))} placeholder="end of shift reading" style={{...INP,width:"100%"}} /></div>
-                <div>
-                  <label style={LBL}>FEED BALANCE (auto)</label>
-                  {(function(){
-                    const delivered = feedDeliveries.reduce(function(s,d){ return s+(d.qty||0); }, 0);
-                    const consumed = shiftLogs.reduce(function(s,l){ return s+(l.feedsConsumed||0); }, 0);
-                    const bal = delivered - consumed;
-                    return <div style={{...INP, width:"100%", background:"#F0F2F5", color:bal<100?"#E91E63":bal<150?"#C4960C":"#2E7D52", fontWeight:700, display:"flex", alignItems:"center"}}>{delivered>0||consumed>0 ? bal + " bags in warehouse" : "— (log deliveries first)"}</div>;
-                  })()}
-                </div>
               </div>
               <div style={{marginBottom:10}}>
                 <label style={{...LBL,color:isAlwDay?"#C4960C":"#64748B"}}>{isAlwDay?"⚖ ALW (g) — weigh day":"ALW (g) — optional"}</label>

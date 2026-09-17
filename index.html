@@ -803,7 +803,7 @@ function BracketProgress({ activeBracket, tasksByBracket, taskChecks }) {
     </div>
   );
 }
-function DailyLogRows({ logs, currentDay, getPhase, placementDate, FEED_FC, netPlacedBirds, feedBasisBirds, setShiftLogs, setEditingLogId, setNewLog, setLogDay, editingLogId }) {
+function DailyLogRows({ logs, currentDay, getPhase, placementDate, FEED_FC, netPlacedBirds, feedBasisBirds, feedDeliveries, setShiftLogs, setEditingLogId, setNewLog, setLogDay, editingLogId }) {
   const days = [...new Set(logs.map(l=>l.day))].sort((a,b)=>a-b);
   let cumMort = 0, cumFeed = 0;
   const rows = [];
@@ -819,8 +819,9 @@ function DailyLogRows({ logs, currentDay, getPhase, placementDate, FEED_FC, netP
     cumMort += dayMort;
     cumFeed += dayFeed;
     const waterEnd = (pm && pm.waterEnd) || (am && am.waterEnd) || null;
-    const feedBal = (pm && pm.feedBalance !== null && pm.feedBalance !== undefined ? pm.feedBalance : null) ||
-                    (am && am.feedBalance !== null && am.feedBalance !== undefined ? am.feedBalance : null);
+    // Feed balance auto-computed: total delivered on/before this day − total consumed through this day
+    const deliveredToDay = (feedDeliveries||[]).filter(function(d){ return (d.day==null) || (d.day <= day); }).reduce(function(s,d){ return s + (d.qty||0); }, 0);
+    const feedBal = deliveredToDay > 0 || cumFeed > 0 ? (deliveredToDay - cumFeed) : null;
     const alw = (pm && pm.alw) || (am && am.alw) || null;
     const notes = [am && am.notes, pm && pm.notes].filter(Boolean).join(" / ");
     const isToday = day === currentDay;
@@ -1058,7 +1059,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [showCrate, setShowCrate] = useState(false);
   const [placementSection, setPlacementSection] = useState("placement");
   const [feedDeliveries, setFeedDeliveries] = useSyncedLog("feedDeliveries", houseId, userId, isOnline, syncTick);
-  const [newDelivery, setNewDelivery] = useState({ type:"CBC", qty:"", notes:"" });
+  const [newDelivery, setNewDelivery] = useState({ type:"CBC", qty:"", notes:"", date:todayPHT() });
   const [harvestTrucks, setHarvestTrucks] = useSyncedLog("harvestTrucks", houseId, userId, isOnline, syncTick);
   const [newHarvest, setNewHarvest] = useState({ plate:"", heads:"", kg:"", day:String(currentDay), notes:"" });
   const [surplusFeedBags, setSurplusFeedBags] = useLocalStorage("surplusFeedBags", 0);
@@ -2001,8 +2002,16 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:10}}>
                 <div><label style={LBL}>MORTALITY (birds)</label><input value={newLog.mortality} onChange={e=>setNewLog(p=>({...p,mortality:e.target.value}))} placeholder="dead birds this shift" style={{...INP,width:"100%"}} /></div>
                 <div><label style={LBL}>FEEDS CONSUMED (bags pulled)</label><input value={newLog.feedsConsumed} onChange={e=>setNewLog(p=>({...p,feedsConsumed:e.target.value}))} placeholder="bags pulled from warehouse" style={{...INP,width:"100%"}} /></div>
-                <div><label style={LBL}>WATER METER END (m³)</label><input value={newLog.waterEnd} onChange={e=>setNewLog(p=>({...p,waterEnd:e.target.value}))} placeholder="end of shift reading" style={{...INP,width:"100%"}} /></div>
-                <div><label style={LBL}>FEED BALANCE (bags in warehouse)</label><input value={newLog.feedBalance} onChange={e=>setNewLog(p=>({...p,feedBalance:e.target.value}))} placeholder="bags remaining" style={{...INP,width:"100%"}} /></div>
+                <div><label style={LBL}>WATER METER END (m³) — optional</label><input value={newLog.waterEnd} onChange={e=>setNewLog(p=>({...p,waterEnd:e.target.value}))} placeholder="end of shift reading" style={{...INP,width:"100%"}} /></div>
+                <div>
+                  <label style={LBL}>FEED BALANCE (auto)</label>
+                  {(function(){
+                    const delivered = feedDeliveries.reduce(function(s,d){ return s+(d.qty||0); }, 0);
+                    const consumed = shiftLogs.reduce(function(s,l){ return s+(l.feedsConsumed||0); }, 0);
+                    const bal = delivered - consumed;
+                    return <div style={{...INP, width:"100%", background:"#F0F2F5", color:bal<100?"#E91E63":bal<150?"#C4960C":"#2E7D52", fontWeight:700, display:"flex", alignItems:"center"}}>{delivered>0||consumed>0 ? bal + " bags in warehouse" : "— (log deliveries first)"}</div>;
+                  })()}
+                </div>
               </div>
               <div style={{marginBottom:10}}>
                 <label style={{...LBL,color:isAlwDay?"#C4960C":"#64748B"}}>{isAlwDay?"⚖ ALW (g) — weigh day":"ALW (g) — optional"}</label>
@@ -2049,7 +2058,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                     </tr>
                   </thead>
                   <tbody>
-                    <DailyLogRows logs={shiftLogs} currentDay={currentDay} getPhase={getPhase} placementDate={activePlacementDate} FEED_FC={FEED_FC} netPlacedBirds={netPlacedBirds} feedBasisBirds={feedBasisBirds} setShiftLogs={setShiftLogs} setEditingLogId={setEditingLogId} setNewLog={setNewLog} setLogDay={setLogDay} editingLogId={editingLogId}/>
+                    <DailyLogRows logs={shiftLogs} currentDay={currentDay} getPhase={getPhase} placementDate={activePlacementDate} FEED_FC={FEED_FC} netPlacedBirds={netPlacedBirds} feedBasisBirds={feedBasisBirds} feedDeliveries={feedDeliveries} setShiftLogs={setShiftLogs} setEditingLogId={setEditingLogId} setNewLog={setNewLog} setLogDay={setLogDay} editingLogId={editingLogId}/>
                   </tbody>
                 </table>
               </div>
@@ -2587,17 +2596,31 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                     );
                   })}
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:10,marginBottom:12}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
                   <div>
                     <label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>QUANTITY (bags)</label>
                     <input value={newDelivery.qty} onChange={e=>setNewDelivery(p=>({...p,qty:e.target.value}))} placeholder="e.g. 200" style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} />
                   </div>
                   <div>
-                    <label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>NOTES</label>
-                    <input value={newDelivery.notes} onChange={e=>setNewDelivery(p=>({...p,notes:e.target.value}))} placeholder="plate, driver, remarks..." style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} />
+                    <label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>DELIVERY DATE</label>
+                    <input type="date" value={newDelivery.date} onChange={e=>setNewDelivery(p=>({...p,date:e.target.value}))} style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} />
                   </div>
                 </div>
-                <button onClick={()=>{if(!newDelivery.qty) return;setFeedDeliveries(p=>[...p,{...newDelivery,id:Date.now(),day:currentDay,qty:parseInt(newDelivery.qty)||0}]);setNewDelivery({type:newDelivery.type,qty:"",notes:""});}} style={{background:"#2E7D52",border:"none",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"10px 24px",cursor:"pointer",borderRadius:6}}>+ LOG DELIVERY</button>
+                <div style={{marginBottom:12}}>
+                  <label style={{fontSize:9,color:"#64748B",letterSpacing:1.2,marginBottom:5,display:"block",fontWeight:600}}>NOTES</label>
+                  <input value={newDelivery.notes} onChange={e=>setNewDelivery(p=>({...p,notes:e.target.value}))} placeholder="plate, driver, remarks..." style={{background:"#F5F7FA",border:"1px solid #E2E8F0",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:13,padding:"9px 12px",outline:"none",borderRadius:6,width:"100%"}} />
+                </div>
+                <button onClick={()=>{
+                  if(!newDelivery.qty) return;
+                  // Derive cycle day from the entered delivery date (falls back to current day)
+                  var delivDay = currentDay;
+                  if (newDelivery.date && activePlacementDate) {
+                    var dd = Math.floor((new Date(newDelivery.date+"T00:00:00+08:00").getTime() - new Date(activePlacementDate+"T00:00:00+08:00").getTime())/86400000);
+                    if (dd >= 0) delivDay = dd;
+                  }
+                  setFeedDeliveries(p=>[...p,{...newDelivery,id:Date.now(),day:delivDay,qty:parseInt(newDelivery.qty)||0}]);
+                  setNewDelivery({type:newDelivery.type,qty:"",notes:"",date:todayPHT()});
+                }} style={{background:"#2E7D52",border:"none",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"10px 24px",cursor:"pointer",borderRadius:6}}>+ LOG DELIVERY</button>
               </div>
               {/* Delivery log */}
               {feedDeliveries.length>0 && (

@@ -2003,10 +2003,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 <div><label style={LBL}>MORTALITY (birds)</label><input value={newLog.mortality} onChange={e=>setNewLog(p=>({...p,mortality:e.target.value}))} placeholder="dead birds this shift" style={{...INP,width:"100%"}} /></div>
                 <div><label style={LBL}>FEEDS CONSUMED (bags pulled)</label><input value={newLog.feedsConsumed} onChange={e=>setNewLog(p=>({...p,feedsConsumed:e.target.value}))} placeholder="bags pulled from warehouse" style={{...INP,width:"100%"}} /></div>
                 <div><label style={LBL}>WATER METER END (m³) — optional</label><input value={newLog.waterEnd} onChange={e=>setNewLog(p=>({...p,waterEnd:e.target.value}))} placeholder="end of shift reading" style={{...INP,width:"100%"}} /></div>
-              </div>
-              <div style={{marginBottom:10}}>
-                <label style={{...LBL,color:isAlwDay?"#C4960C":"#64748B"}}>{isAlwDay?"⚖ ALW (g) — weigh day":"ALW (g) — optional"}</label>
-                <input value={newLog.alw} onChange={e=>setNewLog(p=>({...p,alw:e.target.value}))} placeholder="e.g. 185" style={{...INP,width:"100%"}} />
+                <div><label style={{...LBL,color:isAlwDay?"#C4960C":"#64748B"}}>{isAlwDay?"⚖ ALW (g) — weigh day":"ALW (g) — optional"}</label><input value={newLog.alw} onChange={e=>setNewLog(p=>({...p,alw:e.target.value}))} placeholder="e.g. 185" style={{...INP,width:"100%"}} /></div>
               </div>
               <div style={{marginBottom:12}}>
                 <label style={LBL}>NOTES / OBSERVATIONS</label>
@@ -2603,11 +2600,12 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 </div>
                 <button onClick={()=>{
                   if(!newDelivery.qty) return;
-                  // Derive cycle day from the entered delivery date (falls back to current day)
+                  // Derive cycle day from the entered delivery date. Pre-placement
+                  // deliveries (before Day 0) are normal — feed arrives before chicks —
+                  // so negative days are allowed and shown as "pre-placement".
                   var delivDay = currentDay;
                   if (newDelivery.date && activePlacementDate) {
-                    var dd = Math.floor((new Date(newDelivery.date+"T00:00:00+08:00").getTime() - new Date(activePlacementDate+"T00:00:00+08:00").getTime())/86400000);
-                    if (dd >= 0) delivDay = dd;
+                    delivDay = Math.floor((new Date(newDelivery.date+"T00:00:00+08:00").getTime() - new Date(activePlacementDate+"T00:00:00+08:00").getTime())/86400000);
                   }
                   setFeedDeliveries(p=>[...p,{...newDelivery,id:Date.now(),day:delivDay,qty:parseInt(newDelivery.qty)||0}]);
                   setNewDelivery({type:newDelivery.type,qty:"",notes:"",date:todayPHT()});
@@ -2623,7 +2621,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                     const tc=d.type==="CBC"?"#E5B80B":d.type==="BSC"?"#D4652A":"#5B86E5";
                     return (
                       <div key={d.id} className="row" style={{display:"grid",gridTemplateColumns:"40px 60px 60px 1fr 32px",padding:"9px 16px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center"}}>
-                        <div style={{fontFamily:"'Inter',sans-serif",fontSize:10,color:"#C4960C",fontWeight:700}}>D{d.day}</div>
+                        <div style={{fontFamily:"'Inter',sans-serif",fontSize:10,color:"#C4960C",fontWeight:700}}>{d.day<0?"PRE":"D"+d.day}</div>
                         <div><span className="pill" style={{background:tc+"18",color:tc}}>{d.type}</span></div>
                         <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,color:"#1E293B"}}>{d.qty}</div>
                         <div style={{color:"#64748B",fontSize:10}}>{d.notes||"—"}</div>

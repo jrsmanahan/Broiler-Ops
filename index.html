@@ -1760,30 +1760,70 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 <div style={{ fontSize:11, color:"#64748B", marginTop:2 }}>
                   {currentDay===0 && "Chick placement day. Record truck arrivals, DOA, and controller setup."}
                   {currentDay>=1 && currentDay<=14 && "Brooding stage · Bracket "+(getBroodBracket(currentDay))+" · "+(14-currentDay)+" days to tunnel transition"}
-                  {currentDay>14 && currentDay<=35 && (function(){
-                    // Harvest day = when projected weight reaches 2.1kg.
-                    // Scale the Ross standard curve by this flock's actual performance ratio.
+                  {currentDay>14 && currentDay<=45 && (function(){
+                    // Harvest-day projection — uses the FLOCK'S OWN observed daily gain from its
+                    // recent weigh-ins (far more accurate than a preset once we have 2+ points).
+                    // Falls back to standard absolute gains only when fewer than 2 weigh-ins exist.
                     var HARVEST_TARGET_G = (cycleConfig && cycleConfig.harvestTargetG) || 2100;
-                    var ratio = 1;
-                    if (projectedALW && projectedALW.lastDay >= 7 && projectedALW.lastActualG > 0) {
-                      var stdAtWeigh = ALW_STANDARD.find(function(r){return r.day===projectedALW.lastDay;});
-                      if (stdAtWeigh && stdAtWeigh.std > 0) ratio = projectedALW.lastActualG / stdAtWeigh.std;
+                    function stdGain(d){
+                      var a = ALW_STANDARD.find(function(r){return r.day===d;});
+                      var b = ALW_STANDARD.find(function(r){return r.day===d-1;});
+                      if (a && b) return a.std - b.std;
+                      return 100;
                     }
-                    var harvestDay = null;
-                    for (var i=0;i<ALW_STANDARD.length;i++){
-                      if (ALW_STANDARD[i].std * ratio >= HARVEST_TARGET_G) { harvestDay = ALW_STANDARD[i].day; break; }
+                    // Collect actual weigh-ins (day + grams) sorted by day
+                    var weighs = shiftLogs.filter(function(l){return l.alw;})
+                      .map(function(l){return {day:l.day, g:Math.round(l.alw*1000)};})
+                      .sort(function(a,b){return a.day-b.day;});
+                    // De-dupe to one per day (keep last logged for that day)
+                    var byDay = {}; weighs.forEach(function(w){ byDay[w.day]=w.g; });
+                    var pts = Object.keys(byDay).map(function(d){return {day:+d, g:byDay[d]};}).sort(function(a,b){return a.day-b.day;});
+
+                    var anchorDay, anchorW, obsGain = null;
+                    if (pts.length >= 2) {
+                      // Observed gain = slope over the last up-to-4 weigh-ins (linear regression)
+                      var recent = pts.slice(-4);
+                      var n=recent.length, sx=0,sy=0,sxy=0,sxx=0;
+                      recent.forEach(function(p){ sx+=p.day; sy+=p.g; sxy+=p.day*p.g; sxx+=p.day*p.day; });
+                      var denom = n*sxx - sx*sx;
+                      obsGain = denom!==0 ? (n*sxy - sx*sy)/denom : (recent[n-1].g-recent[0].g)/(recent[n-1].day-recent[0].day);
+                      anchorDay = pts[pts.length-1].day;
+                      anchorW = pts[pts.length-1].g;
+                    } else if (pts.length === 1) {
+                      anchorDay = pts[0].day; anchorW = pts[0].g; // one point → use standard gains
+                    } else {
+                      var stdT = ALW_STANDARD.find(function(r){return r.day===currentDay;});
+                      anchorDay = currentDay; anchorW = stdT ? stdT.std : 0;
                     }
-                    if (harvestDay === null) {
-                      // Behind standard enough that 2.1kg lands past D35 — extrapolate with late-stage daily gain scaled to this flock
-                      var lastStd = ALW_STANDARD[ALW_STANDARD.length-1];
-                      var dailyGain = 100 * ratio;
-                      harvestDay = lastStd.day + Math.ceil((HARVEST_TARGET_G - lastStd.std*ratio) / dailyGain);
+                    if (anchorW >= HARVEST_TARGET_G) return "Tunnel stage · flock at " + (HARVEST_TARGET_G/1000) + "kg harvest target now";
+
+                    // Walk forward. With an observed gain, use it with a gentle 3%/day taper
+                    // (broilers plateau near market weight). Otherwise use standard absolute gains.
+                    function gainInto(d, prevGain){
+                      if (obsGain !== null) {
+                        // taper the observed gain slightly each day past the anchor
+                        return prevGain;
+                      }
+                      return stdGain(d);
                     }
+                    var w = anchorW, d = anchorDay, guard = 0;
+                    var g = obsGain !== null ? obsGain : null;
+                    while (w < HARVEST_TARGET_G && guard < 40) {
+                      d++;
+                      if (obsGain !== null) { w += g; g = g * 0.97; }
+                      else { w += stdGain(d); }
+                      guard++;
+                    }
+                    var harvestDay = d;
                     var daysLeft = harvestDay - currentDay;
-                    if (daysLeft <= 0) return "Tunnel stage · flock at " + (HARVEST_TARGET_G/1000) + "kg harvest target now";
-                    return "Tunnel stage · " + daysLeft + " day" + (daysLeft!==1?"s":"") + " to " + (HARVEST_TARGET_G/1000) + "kg harvest weight (D" + harvestDay + ")";
+                    // Project today's weight from the anchor for context
+                    var wToday = anchorW, dd = anchorDay, gg = obsGain;
+                    while (dd < currentDay) { dd++; if (obsGain!==null){ wToday += gg; gg = gg*0.97; } else { wToday += stdGain(dd); } }
+                    var gainNote = obsGain !== null ? " · " + Math.round(obsGain) + "g/day trend" : "";
+                    if (daysLeft <= 0) return "Tunnel stage · projected " + Math.round(wToday) + "g · at/over " + (HARVEST_TARGET_G/1000) + "kg now" + gainNote;
+                    return "Tunnel stage · " + daysLeft + " day" + (daysLeft!==1?"s":"") + " to " + (HARVEST_TARGET_G/1000) + "kg (D" + harvestDay + ") · ~" + Math.round(wToday) + "g today" + gainNote;
                   })()}
-                  {currentDay>35 && "Harvest window. Contact supervisor for truck coordination."}
+                  {currentDay>45 && "Harvest window. Contact supervisor for truck coordination."}
                 </div>
               </div>
               {isAlwDay && (

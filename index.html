@@ -404,13 +404,13 @@ const VENT_GUIDE = [
 // ─── ROSS 308 ALW STANDARD CURVE (g) — exact from ventilation_guide.xlsx ────
 const ALW_STANDARD = [
   {day:0,std:40},{day:1,std:63},{day:2,std:86},{day:3,std:109},{day:4,std:131},
-  {day:5,std:154},{day:6,std:177},{day:7,std:200},{day:8,std:243},{day:9,std:286},
-  {day:10,std:329},{day:11,std:371},{day:12,std:414},{day:13,std:457},{day:14,std:500},
-  {day:15,std:571},{day:16,std:643},{day:17,std:714},{day:18,std:786},{day:19,std:857},
-  {day:20,std:929},{day:21,std:1000},{day:22,std:1086},{day:23,std:1171},{day:24,std:1257},
-  {day:25,std:1343},{day:26,std:1429},{day:27,std:1514},{day:28,std:1600},{day:29,std:1700},
-  {day:30,std:1800},{day:31,std:1900},{day:32,std:2000},{day:33,std:2100},{day:34,std:2200},
-  {day:35,std:2300},
+  {day:5,std:154},{day:6,std:177},{day:7,std:200},{day:8,std:253},{day:9,std:306},
+  {day:10,std:359},{day:11,std:411},{day:12,std:464},{day:13,std:517},{day:14,std:570},
+  {day:15,std:647},{day:16,std:724},{day:17,std:801},{day:18,std:879},{day:19,std:956},
+  {day:20,std:1033},{day:21,std:1110},{day:22,std:1206},{day:23,std:1301},{day:24,std:1397},
+  {day:25,std:1493},{day:26,std:1589},{day:27,std:1684},{day:28,std:1780},{day:29,std:1885},
+  {day:30,std:1990},{day:31,std:2095},{day:32,std:2200},{day:33,std:2305},{day:34,std:2410},
+  {day:35,std:2515},
 ];
 // ─── MEDICINE PROGRAM (exact from medicine_program.xlsx) ────────────────────
 const MED_PROGRAM_DEFAULT = [
@@ -684,33 +684,33 @@ const FEEDING_GUIDE_DEFAULT = [
   {day:5, alw:154, dailyBt:0.5, cummBt:1.95, cbcBt:0.5, bscBt:0.0, bfpBt:0.0},
   {day:6, alw:177, dailyBt:0.6, cummBt:2.55, cbcBt:0.6, bscBt:0.0, bfpBt:0.0},
   {day:7, alw:200, dailyBt:0.725, cummBt:3.27, cbcBt:0.725, bscBt:0.0, bfpBt:0.0},
-  {day:8, alw:243, dailyBt:0.825, cummBt:4.1, cbcBt:0.825, bscBt:0.0, bfpBt:0.0},
-  {day:9, alw:286, dailyBt:0.95, cummBt:5.05, cbcBt:0.95, bscBt:0.0, bfpBt:0.0},
-  {day:10, alw:329, dailyBt:1.05, cummBt:6.1, cbcBt:1.05, bscBt:0.0, bfpBt:0.0},
-  {day:11, alw:371, dailyBt:1.175, cummBt:7.27, cbcBt:1.175, bscBt:0.0, bfpBt:0.0},
-  {day:12, alw:414, dailyBt:1.275, cummBt:8.55, cbcBt:1.275, bscBt:0.0, bfpBt:0.0},
-  {day:13, alw:457, dailyBt:1.4, cummBt:9.95, cbcBt:1.4, bscBt:0.0, bfpBt:0.0},
-  {day:14, alw:500, dailyBt:1.5, cummBt:11.45, cbcBt:1.05, bscBt:0.45, bfpBt:0.0},
-  {day:15, alw:571, dailyBt:1.6, cummBt:13.05, cbcBt:0.85, bscBt:0.75, bfpBt:0.0},
-  {day:16, alw:643, dailyBt:1.725, cummBt:14.77, cbcBt:0.65, bscBt:1.075, bfpBt:0.0},
-  {day:17, alw:714, dailyBt:1.825, cummBt:16.6, cbcBt:0.0, bscBt:1.825, bfpBt:0.0},
-  {day:18, alw:786, dailyBt:1.95, cummBt:18.55, cbcBt:0.0, bscBt:1.95, bfpBt:0.0},
-  {day:19, alw:857, dailyBt:2.05, cummBt:20.6, cbcBt:0.0, bscBt:2.05, bfpBt:0.0},
-  {day:20, alw:929, dailyBt:2.175, cummBt:22.77, cbcBt:0.0, bscBt:1.675, bfpBt:0.5},
-  {day:21, alw:1000, dailyBt:2.275, cummBt:25.05, cbcBt:0.0, bscBt:1.125, bfpBt:1.15},
-  {day:22, alw:1086, dailyBt:2.4, cummBt:27.45, cbcBt:0.0, bscBt:1.2, bfpBt:1.2},
-  {day:23, alw:1171, dailyBt:2.5, cummBt:29.95, cbcBt:0.0, bscBt:0.4, bfpBt:2.1},
-  {day:24, alw:1257, dailyBt:2.6, cummBt:32.55, cbcBt:0.0, bscBt:0.0, bfpBt:2.6},
-  {day:25, alw:1343, dailyBt:2.725, cummBt:35.27, cbcBt:0.0, bscBt:0.0, bfpBt:2.725},
-  {day:26, alw:1429, dailyBt:2.825, cummBt:38.1, cbcBt:0.0, bscBt:0.0, bfpBt:2.825},
-  {day:27, alw:1514, dailyBt:2.95, cummBt:41.05, cbcBt:0.0, bscBt:0.0, bfpBt:2.95},
-  {day:28, alw:1600, dailyBt:3.05, cummBt:44.1, cbcBt:0.0, bscBt:0.0, bfpBt:3.05},
-  {day:29, alw:1700, dailyBt:3.175, cummBt:47.27, cbcBt:0.0, bscBt:0.0, bfpBt:3.175},
-  {day:30, alw:1800, dailyBt:3.275, cummBt:50.55, cbcBt:0.0, bscBt:0.0, bfpBt:3.275},
-  {day:31, alw:1900, dailyBt:3.4, cummBt:53.95, cbcBt:0.0, bscBt:0.0, bfpBt:3.4},
-  {day:32, alw:2000, dailyBt:3.5, cummBt:57.45, cbcBt:0.0, bscBt:0.0, bfpBt:3.5},
-  {day:33, alw:2100, dailyBt:3.6, cummBt:61.05, cbcBt:0.0, bscBt:0.0, bfpBt:3.6},
-  {day:34, alw:2200, dailyBt:1.45, cummBt:62.5, cbcBt:0.0, bscBt:0.0, bfpBt:1.45},
+  {day:8, alw:253, dailyBt:0.825, cummBt:4.1, cbcBt:0.825, bscBt:0.0, bfpBt:0.0},
+  {day:9, alw:306, dailyBt:0.95, cummBt:5.05, cbcBt:0.95, bscBt:0.0, bfpBt:0.0},
+  {day:10, alw:359, dailyBt:1.05, cummBt:6.1, cbcBt:1.05, bscBt:0.0, bfpBt:0.0},
+  {day:11, alw:411, dailyBt:1.175, cummBt:7.27, cbcBt:1.175, bscBt:0.0, bfpBt:0.0},
+  {day:12, alw:464, dailyBt:1.275, cummBt:8.55, cbcBt:1.275, bscBt:0.0, bfpBt:0.0},
+  {day:13, alw:517, dailyBt:1.4, cummBt:9.95, cbcBt:1.4, bscBt:0.0, bfpBt:0.0},
+  {day:14, alw:570, dailyBt:1.5, cummBt:11.45, cbcBt:1.05, bscBt:0.45, bfpBt:0.0},
+  {day:15, alw:647, dailyBt:1.6, cummBt:13.05, cbcBt:0.85, bscBt:0.75, bfpBt:0.0},
+  {day:16, alw:724, dailyBt:1.725, cummBt:14.77, cbcBt:0.65, bscBt:1.075, bfpBt:0.0},
+  {day:17, alw:801, dailyBt:1.825, cummBt:16.6, cbcBt:0.0, bscBt:1.825, bfpBt:0.0},
+  {day:18, alw:879, dailyBt:1.95, cummBt:18.55, cbcBt:0.0, bscBt:1.95, bfpBt:0.0},
+  {day:19, alw:956, dailyBt:2.05, cummBt:20.6, cbcBt:0.0, bscBt:2.05, bfpBt:0.0},
+  {day:20, alw:1033, dailyBt:2.175, cummBt:22.77, cbcBt:0.0, bscBt:1.675, bfpBt:0.5},
+  {day:21, alw:1110, dailyBt:2.275, cummBt:25.05, cbcBt:0.0, bscBt:1.125, bfpBt:1.15},
+  {day:22, alw:1206, dailyBt:2.4, cummBt:27.45, cbcBt:0.0, bscBt:1.2, bfpBt:1.2},
+  {day:23, alw:1301, dailyBt:2.5, cummBt:29.95, cbcBt:0.0, bscBt:0.4, bfpBt:2.1},
+  {day:24, alw:1397, dailyBt:2.6, cummBt:32.55, cbcBt:0.0, bscBt:0.0, bfpBt:2.6},
+  {day:25, alw:1493, dailyBt:2.725, cummBt:35.27, cbcBt:0.0, bscBt:0.0, bfpBt:2.725},
+  {day:26, alw:1589, dailyBt:2.825, cummBt:38.1, cbcBt:0.0, bscBt:0.0, bfpBt:2.825},
+  {day:27, alw:1684, dailyBt:2.95, cummBt:41.05, cbcBt:0.0, bscBt:0.0, bfpBt:2.95},
+  {day:28, alw:1780, dailyBt:3.05, cummBt:44.1, cbcBt:0.0, bscBt:0.0, bfpBt:3.05},
+  {day:29, alw:1885, dailyBt:3.175, cummBt:47.27, cbcBt:0.0, bscBt:0.0, bfpBt:3.175},
+  {day:30, alw:1990, dailyBt:3.275, cummBt:50.55, cbcBt:0.0, bscBt:0.0, bfpBt:3.275},
+  {day:31, alw:2095, dailyBt:3.4, cummBt:53.95, cbcBt:0.0, bscBt:0.0, bfpBt:3.4},
+  {day:32, alw:2200, dailyBt:3.5, cummBt:57.45, cbcBt:0.0, bscBt:0.0, bfpBt:3.5},
+  {day:33, alw:2305, dailyBt:3.6, cummBt:61.05, cbcBt:0.0, bscBt:0.0, bfpBt:3.6},
+  {day:34, alw:2410, dailyBt:1.45, cummBt:62.5, cbcBt:0.0, bscBt:0.0, bfpBt:1.45},
 ];
 
 // ─── LIGHTING PROGRAM (default) ────────────────────────────────────────────
@@ -1241,7 +1241,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const todayConsumed  = shiftLogs.filter(l => l.day === currentDay).reduce((s,l) => s + l.feedsConsumed, 0);
   // Target ALW = 95% of Cobb standard for current day
   const alwStdToday    = ALW_STANDARD.find(r => r.day === currentDay);
-  const targetALW      = alwStdToday ? Math.round(alwStdToday.std * 0.95) : null; // grams
+  const targetALW      = alwStdToday ? alwStdToday.std : null; // grams — these ARE the targets
   const netPlacedBirds = (() => { const t=placementTrucks; return t.reduce((s,x)=>s+x.qty,0)-t.reduce((s,x)=>s+x.doa,0); })();
   // Feed is planned against the ORDERED quantity (contract), not delivered heads.
   // Hatcheries give ~2% free extra birds that aren't part of the feed plan.

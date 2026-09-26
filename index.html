@@ -1926,21 +1926,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:hrPct>=99?"#2E7D52":hrPct>=97?"#C4960C":"#E91E63" }}>{hrPct.toFixed(2)}</span>
                   <span style={{ fontSize:10, color:"#64748B" }}>%</span>
                 </div>
-                <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>{remainingPopMetric.toLocaleString()} survived · {cumulMortTotal} mort.</div>
-              </div>
-            </div>
-            {/* ── Birds currently in house (live) ── */}
-            <div style={{ background:"#0F172A", borderRadius:8, padding:"14px 16px", marginBottom:14, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-              <div>
-                <div style={{ fontSize:9, color:"#94A3B8", letterSpacing:1.5, fontWeight:600, marginBottom:3 }}>🐔 BIRDS IN HOUSE NOW</div>
-                <div style={{ fontSize:10, color:"#64748B" }}>
-                  {netPlacedBirds.toLocaleString()} placed − {cumulMortTotal.toLocaleString()} mort.
-                  {harvestedHeadsTotal > 0 ? " − "+harvestedHeadsTotal.toLocaleString()+" harvested" : ""}
-                </div>
-              </div>
-              <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
-                <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:28, color:"#FFFFFF" }}>{Math.max(birdsInHouse,0).toLocaleString()}</span>
-                <span style={{ fontSize:11, color:"#94A3B8" }}>heads</span>
+                <div style={{ fontSize:11, color:"#0F172A", fontWeight:600, marginTop:3 }}>{Math.max(birdsInHouse,0).toLocaleString()} remaining</div>
+                <div style={{ fontSize:11, color:"#64748B", marginTop:1 }}>{cumulMortTotal.toLocaleString()} mort · {harvestedHeadsTotal.toLocaleString()} harvested</div>
               </div>
             </div>
             {/* Today's medicines */}

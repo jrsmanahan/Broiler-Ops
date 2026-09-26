@@ -1885,62 +1885,48 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
             })()}
             {/* ── 3-card strip: Target ALW · Feed Target · Feed Balance ── */}
             <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
-              {/* Target ALW */}
+              {/* ALW — actual big, target below */}
               <div style={{ background:"#FFFFFF", border:"1px solid #C4960C25", borderRadius:8, padding:"12px 14px" }}>
                 <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:6 }}>
                   {isAlwDay ? "⚖ ALW WEIGH DAY" : "ALW — DAY "+(currentDay)}
                 </div>
-                {/* Target */}
-                <div style={{ display:"flex", alignItems:"baseline", gap:4, marginBottom:8 }}>
-                  <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:"#C4960C" }}>{targetALW || "—"}</span>
-                  <span style={{ fontSize:10, color:"#64748B" }}>g</span>
-                  <span style={{ fontSize:9, color:"#94A3B8" }}>target</span>
-                </div>
-                {/* Actual today — weigh days only */}
-                {todayAlw ? (
-                  <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>
-                    actual: <span style={{ color:(todayAlw.alw*1000)>=targetALW?"#2E7D52":"#E91E63", fontWeight:600 }}>{(todayAlw.alw*1000).toFixed(0)}g {(todayAlw.alw*1000)>=targetALW?"✓":"↓"}</span>
-                  </div>
-                ) : projectedALW ? (
-                  <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>
-                    {projectedALW.noNewFeed
-                      ? <span>last weighed D{projectedALW.lastDay}: {projectedALW.lastActualG}g <span style={{color:"#94A3B8"}}>(no feed logged today yet)</span></span>
-                      : <span>projected: {projectedALW.value}g <span style={{color:"#94A3B8", marginLeft:4}}>· last weighed D{projectedALW.lastDay}: {projectedALW.lastActualG}g{projectedALW.feedWeight < 1 ? " · "+Math.round(projectedALW.feedWeight*100)+"% feed model" : ""}</span></span>
-                    }
-                  </div>
-                ) : (
-                  <div style={{ fontSize:9, color:"#94A3B8" }}>no weigh data yet</div>
-                )}
+                {(() => {
+                  const actG = todayAlw ? Math.round(todayAlw.alw*1000) : (projectedALW ? projectedALW.value : null);
+                  const meets = actG != null && targetALW != null && actG >= targetALW;
+                  const col = actG == null ? "#94A3B8" : meets ? "#2E7D52" : "#E91E63";
+                  return (
+                    <>
+                      <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
+                        <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:col }}>{actG != null ? actG : "—"}</span>
+                        <span style={{ fontSize:10, color:"#64748B" }}>g</span>
+                        {actG != null && <span style={{ fontSize:11, color:col, fontWeight:600 }}>{meets ? "✓" : "↓"}</span>}
+                        {actG != null && !todayAlw && <span style={{ fontSize:9, color:"#94A3B8" }}>proj</span>}
+                      </div>
+                      <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>target {targetALW || "—"}g</div>
+                      <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>{projectedALW ? "last weighed D"+projectedALW.lastDay+": "+projectedALW.lastActualG+"g" : "no weigh data yet"}</div>
+                    </>
+                  );
+                })()}
               </div>
-              {/* Feed target */}
+              {/* FCR — actual big, guide below */}
               <div style={{ background:"#FFFFFF", border:"1px solid #5B86E525", borderRadius:8, padding:"12px 14px" }}>
-                <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:2 }}>TARGET FC — DAY {currentDay}</div>
+                <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:6 }}>FCR — DAY {currentDay}</div>
                 <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
-                  <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:"#5B86E5" }}>{todayFC || "—"}</span>
-                  <span style={{ fontSize:10, color:"#64748B" }}>bags</span>
+                  <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color: runningFCR==null ? "#94A3B8" : fcrOverStd ? "#E91E63" : "#2E7D52" }}>{runningFCR != null ? runningFCR : "—"}</span>
+                  {runningFCR != null && <span style={{ fontSize:11, color: fcrOverStd ? "#E91E63" : "#2E7D52", fontWeight:600 }}>{fcrOverStd ? "↑" : "✓"}</span>}
                 </div>
-                <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>
-                  cumul target: {cumFCTarget} bags
-                </div>
-                <div style={{ fontSize:11, color: cumFeedConsumed > cumFCTarget*1.05 ? "#E91E63" : cumFeedConsumed < cumFCTarget*0.95 ? "#C4960C" : "#2E7D52", marginTop:1 }}>
-                  actual cumul: {cumFeedConsumed} bags
-                </div>
-                {runningFCR != null && (
-                  <div style={{ fontSize:11, color: fcrOverStd ? "#E91E63" : "#2E7D52", fontWeight:600, marginTop:3 }}>
-                    FCR {runningFCR} {fcrOverStd ? "↑" : "✓"}
-                    {standardFCR != null && <span style={{ fontSize:9, color:"#94A3B8", fontWeight:400, marginLeft:4 }}>guide {standardFCR}</span>}
-                  </div>
-                )}
+                <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>guide {standardFCR != null ? standardFCR : "—"}</div>
+                <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>feed {cumFeedConsumed}/{cumFCTarget} bags</div>
               </div>
-              {/* Harvest Rate */}
+              {/* Harvest Rate — actual big, breakdown below */}
               <div style={{ background:"#FFFFFF", border:"1px solid "+(hrPct>=99?"#2E7D52":hrPct>=97?"#C4960C":"#E91E63")+"25", borderRadius:8, padding:"12px 14px" }}>
-                <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:2 }}>HARVEST RATE</div>
+                <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:6 }}>HARVEST RATE</div>
                 <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
                   <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:hrPct>=99?"#2E7D52":hrPct>=97?"#C4960C":"#E91E63" }}>{hrPct.toFixed(2)}</span>
                   <span style={{ fontSize:10, color:"#64748B" }}>%</span>
                 </div>
-                <div style={{ fontSize:11, color:"#0F172A", fontWeight:600, marginTop:3 }}>{Math.max(birdsInHouse,0).toLocaleString()} remaining</div>
-                <div style={{ fontSize:11, color:"#64748B", marginTop:1 }}>{cumulMortTotal.toLocaleString()} mort · {harvestedHeadsTotal.toLocaleString()} harvested</div>
+                <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>{Math.max(birdsInHouse,0).toLocaleString()} remaining</div>
+                <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>{cumulMortTotal.toLocaleString()} mort · {harvestedHeadsTotal.toLocaleString()} harvested</div>
               </div>
             </div>
             {/* Today's medicines */}

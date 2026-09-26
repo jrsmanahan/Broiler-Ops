@@ -1408,6 +1408,46 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
       feedProjG: feedProjG, stdProjG: stdProjG, feedWeight: feedWeight,
     };
   })();
+  // ── Shared observed-gain projection (weigh-in trend) ──
+  // Single source of truth for "today's" projected weight, used by BOTH the phase
+  // banner and the ALW card so the two never disagree. Mirrors the harvest projection:
+  // ≥2 weigh-ins → flock's own regression gain (3%/day taper); 1 → standard gains from
+  // that anchor; 0 → standard curve.
+  const trendProj = (() => {
+    const HARVEST_TARGET_G = (cycleConfig && cycleConfig.harvestTargetG) || 2100;
+    function stdGain(d){
+      var a = ALW_STANDARD.find(function(r){return r.day===d;});
+      var b = ALW_STANDARD.find(function(r){return r.day===d-1;});
+      if (a && b) return a.std - b.std;
+      return 100;
+    }
+    var byDay = {};
+    shiftLogs.filter(function(l){return l.alw;}).forEach(function(l){ byDay[l.day]=Math.round(l.alw*1000); });
+    var pts = Object.keys(byDay).map(function(d){return {day:+d, g:byDay[d]};}).sort(function(a,b){return a.day-b.day;});
+    var anchorDay, anchorW, obsGain = null;
+    if (pts.length >= 2) {
+      var recent = pts.slice(-4);
+      var n=recent.length, sx=0,sy=0,sxy=0,sxx=0;
+      recent.forEach(function(p){ sx+=p.day; sy+=p.g; sxy+=p.day*p.g; sxx+=p.day*p.day; });
+      var denom = n*sxx - sx*sx;
+      obsGain = denom!==0 ? (n*sxy - sx*sy)/denom : (recent[n-1].g-recent[0].g)/(recent[n-1].day-recent[0].day);
+      anchorDay = pts[pts.length-1].day; anchorW = pts[pts.length-1].g;
+    } else if (pts.length === 1) {
+      anchorDay = pts[0].day; anchorW = pts[0].g;
+    } else {
+      var stdT = ALW_STANDARD.find(function(r){return r.day===currentDay;});
+      anchorDay = currentDay; anchorW = stdT ? stdT.std : 0;
+    }
+    // Today's projected weight, walking forward from the anchor
+    var wToday = anchorW, dd = anchorDay, gg = obsGain;
+    while (dd < currentDay) { dd++; if (obsGain!==null){ wToday += gg; gg = gg*0.97; } else { wToday += stdGain(dd); } }
+    wToday = Math.round(wToday);
+    // Harvest day: walk until target reached
+    var atTarget = anchorW >= HARVEST_TARGET_G;
+    var w = anchorW, d = anchorDay, g = obsGain, guard = 0;
+    while (w < HARVEST_TARGET_G && guard < 40) { d++; if (obsGain!==null){ w += g; g = g*0.97; } else { w += stdGain(d); } guard++; }
+    return { obsGain: obsGain, anchorDay: anchorDay, anchorW: anchorW, wToday: wToday, harvestDay: d, daysLeft: d - currentDay, target: HARVEST_TARGET_G, atTarget: atTarget, weighs: pts.length };
+  })();
   // Running performance metrics
   // Compute cumulative mortality/feed matching the daily log table grouping:
   // take only the FIRST AM and FIRST PM entry per day to avoid double-counting duplicates
@@ -1791,67 +1831,13 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   {currentDay===0 && "Chick placement day. Record truck arrivals, DOA, and controller setup."}
                   {currentDay>=1 && currentDay<=14 && "Brooding stage · Bracket "+(getBroodBracket(currentDay))+" · "+(14-currentDay)+" days to tunnel transition"}
                   {currentDay>14 && currentDay<=45 && (function(){
-                    // Harvest-day projection — uses the FLOCK'S OWN observed daily gain from its
-                    // recent weigh-ins (far more accurate than a preset once we have 2+ points).
-                    // Falls back to standard absolute gains only when fewer than 2 weigh-ins exist.
-                    var HARVEST_TARGET_G = (cycleConfig && cycleConfig.harvestTargetG) || 2100;
-                    function stdGain(d){
-                      var a = ALW_STANDARD.find(function(r){return r.day===d;});
-                      var b = ALW_STANDARD.find(function(r){return r.day===d-1;});
-                      if (a && b) return a.std - b.std;
-                      return 100;
-                    }
-                    // Collect actual weigh-ins (day + grams) sorted by day
-                    var weighs = shiftLogs.filter(function(l){return l.alw;})
-                      .map(function(l){return {day:l.day, g:Math.round(l.alw*1000)};})
-                      .sort(function(a,b){return a.day-b.day;});
-                    // De-dupe to one per day (keep last logged for that day)
-                    var byDay = {}; weighs.forEach(function(w){ byDay[w.day]=w.g; });
-                    var pts = Object.keys(byDay).map(function(d){return {day:+d, g:byDay[d]};}).sort(function(a,b){return a.day-b.day;});
-
-                    var anchorDay, anchorW, obsGain = null;
-                    if (pts.length >= 2) {
-                      // Observed gain = slope over the last up-to-4 weigh-ins (linear regression)
-                      var recent = pts.slice(-4);
-                      var n=recent.length, sx=0,sy=0,sxy=0,sxx=0;
-                      recent.forEach(function(p){ sx+=p.day; sy+=p.g; sxy+=p.day*p.g; sxx+=p.day*p.day; });
-                      var denom = n*sxx - sx*sx;
-                      obsGain = denom!==0 ? (n*sxy - sx*sy)/denom : (recent[n-1].g-recent[0].g)/(recent[n-1].day-recent[0].day);
-                      anchorDay = pts[pts.length-1].day;
-                      anchorW = pts[pts.length-1].g;
-                    } else if (pts.length === 1) {
-                      anchorDay = pts[0].day; anchorW = pts[0].g; // one point → use standard gains
-                    } else {
-                      var stdT = ALW_STANDARD.find(function(r){return r.day===currentDay;});
-                      anchorDay = currentDay; anchorW = stdT ? stdT.std : 0;
-                    }
-                    if (anchorW >= HARVEST_TARGET_G) return "Tunnel stage · flock at " + (HARVEST_TARGET_G/1000) + "kg harvest target now";
-
-                    // Walk forward. With an observed gain, use it with a gentle 3%/day taper
-                    // (broilers plateau near market weight). Otherwise use standard absolute gains.
-                    function gainInto(d, prevGain){
-                      if (obsGain !== null) {
-                        // taper the observed gain slightly each day past the anchor
-                        return prevGain;
-                      }
-                      return stdGain(d);
-                    }
-                    var w = anchorW, d = anchorDay, guard = 0;
-                    var g = obsGain !== null ? obsGain : null;
-                    while (w < HARVEST_TARGET_G && guard < 40) {
-                      d++;
-                      if (obsGain !== null) { w += g; g = g * 0.97; }
-                      else { w += stdGain(d); }
-                      guard++;
-                    }
-                    var harvestDay = d;
-                    var daysLeft = harvestDay - currentDay;
-                    // Project today's weight from the anchor for context
-                    var wToday = anchorW, dd = anchorDay, gg = obsGain;
-                    while (dd < currentDay) { dd++; if (obsGain!==null){ wToday += gg; gg = gg*0.97; } else { wToday += stdGain(dd); } }
-                    var gainNote = obsGain !== null ? " · " + Math.round(obsGain) + "g/day trend" : "";
-                    if (daysLeft <= 0) return "Tunnel stage · projected " + Math.round(wToday) + "g · at/over " + (HARVEST_TARGET_G/1000) + "kg now" + gainNote;
-                    return "Tunnel stage · " + daysLeft + " day" + (daysLeft!==1?"s":"") + " to " + (HARVEST_TARGET_G/1000) + "kg (D" + harvestDay + ") · ~" + Math.round(wToday) + "g today" + gainNote;
+                    // Uses the shared trend projection so this banner and the ALW card
+                    // always report the same "today" weight.
+                    var p = trendProj;
+                    var gainNote = p.obsGain !== null ? " · " + Math.round(p.obsGain) + "g/day trend" : "";
+                    if (p.atTarget) return "Tunnel stage · flock at " + (p.target/1000) + "kg harvest target now" + gainNote;
+                    if (p.daysLeft <= 0) return "Tunnel stage · projected " + p.wToday + "g · at/over " + (p.target/1000) + "kg now" + gainNote;
+                    return "Tunnel stage · " + p.daysLeft + " day" + (p.daysLeft!==1?"s":"") + " to " + (p.target/1000) + "kg (D" + p.harvestDay + ") · ~" + p.wToday + "g today" + gainNote;
                   })()}
                   {currentDay>45 && "Harvest window. Contact supervisor for truck coordination."}
                 </div>
@@ -1912,9 +1898,12 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   {isAlwDay ? "⚖ ALW WEIGH DAY" : "ALW — DAY "+(currentDay)}
                 </div>
                 {(() => {
-                  const actG = todayAlw ? Math.round(todayAlw.alw*1000) : (projectedALW ? projectedALW.value : null);
+                  // Same "today" weight as the phase banner: actual if weighed today,
+                  // else the shared trend projection (once there is ≥1 weigh-in).
+                  const actG = todayAlw ? Math.round(todayAlw.alw*1000) : (trendProj.weighs >= 1 ? trendProj.wToday : null);
                   const meets = actG != null && targetALW != null && actG >= targetALW;
                   const col = actG == null ? "#94A3B8" : meets ? "#2E7D52" : "#E91E63";
+                  const lastWeighNote = trendProj.weighs >= 1 ? "last weighed D"+trendProj.anchorDay+": "+trendProj.anchorW+"g" : "no weigh data yet";
                   return (
                     <>
                       <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
@@ -1924,7 +1913,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                         {actG != null && !todayAlw && <span style={{ fontSize:9, color:"#94A3B8" }}>proj</span>}
                       </div>
                       <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>target {targetALW || "—"}g</div>
-                      <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>{projectedALW ? "last weighed D"+projectedALW.lastDay+": "+projectedALW.lastActualG+"g" : "no weigh data yet"}</div>
+                      <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>{lastWeighNote}</div>
                     </>
                   );
                 })()}

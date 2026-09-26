@@ -1431,6 +1431,14 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
     if (remainingPop <= 0) return null;
     return (cumFeedKg / (remainingPop * alwKg)).toFixed(3);
   })();
+  // Standard FCR from the feeding guide at the current day:
+  // cumulative feed per bird (cummBt bags/1000 × 50kg = cummBt×0.05 kg) ÷ standard ALW (alw/1000 kg)
+  const standardFCR = (() => {
+    const gr = feedingGuide.find(r => r.day === currentDay);
+    if (!gr || !gr.alw || gr.alw <= 0 || gr.cummBt == null) return null;
+    return (gr.cummBt * 50 / gr.alw).toFixed(3);
+  })();
+  const fcrOverStd = runningFCR != null && standardFCR != null && parseFloat(runningFCR) > parseFloat(standardFCR);
   const runningALWkg = projectedALW ? projectedALW.value / 1000 : null;
   const bpiScore = runningALWkg && runningFCR && daysElapsed > 0
     ? ((runningALWkg * hrPct) / (parseFloat(runningFCR) * daysElapsed) * 100)
@@ -1917,6 +1925,12 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 <div style={{ fontSize:11, color: cumFeedConsumed > cumFCTarget*1.05 ? "#E91E63" : cumFeedConsumed < cumFCTarget*0.95 ? "#C4960C" : "#2E7D52", marginTop:1 }}>
                   actual cumul: {cumFeedConsumed} bags
                 </div>
+                {runningFCR != null && (
+                  <div style={{ fontSize:11, color: fcrOverStd ? "#E91E63" : "#2E7D52", fontWeight:600, marginTop:3 }}>
+                    FCR {runningFCR} {fcrOverStd ? "↑" : "✓"}
+                    {standardFCR != null && <span style={{ fontSize:9, color:"#94A3B8", fontWeight:400, marginLeft:4 }}>guide {standardFCR}</span>}
+                  </div>
+                )}
               </div>
               {/* Harvest Rate */}
               <div style={{ background:"#FFFFFF", border:"1px solid "+(hrPct>=99?"#2E7D52":hrPct>=97?"#C4960C":"#E91E63")+"25", borderRadius:8, padding:"12px 14px" }}>

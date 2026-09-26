@@ -1484,8 +1484,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const fcDiff         = cumFeedConsumed - cumFCTarget;
   const btActual       = feedBasisBirds > 0 ? (cumFeedConsumed / (feedBasisBirds / 1000)).toFixed(2) : null;
   const runningFCR     = (() => {
-    // Use projected ALW (or actual today if weighed), today's cumulative feed and mortality
-    const alwKg = (todayAlw && todayAlw.alw) || (projectedALW ? projectedALW.value / 1000 : null);
+    // ALW comes from our established projection model (trendProj) — actual if weighed
+    // today, otherwise the same trend-projected weight shown on the ALW card & banner.
+    const alwKg = todayAlw ? todayAlw.alw : (trendProj.weighs >= 1 ? trendProj.wToday / 1000 : null);
     if (!alwKg || alwKg <= 0) return null;
     const cumFeedKg    = cumFeedConsumed * 50;
     const remainingPop = netPlacedBirds - totalMort;
@@ -1500,9 +1501,20 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
     return (gr.cummBt * 50 / gr.alw).toFixed(3);
   })();
   const fcrOverStd = runningFCR != null && standardFCR != null && parseFloat(runningFCR) > parseFloat(standardFCR);
-  const runningALWkg = projectedALW ? projectedALW.value / 1000 : null;
-  const bpiScore = runningALWkg && runningFCR && daysElapsed > 0
-    ? ((runningALWkg * hrPct) / (parseFloat(runningFCR) * daysElapsed) * 100)
+  const runningALWkg = todayAlw ? todayAlw.alw : (trendProj.weighs >= 1 ? trendProj.wToday / 1000 : null);
+  // Effective flock age for BPI/EPEF: harvested birds keep their harvest-day age;
+  // remaining birds are treated as harvested at the current day. Head-count weighted.
+  const effectiveAge = (() => {
+    const hHeads    = harvestedHeadsTotal;
+    const hAgeHeads = harvestTrucks.reduce(function(s,t){return s+((t.day||0)*(t.heads||0));},0);
+    const rem       = Math.max(birdsInHouse, 0);
+    const denom     = hHeads + rem;
+    if (denom <= 0) return Math.max(currentDay, 1);
+    return (hAgeHeads + rem * currentDay) / denom;
+  })();
+  // BPI (EPEF) = (livability% × liveweight kg) ÷ (age days × FCR) × 100
+  const bpiScore = runningALWkg && runningFCR && effectiveAge > 0
+    ? ((runningALWkg * hrPct) / (parseFloat(runningFCR) * effectiveAge) * 100)
     : null;
   const bpiColor = bpiScore === null ? "#CBD5E1"
     : bpiScore >= 400 ? "#2E7D52"
@@ -1831,13 +1843,11 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   {currentDay===0 && "Chick placement day. Record truck arrivals, DOA, and controller setup."}
                   {currentDay>=1 && currentDay<=14 && "Brooding stage · Bracket "+(getBroodBracket(currentDay))+" · "+(14-currentDay)+" days to tunnel transition"}
                   {currentDay>14 && currentDay<=45 && (function(){
-                    // Uses the shared trend projection so this banner and the ALW card
-                    // always report the same "today" weight.
+                    // Harvest-timing only — weight & trend live on the ALW card.
                     var p = trendProj;
-                    var gainNote = p.obsGain !== null ? " · " + Math.round(p.obsGain) + "g/day trend" : "";
-                    if (p.atTarget) return "Tunnel stage · flock at " + (p.target/1000) + "kg harvest target now" + gainNote;
-                    if (p.daysLeft <= 0) return "Tunnel stage · projected " + p.wToday + "g · at/over " + (p.target/1000) + "kg now" + gainNote;
-                    return "Tunnel stage · " + p.daysLeft + " day" + (p.daysLeft!==1?"s":"") + " to " + (p.target/1000) + "kg (D" + p.harvestDay + ") · ~" + p.wToday + "g today" + gainNote;
+                    if (p.atTarget) return "Tunnel stage · flock at " + (p.target/1000) + "kg harvest target now";
+                    if (p.daysLeft <= 0) return "Tunnel stage · at/over " + (p.target/1000) + "kg harvest target now";
+                    return "Tunnel stage · " + p.daysLeft + " day" + (p.daysLeft!==1?"s":"") + " to " + (p.target/1000) + "kg (D" + p.harvestDay + ")";
                   })()}
                   {currentDay>45 && "Harvest window. Contact supervisor for truck coordination."}
                 </div>
@@ -1890,8 +1900,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 </div>
               );
             })()}
-            {/* ── 3-card strip: Target ALW · Feed Target · Feed Balance ── */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
+            {/* ── 4-card strip: ALW · FCR · Harvest Rate · BPI ── */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:8, marginBottom:14 }}>
               {/* ALW — actual big, target below */}
               <div style={{ background:"#FFFFFF", border:"1px solid #C4960C25", borderRadius:8, padding:"12px 14px" }}>
                 <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:6 }}>
@@ -1938,6 +1948,16 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 </div>
                 <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>{cumulMortTotal.toLocaleString()} mort <span style={{ color:hrColor, fontWeight:600 }}>(ok ≤{acceptMortCount.toLocaleString()})</span></div>
                 <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>{Math.max(birdsInHouse,0).toLocaleString()} remaining · {harvestedHeadsTotal.toLocaleString()} harvested</div>
+              </div>
+              {/* BPI (EPEF) — running performance index */}
+              <div style={{ background:"#FFFFFF", border:"1px solid "+bpiColor+"25", borderRadius:8, padding:"12px 14px" }}>
+                <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:6 }}>BPI (EPEF)</div>
+                <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
+                  <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:bpiColor }}>{bpiScore != null ? Math.round(bpiScore) : "—"}</span>
+                  <span style={{ fontSize:9, color:"#94A3B8" }}>{bpiScore != null ? (bpiScore>=400?"excellent":bpiScore>=350?"good":bpiScore>=300?"average":"low") : ""}</span>
+                </div>
+                <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>{runningALWkg != null ? Math.round(runningALWkg*1000)+"g" : "—"} · FCR {runningFCR != null ? runningFCR : "—"}</div>
+                <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>HR {hrPct.toFixed(1)}% · age {effectiveAge.toFixed(1)}d</div>
               </div>
             </div>
             {/* Today's medicines */}

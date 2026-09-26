@@ -3113,8 +3113,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               var totalFeedKgConsumed = (totalFeedDeliveredBags - (surplusFeedBags||0)) * 50;
               var fcr = totalHarvestKg > 0 ? (totalFeedKgConsumed / totalHarvestKg) : null;
               var bpi = (harvestRecovery && harvestALW && fcr && weightedAge) ? (harvestRecovery * harvestALW) / (fcr * weightedAge) * 100 : null;
-              var bpiColor = !bpi ? "#94A3B8" : bpi>=400 ? "#2E7D52" : bpi>=350 ? "#5B86E5" : bpi>=300 ? "#C4960C" : "#E91E63";
-              var bpiLabel = !bpi ? "—" : bpi>=400 ? "EXCELLENT" : bpi>=350 ? "GOOD" : bpi>=300 ? "PASSING" : "BELOW TARGET";
+              var bpiColor = !bpi ? "#94A3B8" : bpi>=450 ? "#2E7D52" : bpi>=400 ? "#2E9E6A" : bpi>=350 ? "#C4960C" : bpi>=300 ? "#D4652A" : "#E91E63";
+              var bpiLabel = !bpi ? "—" : bpi>=450 ? "WORLD CLASS" : bpi>=400 ? "EXCELLENT" : bpi>=350 ? "GOOD" : bpi>=300 ? "AVERAGE" : "NEEDS IMPROVEMENT";
               return (
                 <div style={{marginBottom:16}}>
                   <div style={{fontSize:10,color:"#64748B",letterSpacing:1.5,fontWeight:600,marginBottom:10}}>CYCLE PERFORMANCE</div>
@@ -3126,7 +3126,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                         <span style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:32,color:bpiColor}}>{bpi?bpi.toFixed(0):"—"}</span>
                         <span style={{fontSize:12,color:bpiColor,fontWeight:700}}>{bpiLabel}</span>
                       </div>
-                      <div style={{fontSize:10,color:"#94A3B8",marginTop:2}}>300 passing · 350 good · 400 excellent</div>
+                      <div style={{fontSize:10,color:"#94A3B8",marginTop:2}}>300 avg · 350 good · 400 excellent · 450 world class</div>
                     </div>
                     <div style={{textAlign:"right"}}>
                       <div style={{height:6,width:160,background:"#F0F2F5",borderRadius:3,overflow:"hidden",marginBottom:4}}>
@@ -3311,7 +3311,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                             <div style={{fontSize:9,color:"#94A3B8"}}>HARVEST RECOVERY</div>
                           </div>
                           <div style={{textAlign:"right"}}>
-                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:s.bpi?(s.bpi>=400?"#2E7D52":s.bpi>=350?"#5B86E5":s.bpi>=300?"#C4960C":"#E91E63"):"#94A3B8"}}>{s.bpi?s.bpi.toFixed(0):"—"}</div>
+                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:s.bpi?(s.bpi>=450?"#2E7D52":s.bpi>=400?"#2E9E6A":s.bpi>=350?"#C4960C":s.bpi>=300?"#D4652A":"#E91E63"):"#94A3B8"}}>{s.bpi?s.bpi.toFixed(0):"—"}</div>
                             <div style={{fontSize:9,color:"#94A3B8"}}>BPI</div>
                           </div>
                           <div style={{color:"#CBD5E1",fontSize:16}}>{isOpen?"▲":"▼"}</div>
@@ -3333,7 +3333,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                               {l:"TOTAL FEED (NET)",v:s.netFeedKg?Math.round(s.netFeedKg).toLocaleString():"—",u:"kg"},
                               {l:"FEED / BIRD",v:s.feedPerBird?s.feedPerBird.toFixed(2):"—",u:"kg"},
                               {l:"FCR",v:s.fcr?s.fcr.toFixed(3):"—",u:""},
-                              {l:"BPI",v:s.bpi?s.bpi.toFixed(0):"—",u:"",c:s.bpi?(s.bpi>=400?"#2E7D52":s.bpi>=350?"#5B86E5":s.bpi>=300?"#C4960C":"#E91E63"):"#94A3B8"},
+                              {l:"BPI",v:s.bpi?s.bpi.toFixed(0):"—",u:"",c:s.bpi?(s.bpi>=450?"#2E7D52":s.bpi>=400?"#2E9E6A":s.bpi>=350?"#C4960C":s.bpi>=300?"#D4652A":"#E91E63"):"#94A3B8"},
                             ].map(function(m,i){
                               return (
                                 <div key={i} style={{background:"#F5F7FA",borderRadius:6,padding:"10px 12px"}}>

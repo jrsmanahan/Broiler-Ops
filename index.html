@@ -1516,11 +1516,19 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const bpiScore = runningALWkg && runningFCR && effectiveAge > 0
     ? ((runningALWkg * hrPct) / (parseFloat(runningFCR) * effectiveAge) * 100)
     : null;
+  // BPI tiers: ≥450 world class · 400–449 excellent · 350–399 good · 300–349 average · <300 needs improvement
   const bpiColor = bpiScore === null ? "#CBD5E1"
-    : bpiScore >= 400 ? "#2E7D52"
-    : bpiScore >= 300 ? "#C4960C"
-    : bpiScore >= 250 ? "#D4652A"
+    : bpiScore >= 450 ? "#2E7D52"
+    : bpiScore >= 400 ? "#2E9E6A"
+    : bpiScore >= 350 ? "#C4960C"
+    : bpiScore >= 300 ? "#D4652A"
     : "#E91E63";
+  const bpiLabel = bpiScore === null ? ""
+    : bpiScore >= 450 ? "world class"
+    : bpiScore >= 400 ? "excellent"
+    : bpiScore >= 350 ? "good"
+    : bpiScore >= 300 ? "average"
+    : "needs improvement";
   const btTarget       = FEED_FC.find(r => r.day === currentDay);
   const addLog = () => {
     if (!newLog.shift) return;
@@ -1954,7 +1962,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:6 }}>BPI (EPEF)</div>
                 <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
                   <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:bpiColor }}>{bpiScore != null ? Math.round(bpiScore) : "—"}</span>
-                  <span style={{ fontSize:9, color:"#94A3B8" }}>{bpiScore != null ? (bpiScore>=400?"excellent":bpiScore>=350?"good":bpiScore>=300?"average":"low") : ""}</span>
+                  <span style={{ fontSize:9, color:"#94A3B8" }}>{bpiLabel}</span>
                 </div>
                 <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>{runningALWkg != null ? Math.round(runningALWkg*1000)+"g" : "—"} · FCR {runningFCR != null ? runningFCR : "—"}</div>
                 <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>HR {hrPct.toFixed(1)}% · age {effectiveAge.toFixed(1)}d</div>

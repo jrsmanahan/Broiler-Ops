@@ -564,6 +564,22 @@ function getPhase(day) {
   if (day <= 35)  return { label: "TUNNEL",    color: "#2E86AB", short: "VENT"};
   return              { label: "HARVEST",   color: "#5C4F8A", short: "HARV" };
 }
+// Acceptable daily mortality (fraction of placed birds/day), by day bracket.
+function acceptDailyMortRate(d) {
+  if (d <= 5)  return 0.0015;
+  if (d <= 10) return 0.00125;
+  if (d <= 15) return 0.001;
+  if (d <= 20) return 0.00075;
+  if (d <= 25) return 0.001;
+  if (d <= 30) return 0.00125;
+  return 0.0015;
+}
+// Cumulative acceptable mortality fraction from Day 1 through `day`.
+function acceptCumMortRate(day) {
+  var r = 0;
+  for (var d = 1; d <= day; d++) r += acceptDailyMortRate(d);
+  return r;
+}
 // Acceptable feed reference: cumulative bags-per-1000-chicks (BT) anchor points.
 // Daily acceptable BT = cumBT(day) - cumBT(day-1), giving a smooth ramp scaled to any flock size.
 var BT_POINTS = [{day:7,bt:3.3},{day:14,bt:11.4},{day:21,bt:25.1},{day:28,bt:44.1},{day:30,bt:50.6}];
@@ -1415,6 +1431,11 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const harvestedHeadsTotal = harvestTrucks.reduce(function(s,t){return s+(t.heads||0);},0);
   const birdsInHouse = netPlacedBirds - cumulMortTotal - harvestedHeadsTotal;
   const hrPct = netPlacedBirds > 0 ? (remainingPopMetric / netPlacedBirds * 100) : 100;
+  // Acceptable cumulative mortality to date, from the day-bracket standard.
+  const acceptMortCount = Math.round(acceptCumMortRate(currentDay) * netPlacedBirds);
+  const mortOverAccept  = cumulMortTotal > acceptMortCount;
+  const mortWarn        = !mortOverAccept && cumulMortTotal > acceptMortCount * 0.9;
+  const hrColor = mortOverAccept ? "#E91E63" : mortWarn ? "#C4960C" : "#2E7D52";
   const daysElapsed = Math.max(currentDay, 1);
   const mortRate       = totalMort > 0 ? (totalMort / daysElapsed).toFixed(1) : "0.0";
   const runningHR      = netPlacedBirds > 0 ? (((netPlacedBirds - totalMort) / netPlacedBirds) * 100).toFixed(1) : null;
@@ -1918,15 +1939,16 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>guide {standardFCR != null ? standardFCR : "—"}</div>
                 <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>feed {cumFeedConsumed}/{cumFCTarget} bags</div>
               </div>
-              {/* Harvest Rate — actual big, breakdown below */}
-              <div style={{ background:"#FFFFFF", border:"1px solid "+(hrPct>=99?"#2E7D52":hrPct>=97?"#C4960C":"#E91E63")+"25", borderRadius:8, padding:"12px 14px" }}>
+              {/* Harvest Rate — actual big, acceptable-mortality benchmark below */}
+              <div style={{ background:"#FFFFFF", border:"1px solid "+hrColor+"25", borderRadius:8, padding:"12px 14px" }}>
                 <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:6 }}>HARVEST RATE</div>
                 <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
-                  <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:hrPct>=99?"#2E7D52":hrPct>=97?"#C4960C":"#E91E63" }}>{hrPct.toFixed(2)}</span>
+                  <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:hrColor }}>{hrPct.toFixed(2)}</span>
                   <span style={{ fontSize:10, color:"#64748B" }}>%</span>
+                  <span style={{ fontSize:11, color:hrColor, fontWeight:600 }}>{mortOverAccept ? "↑" : "✓"}</span>
                 </div>
-                <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>{Math.max(birdsInHouse,0).toLocaleString()} remaining</div>
-                <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>{cumulMortTotal.toLocaleString()} mort · {harvestedHeadsTotal.toLocaleString()} harvested</div>
+                <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>{cumulMortTotal.toLocaleString()} mort <span style={{ color:hrColor, fontWeight:600 }}>(ok ≤{acceptMortCount.toLocaleString()})</span></div>
+                <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>{Math.max(birdsInHouse,0).toLocaleString()} remaining · {harvestedHeadsTotal.toLocaleString()} harvested</div>
               </div>
             </div>
             {/* Today's medicines */}

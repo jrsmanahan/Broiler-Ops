@@ -1909,7 +1909,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 </div>
               );
             })()}
-            {/* ── 4-card strip: ALW · FCR · Harvest Rate · BPI ── */}
+            {/* ── 4-card strip: ALW · FCR · Livability Rate · BPI ── */}
             <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:8, marginBottom:14 }}>
               {/* ALW — actual big, target below */}
               <div style={{ background:"#FFFFFF", border:"1px solid #C4960C25", borderRadius:8, padding:"12px 14px" }}>
@@ -1947,9 +1947,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>guide {standardFCR != null ? standardFCR : "—"}</div>
                 <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>feed {cumFeedConsumed}/{cumFCTarget} bags</div>
               </div>
-              {/* Harvest Rate — actual big, acceptable-mortality benchmark below */}
+              {/* Livability Rate — actual big, acceptable-mortality benchmark below */}
               <div style={{ background:"#FFFFFF", border:"1px solid "+hrColor+"25", borderRadius:8, padding:"12px 14px" }}>
-                <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:6 }}>HARVEST RATE</div>
+                <div style={{ fontSize:9, color:"#64748B", letterSpacing:1, marginBottom:6 }}>LIVABILITY RATE</div>
                 <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
                   <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:22, color:hrColor }}>{hrPct.toFixed(2)}</span>
                   <span style={{ fontSize:10, color:"#64748B" }}>%</span>
@@ -1966,7 +1966,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   <span style={{ fontSize:9, color:"#94A3B8" }}>{bpiLabel}</span>
                 </div>
                 <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>{runningALWkg != null ? Math.round(runningALWkg*1000)+"g" : "—"} · FCR {runningFCR != null ? runningFCR : "—"}</div>
-                <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>HR {hrPct.toFixed(1)}% · age {effectiveAge.toFixed(1)}d</div>
+                <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>liv {hrPct.toFixed(1)}% · age {effectiveAge.toFixed(1)}d</div>
               </div>
             </div>
             {/* Today's medicines */}

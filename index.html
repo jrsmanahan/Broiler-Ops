@@ -1465,19 +1465,27 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
       anchorDay = currentDay; anchorW = stdT ? stdT.std : 0;
     }
 
-    var wToday, bulkPlateau=false;
+    var wToday, bulkHarvest=false;
     if (bulkStarted) {
-      // Growth has plateaued — current weight = the latest day's REPRESENTATIVE (≥2,000-head
-      // truck) weighted ALW, carried forward. Selective small trucks are ignored here.
-      var repDays = Object.keys(harvestRepByDay).map(Number);
-      if (repDays.length) {
-        var latestRep = Math.max.apply(null, repDays);
-        var lh = harvestRepByDay[latestRep];
-        wToday = Math.round(lh.kg/lh.heads*1000);
+      // Extrapolate the harvest-period trend from each day's REPRESENTATIVE (≥2,000-head
+      // truck) weighted ALW. Growth is NOT frozen — the slope (which can be flat or even
+      // negative as the biggest birds get pulled first) is projected forward to today.
+      var repPts = Object.keys(harvestRepByDay).map(function(d){var h=harvestRepByDay[d];return {day:+d, g:Math.round(h.kg/h.heads*1000)};}).sort(function(a,b){return a.day-b.day;});
+      bulkHarvest = true;
+      if (repPts.length >= 2) {
+        var rp=repPts.slice(-4), rn=rp.length, rx=0,ry=0,rxy=0,rxx=0;
+        rp.forEach(function(p){ rx+=p.day; ry+=p.g; rxy+=p.day*p.g; rxx+=p.day*p.day; });
+        var rdn = rn*rxx - rx*rx;
+        var repGain = rdn!==0 ? (rn*rxy - rx*ry)/rdn : (rp[rn-1].g-rp[0].g)/(rp[rn-1].day-rp[0].day);
+        var aDay=repPts[repPts.length-1].day, aW=repPts[repPts.length-1].g, w3=aW;
+        while (aDay < currentDay) { aDay++; w3 += repGain; }
+        wToday = Math.round(w3);
+        obsGain = repGain;
+      } else if (repPts.length === 1) {
+        wToday = repPts[0].g; obsGain = 0; // one rep day — hold until a trend forms
       } else {
-        wToday = anchorW; // no representative truck logged yet — hold last trend weight
+        wToday = anchorW; obsGain = 0; // bulk day but no ≥2,000-head truck yet
       }
-      obsGain = 0; bulkPlateau = true;
     } else {
       // Walk forward from the anchor at the observed (tapering) gain.
       var w2 = anchorW, dd = anchorDay, gg = obsGain;
@@ -1494,7 +1502,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
       while (w < HARVEST_TARGET_G && guard < 40) { d++; if (obsGain!==null){ w += g; g = g*0.97; } else { w += stdGain(d); } guard++; }
       harvestDay = d; daysLeft = d - currentDay;
     }
-    return { obsGain: obsGain, anchorDay: anchorDay, anchorW: anchorW, wToday: wToday, harvestDay: harvestDay, daysLeft: daysLeft, target: HARVEST_TARGET_G, atTarget: atTarget, weighs: pts.length, bulkPlateau: bulkPlateau };
+    return { obsGain: obsGain, anchorDay: anchorDay, anchorW: anchorW, wToday: wToday, harvestDay: harvestDay, daysLeft: daysLeft, target: HARVEST_TARGET_G, atTarget: atTarget, weighs: pts.length, bulkHarvest: bulkHarvest };
   })();
   // Running performance metrics
   // Compute cumulative mortality/feed matching the daily log table grouping:
@@ -1901,7 +1909,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   {currentDay>14 && currentDay<=45 && (function(){
                     // Harvest-timing only — weight & trend live on the ALW card.
                     var p = trendProj;
-                    if (p.bulkPlateau) return "Bulk harvest underway · growth plateaued (feed-restricted for loading)";
+                    if (p.bulkHarvest) return "Bulk harvest underway · ALW tracked from ≥2,000-head truck trend" + (p.obsGain!==null?" ("+(p.obsGain>=0?"+":"")+Math.round(p.obsGain)+"g/day)":"");
                     if (p.atTarget) return "Tunnel stage · flock at " + (p.target/1000) + "kg harvest target now";
                     if (p.daysLeft <= 0) return "Tunnel stage · at/over " + (p.target/1000) + "kg harvest target now";
                     return "Tunnel stage · " + p.daysLeft + " day" + (p.daysLeft!==1?"s":"") + " to " + (p.target/1000) + "kg (D" + p.harvestDay + ")";

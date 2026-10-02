@@ -1077,7 +1077,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [feedDeliveries, setFeedDeliveries] = useSyncedLog("feedDeliveries", houseId, userId, isOnline, syncTick);
   const [newDelivery, setNewDelivery] = useState({ type:"CBC", qty:"", notes:"", date:todayPHT() });
   const [harvestTrucks, setHarvestTrucks] = useSyncedLog("harvestTrucks", houseId, userId, isOnline, syncTick);
-  const [newHarvest, setNewHarvest] = useState({ plate:"", heads:"", kg:"", day:String(currentDay), notes:"" });
+  const [newHarvest, setNewHarvest] = useState({ plate:"", heads:"", kg:"", price:"", day:String(currentDay), notes:"" });
   const [surplusFeedBags, setSurplusFeedBags] = useLocalStorage("surplusFeedBags", 0);
   const [medInventoryLog, setMedInventoryLog] = useSyncedLog("medInventoryLog", houseId, userId, isOnline, syncTick);
   const [newMedEntry, setNewMedEntry] = useState({ type:"delivery", medicine:"", qty:"", unit:"", notes:"" });
@@ -3173,6 +3173,18 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                       <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#E91E63"}}>{cumulMortTotal}</div>
                       <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{netPlacedBirds>0?((cumulMortTotal/netPlacedBirds)*100).toFixed(2):"—"}% of placed</div>
                     </div>
+                    {(function(){
+                      var gross = harvestTrucks.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0);
+                      var avgPrice = totalHarvestKg>0 ? gross/totalHarvestKg : 0;
+                      if (gross<=0) return null;
+                      return (
+                        <div style={{background:"#2E7D5208",border:"1px solid #2E7D5230",borderRadius:8,padding:"11px 13px"}}>
+                          <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>GROSS SALES</div>
+                          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#2E7D52"}}>₱{gross.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+                          <div style={{fontSize:9,color:"#64748B",marginTop:1}}>avg ₱{avgPrice.toFixed(2)}/kg</div>
+                        </div>
+                      );
+                    })()}
                   </div>
                   {/* Surplus feed input */}
                   <div style={{background:"#FFF8E8",border:"1px solid #C4960C30",borderRadius:8,padding:"10px 14px",display:"flex",alignItems:"center",gap:12}}>
@@ -3204,10 +3216,15 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   <label style={LBL}>TOTAL KG</label>
                   <input type="number" step="0.01" value={newHarvest.kg} onChange={function(e){setNewHarvest(function(p){return {...p,kg:e.target.value};});}} placeholder="e.g. 6274.7" style={{...INP,width:"100%"}} />
                 </div>
+                <div>
+                  <label style={LBL}>PRICE (₱/kg)</label>
+                  <input type="number" step="0.01" value={newHarvest.price} onChange={function(e){setNewHarvest(function(p){return {...p,price:e.target.value};});}} placeholder="e.g. 113" style={{...INP,width:"100%"}} />
+                </div>
               </div>
               {newHarvest.heads && newHarvest.kg && (
                 <div style={{fontSize:11,color:"#C4960C",fontWeight:600,marginBottom:10}}>
                   ALW: {(parseFloat(newHarvest.kg)/parseInt(newHarvest.heads)).toFixed(3)} kg / bird
+                  {newHarvest.price && <span style={{color:"#2E7D52",marginLeft:10}}>· ₱{(parseFloat(newHarvest.kg)*parseFloat(newHarvest.price)).toLocaleString(undefined,{maximumFractionDigits:2})}</span>}
                 </div>
               )}
               <div style={{marginBottom:12}}>
@@ -3216,9 +3233,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               </div>
               <button onClick={function(){
                 if(!newHarvest.plate||!newHarvest.heads||!newHarvest.kg) return;
-                var h=parseFloat(newHarvest.heads)||0; var k=parseFloat(newHarvest.kg)||0;
-                setHarvestTrucks(function(p){return [...p,{id:Date.now(),day:parseInt(newHarvest.day)>=0?parseInt(newHarvest.day):currentDay,plate:newHarvest.plate,heads:h,kg:k,alw:h>0?k/h:0,notes:newHarvest.notes}];});
-                setNewHarvest({plate:"",heads:"",kg:"",day:String(currentDay),notes:""});
+                var h=parseFloat(newHarvest.heads)||0; var k=parseFloat(newHarvest.kg)||0; var pr=parseFloat(newHarvest.price)||0;
+                setHarvestTrucks(function(p){return [...p,{id:Date.now(),day:parseInt(newHarvest.day)>=0?parseInt(newHarvest.day):currentDay,plate:newHarvest.plate,heads:h,kg:k,price:pr,amount:k*pr,alw:h>0?k/h:0,notes:newHarvest.notes}];});
+                setNewHarvest({plate:"",heads:"",kg:"",price:"",day:String(currentDay),notes:""});
               }} style={{background:"#2E7D52",border:"none",color:"#FFFFFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"10px 24px",cursor:"pointer",borderRadius:6}}>+ LOG TRUCK</button>
             </div>
 
@@ -3234,6 +3251,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 var trucks = sorted.filter(function(t){return t.day===day;});
                 var dayHeads = trucks.reduce(function(s,t){return s+(t.heads||0);},0);
                 var dayKg = trucks.reduce(function(s,t){return s+(t.kg||0);},0);
+                var dayAmount = trucks.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0);
                 var dayALW = dayHeads > 0 ? dayKg / dayHeads : 0;
                 var dateStr = cycleConfig ? new Date(new Date(cycleConfig.placementDate+"T00:00:00+08:00").getTime()+day*86400000).toLocaleDateString("en-PH",{weekday:"short",month:"short",day:"numeric"}) : "Day "+day;
                 return (
@@ -3247,20 +3265,23 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                         <div style={{textAlign:"right"}}><div style={{fontSize:9,color:"#94A3B8"}}>HEADS</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,color:"#2E7D52"}}>{dayHeads.toLocaleString()}</div></div>
                         <div style={{textAlign:"right"}}><div style={{fontSize:9,color:"#94A3B8"}}>KG</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,color:"#5B86E5"}}>{dayKg.toLocaleString(undefined,{maximumFractionDigits:1})}</div></div>
                         <div style={{textAlign:"right"}}><div style={{fontSize:9,color:"#94A3B8"}}>ALW</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,color:"#C4960C"}}>{dayALW.toFixed(3)}</div></div>
+                        {dayAmount>0 && <div style={{textAlign:"right"}}><div style={{fontSize:9,color:"#94A3B8"}}>₱ TOTAL</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,color:"#2E7D52"}}>{dayAmount.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>}
                       </div>
                     </div>
-                    <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderTop:"none",borderRadius:"0 0 6px 6px",overflow:"hidden"}}>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 80px 100px 80px 1fr 32px",padding:"6px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1}}>
-                        <div>PLATE</div><div style={{textAlign:"right"}}>HEADS</div><div style={{textAlign:"right"}}>KG</div><div style={{textAlign:"right"}}>ALW</div><div>NOTES</div><div></div>
+                    <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderTop:"none",borderRadius:"0 0 6px 6px",overflowX:"auto"}}>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 70px 90px 64px 60px 100px 32px",padding:"6px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:520}}>
+                        <div>PLATE</div><div style={{textAlign:"right"}}>HEADS</div><div style={{textAlign:"right"}}>KG</div><div style={{textAlign:"right"}}>ALW</div><div style={{textAlign:"right"}}>₱/KG</div><div style={{textAlign:"right"}}>TOTAL ₱</div><div></div>
                       </div>
                       {trucks.map(function(t){
+                        var amt = t.amount!=null ? t.amount : (t.kg||0)*(t.price||0);
                         return (
-                          <div key={t.id} className="row" style={{display:"grid",gridTemplateColumns:"1fr 80px 100px 80px 1fr 32px",padding:"9px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center"}}>
-                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,color:"#1E293B"}}>{t.plate}</div>
+                          <div key={t.id} className="row" style={{display:"grid",gridTemplateColumns:"1fr 70px 90px 64px 60px 100px 32px",padding:"9px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:520}}>
+                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,color:"#1E293B"}}>{t.plate}{t.notes?<span style={{display:"block",fontWeight:400,color:"#94A3B8",fontSize:9}}>{t.notes}</span>:null}</div>
                             <div style={{textAlign:"right",color:"#334155"}}>{(t.heads||0).toLocaleString()}</div>
                             <div style={{textAlign:"right",color:"#5B86E5",fontWeight:600}}>{(t.kg||0).toLocaleString(undefined,{maximumFractionDigits:2})}</div>
                             <div style={{textAlign:"right",color:"#C4960C",fontWeight:600}}>{t.alw?t.alw.toFixed(3):"—"}</div>
-                            <div style={{color:"#64748B",fontSize:10}}>{t.notes||"—"}</div>
+                            <div style={{textAlign:"right",color:"#64748B"}}>{t.price?t.price.toLocaleString(undefined,{maximumFractionDigits:2}):"—"}</div>
+                            <div style={{textAlign:"right",color:"#2E7D52",fontWeight:700}}>{amt>0?amt.toLocaleString(undefined,{maximumFractionDigits:0}):"—"}</div>
                             <button onClick={function(){setHarvestTrucks(function(p){return p.filter(function(x){return x.id!==t.id;});});}} style={{background:"none",border:"1px solid #E91E6340",color:"#E91E6380",fontFamily:"'Inter',sans-serif",fontSize:11,width:24,height:24,cursor:"pointer",borderRadius:4,padding:0}}>×</button>
                           </div>
                         );

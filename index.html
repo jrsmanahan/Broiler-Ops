@@ -1426,18 +1426,26 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
     // Weigh points from shift-log ALW entries...
     var byDay = {};
     shiftLogs.filter(function(l){return l.alw;}).forEach(function(l){ byDay[l.day]=Math.round(l.alw*1000); });
-    // ...and from harvest trucks (a full-truck weigh is the strongest actual weight for that day).
-    var harvestByDay = {};
+    // ...and from harvest trucks. Small trucks (<2,000 heads) are selective buyer pulls
+    // (e.g. a buyer wanting only 1.8kg birds) and NOT representative of the flock, so only
+    // big trucks (≥2,000 heads, which take the biggest birds) are used to read the flock ALW.
+    var REP_TRUCK_MIN = 2000;
+    var harvestByDay = {};     // ALL trucks — for bulk-day detection (total heads/day)
+    var harvestRepByDay = {};  // ≥2,000-head trucks only — representative of the flock's weight
     harvestTrucks.forEach(function(t){
       if(!harvestByDay[t.day]) harvestByDay[t.day]={kg:0,heads:0};
       harvestByDay[t.day].kg += (t.kg||0); harvestByDay[t.day].heads += (t.heads||0);
+      if((t.heads||0) >= REP_TRUCK_MIN){
+        if(!harvestRepByDay[t.day]) harvestRepByDay[t.day]={kg:0,heads:0};
+        harvestRepByDay[t.day].kg += (t.kg||0); harvestRepByDay[t.day].heads += (t.heads||0);
+      }
     });
-    Object.keys(harvestByDay).forEach(function(d){
-      var h=harvestByDay[d]; if(h.heads>0) byDay[+d]=Math.round(h.kg/h.heads*1000); // harvest overrides shift-log for that day
+    Object.keys(harvestRepByDay).forEach(function(d){
+      var h=harvestRepByDay[d]; if(h.heads>0) byDay[+d]=Math.round(h.kg/h.heads*1000); // representative weigh overrides shift-log for that day
     });
     var pts = Object.keys(byDay).map(function(d){return {day:+d, g:byDay[d]};}).sort(function(a,b){return a.day-b.day;});
-    // Bulk harvest = any day with >5,000 birds harvested. Birds are pulled off morning
-    // feed to empty their crops for loading, so growth stalls once bulk harvest begins.
+    // Bulk harvest = any day with >5,000 birds harvested (all trucks counted). Birds are
+    // pulled off morning feed to empty crops for loading, so growth stalls once it begins.
     var bulkDays = Object.keys(harvestByDay).filter(function(d){return harvestByDay[d].heads>5000;}).map(Number).sort(function(a,b){return a-b;});
     var firstBulkDay = bulkDays.length ? bulkDays[0] : null;
     var bulkStarted = firstBulkDay!=null && currentDay>=firstBulkDay;
@@ -1459,10 +1467,16 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
 
     var wToday, bulkPlateau=false;
     if (bulkStarted) {
-      // Growth has plateaued — current weight = the latest harvest day's actual weighted ALW.
-      var latestHarvestDay = Math.max.apply(null, Object.keys(harvestByDay).map(Number));
-      var lh = harvestByDay[latestHarvestDay];
-      wToday = (lh && lh.heads>0) ? Math.round(lh.kg/lh.heads*1000) : anchorW;
+      // Growth has plateaued — current weight = the latest day's REPRESENTATIVE (≥2,000-head
+      // truck) weighted ALW, carried forward. Selective small trucks are ignored here.
+      var repDays = Object.keys(harvestRepByDay).map(Number);
+      if (repDays.length) {
+        var latestRep = Math.max.apply(null, repDays);
+        var lh = harvestRepByDay[latestRep];
+        wToday = Math.round(lh.kg/lh.heads*1000);
+      } else {
+        wToday = anchorW; // no representative truck logged yet — hold last trend weight
+      }
       obsGain = 0; bulkPlateau = true;
     } else {
       // Walk forward from the anchor at the observed (tapering) gain.

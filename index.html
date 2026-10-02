@@ -1945,7 +1945,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   {runningFCR != null && <span style={{ fontSize:11, color: fcrOverStd ? "#E91E63" : "#2E7D52", fontWeight:600 }}>{fcrOverStd ? "↑" : "✓"}</span>}
                 </div>
                 <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>guide {standardFCR != null ? standardFCR : "—"}</div>
-                <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>{cumFeedConsumed} used · {cumFCTarget} guide target</div>
+                <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>{cumFeedConsumed} used · {feedDeliveries.reduce(function(s,d){return s+(d.qty||0);},0)} delivered bags</div>
               </div>
               {/* Livability Rate — actual big, acceptable-mortality benchmark below */}
               <div style={{ background:"#FFFFFF", border:"1px solid "+hrColor+"25", borderRadius:8, padding:"12px 14px" }}>
@@ -3014,10 +3014,16 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 })()}
                 {(function(){
                   const scale = feedBasisBirds/1000;
-                  const totCbc = feedingGuide.reduce((s,r)=>s+(r.cbcBt||0),0)*scale;
-                  const totBsc = feedingGuide.reduce((s,r)=>s+(r.bscBt||0),0)*scale;
-                  const totBfp = feedingGuide.reduce((s,r)=>s+(r.bfpBt||0),0)*scale;
-                  const totBt = feedingGuide.reduce((s,r)=>s+(r.dailyBt||0),0);
+                  // Whole-grow order target = 60 BT. CBC + BSC are the fixed early phases;
+                  // BFP (finisher) is trimmed to balance to the 60 BT target.
+                  const ORDER_TARGET_BT = 60;
+                  const cbcBt = feedingGuide.reduce((s,r)=>s+(r.cbcBt||0),0);
+                  const bscBt = feedingGuide.reduce((s,r)=>s+(r.bscBt||0),0);
+                  const bfpBt = Math.max(0, ORDER_TARGET_BT - cbcBt - bscBt);
+                  const totCbc = cbcBt*scale;
+                  const totBsc = bscBt*scale;
+                  const totBfp = bfpBt*scale;
+                  const totBt = ORDER_TARGET_BT;
                   const totBags = totBt*scale;
                   return (
                     <div>

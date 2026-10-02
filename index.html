@@ -1945,7 +1945,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   {runningFCR != null && <span style={{ fontSize:11, color: fcrOverStd ? "#E91E63" : "#2E7D52", fontWeight:600 }}>{fcrOverStd ? "↑" : "✓"}</span>}
                 </div>
                 <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>guide {standardFCR != null ? standardFCR : "—"}</div>
-                <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>feed {cumFeedConsumed}/{cumFCTarget} bags</div>
+                <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>{cumFeedConsumed} used · {cumFCTarget} guide target</div>
               </div>
               {/* Livability Rate — actual big, acceptable-mortality benchmark below */}
               <div style={{ background:"#FFFFFF", border:"1px solid "+hrColor+"25", borderRadius:8, padding:"12px 14px" }}>

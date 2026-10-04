@@ -688,6 +688,7 @@ const TABS = [
   { id:"placement",  label:"DELIVERIES"   },
   { id:"fieldguide", label:"FIELD GUIDE"  },
   { id:"harvest",    label:"HARVEST"      },
+  { id:"reports",    label:"REPORTS"      },
   { id:"history",    label:"HISTORY"      },
 ];
 // ─── FEEDING GUIDE ────────────────────────────────────────────────────────────
@@ -991,6 +992,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [incidentFilter, setIncidentFilter] = useState("all");
   const [fgSection, setFgSection]         = useState("incidents"); // "incidents" | "kb" | "meds" | "lighting"
   const [hSection, setHSection]           = useState("harvest"); // "harvest" | "billing" | "payments"
+  const [reportSection, setReportSection] = useState("uniformity"); // "uniformity"
   const [billFilterBuyer, setBillFilterBuyer] = useState("all");
   const [billFilterDay, setBillFilterDay]     = useState("all");
   // Editable Field Guide data
@@ -3593,6 +3595,102 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                           <div style={{textAlign:"center"}}>
                             <button onClick={function(){setBillingPaid(function(p){var n={...p}; if(paid)delete n[key]; else n[key]=true; return n;});}} style={{background:paid?"#2E7D5218":"#E91E6312",border:"1px solid "+(paid?"#2E7D5250":"#E91E6340"),color:paid?"#2E7D52":"#E91E63",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:9,padding:"5px 10px",cursor:"pointer",borderRadius:12}}>{paid?"✓ PAID":"PENDING"}</button>
                           </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+        {activeTab==="reports" && (
+          <div className="su">
+            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Reports</div>
+            <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Flock analytics</div>
+            <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
+              {[["uniformity","UNIFORMITY"]].map(function(s){
+                var id=s[0], lbl=s[1], on=reportSection===id;
+                return <button key={id} onClick={function(){setReportSection(id);}} style={{background:on?"#2E7D5220":"none",border:on?"1px solid #2E7D5260":"1px solid #CBD5E1",color:on?"#2E7D52":"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,letterSpacing:.8,padding:"6px 16px",cursor:"pointer",borderRadius:4,fontWeight:on?600:400}}>{lbl}</button>;
+              })}
+            </div>
+
+            {reportSection==="uniformity" && (function(){
+              var trucks = harvestTrucks.filter(function(t){return (t.heads||0)>0 && ((t.alw||0)>0 || (t.kg||0)>0);});
+              if(!trucks.length) return <div style={{textAlign:"center",padding:"32px",color:"#94A3B8",fontSize:11}}>No harvest trucks logged yet. Uniformity is built from the ALW of each truck.</div>;
+              var data = trucks.map(function(t){ var g = t.alw? t.alw*1000 : (t.kg/t.heads*1000); return {g:g, heads:t.heads||0, plate:t.plate}; });
+              var totHeads = data.reduce(function(s,d){return s+d.heads;},0);
+              var meanG = data.reduce(function(s,d){return s+d.g*d.heads;},0)/totHeads;
+              var variance = data.reduce(function(s,d){return s+d.heads*Math.pow(d.g-meanG,2);},0)/totHeads;
+              var std = Math.sqrt(variance);
+              var cv = meanG>0? std/meanG*100 : 0;
+              var lo = meanG*0.9, hi = meanG*1.1;
+              var within = data.reduce(function(s,d){return s+((d.g>=lo&&d.g<=hi)?d.heads:0);},0);
+              var uniformity = totHeads>0? within/totHeads*100 : 0;
+              var minG = Math.min.apply(null,data.map(function(d){return d.g;}));
+              var maxG = Math.max.apply(null,data.map(function(d){return d.g;}));
+              var binW = 100; // grams
+              var start = Math.floor(minG/binW)*binW, end = Math.ceil(maxG/binW)*binW;
+              if(end<=start) end=start+binW;
+              var bins=[]; for(var b=start;b<end;b+=binW){ bins.push({lo:b,hi:b+binW,heads:0}); }
+              data.forEach(function(d){ var idx=Math.min(bins.length-1,Math.max(0,Math.floor((d.g-start)/binW))); bins[idx].heads+=d.heads; });
+              var maxBin = Math.max.apply(null,bins.map(function(x){return x.heads;}))||1;
+              var uColor = uniformity>=80?"#2E7D52":uniformity>=70?"#C4960C":"#E91E63";
+              var cvColor = cv<=8?"#2E7D52":cv<=10?"#C4960C":"#E91E63";
+              var statBox = function(label,val,sub,color){ return (
+                <div style={{background:"#FFFFFF",border:"1px solid "+(color||"#E2E8F0")+"25",borderRadius:8,padding:"11px 13px"}}>
+                  <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>{label}</div>
+                  <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:color||"#1E293B"}}>{val}</div>
+                  {sub?<div style={{fontSize:9,color:"#64748B",marginTop:1}}>{sub}</div>:null}
+                </div>
+              ); };
+              return (
+                <div>
+                  {/* Stats */}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:16}}>
+                    {statBox("MEAN ALW", (meanG/1000).toFixed(3)+" kg", Math.round(meanG)+"g · heads-weighted", "#C4960C")}
+                    {statBox("UNIFORMITY ±10%", uniformity.toFixed(1)+"%", within.toLocaleString()+" of "+totHeads.toLocaleString()+" birds", uColor)}
+                    {statBox("CV", cv.toFixed(1)+"%", "lower = more uniform", cvColor)}
+                    {statBox("RANGE", (minG/1000).toFixed(2)+"–"+(maxG/1000).toFixed(2), "kg (truck ALW spread)", "#5B86E5")}
+                    {statBox("TRUCKS", String(data.length), "harvest loads", "#334155")}
+                    {statBox("TOTAL BIRDS", totHeads.toLocaleString(), "harvested & weighed", "#334155")}
+                  </div>
+                  {/* Histogram */}
+                  <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"16px 16px 12px"}}>
+                    <div style={{fontSize:10,color:"#64748B",letterSpacing:1,fontWeight:600,marginBottom:4}}>ALW DISTRIBUTION (birds per weight band)</div>
+                    <div style={{fontSize:9,color:"#94A3B8",marginBottom:14}}>Green bands are within ±10% of the mean ({(lo/1000).toFixed(2)}–{(hi/1000).toFixed(2)} kg). Each truck's birds fall in its ALW band.</div>
+                    <div style={{display:"flex",alignItems:"flex-end",gap:4,height:170,borderBottom:"2px solid #E2E8F0",paddingBottom:0}}>
+                      {bins.map(function(bn,i){
+                        var center=bn.lo+binW/2;
+                        var inBand = center>=lo && center<=hi;
+                        var hgt = bn.heads>0 ? Math.max(4, bn.heads/maxBin*150) : 0;
+                        var col = inBand?"#2E7D52":"#C4960C";
+                        return (
+                          <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end"}} title={(bn.lo/1000).toFixed(2)+"–"+(bn.hi/1000).toFixed(2)+" kg: "+bn.heads.toLocaleString()+" birds"}>
+                            <div style={{fontSize:8,color:"#64748B",marginBottom:2,fontWeight:600}}>{bn.heads>0?bn.heads.toLocaleString():""}</div>
+                            <div style={{width:"86%",height:hgt,background:col,borderRadius:"3px 3px 0 0"}} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{display:"flex",gap:4,marginTop:4}}>
+                      {bins.map(function(bn,i){ return <div key={i} style={{flex:1,textAlign:"center",fontSize:8,color:"#94A3B8"}}>{(bn.lo/1000).toFixed(2)}</div>; })}
+                    </div>
+                    <div style={{textAlign:"center",fontSize:9,color:"#94A3B8",marginTop:6}}>truck ALW (kg) — {binW}g bands</div>
+                  </div>
+                  {/* Per-truck list */}
+                  <div style={{marginTop:14,background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflow:"hidden"}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 70px",padding:"6px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1}}>
+                      <div>PLATE</div><div style={{textAlign:"right"}}>HEADS</div><div style={{textAlign:"right"}}>ALW kg</div><div style={{textAlign:"right"}}>vs MEAN</div>
+                    </div>
+                    {data.slice().sort(function(a,b){return b.g-a.g;}).map(function(d,i){
+                      var diff = d.g-meanG; var inBand = d.g>=lo&&d.g<=hi;
+                      return (
+                        <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 70px",padding:"7px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center"}}>
+                          <div style={{fontWeight:600,color:"#1E293B"}}>{d.plate}</div>
+                          <div style={{textAlign:"right",color:"#334155"}}>{d.heads.toLocaleString()}</div>
+                          <div style={{textAlign:"right",color:"#C4960C",fontWeight:600}}>{(d.g/1000).toFixed(3)}</div>
+                          <div style={{textAlign:"right",color:inBand?"#2E7D52":"#E91E63",fontWeight:600}}>{diff>=0?"+":""}{Math.round(diff)}g</div>
                         </div>
                       );
                     })}

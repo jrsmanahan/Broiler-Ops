@@ -1088,8 +1088,10 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [billingPaid, setBillingPaid] = useLocalStorage("billingPaid", {});
   const [expenses, setExpenses]       = useLocalStorage("expenses", []);
   const [otherRevenue, setOtherRevenue] = useLocalStorage("otherRevenue", []);
-  const [newExpense, setNewExpense]   = useState({ category:"Feed", desc:"", amount:"" });
-  const [newRevenue, setNewRevenue]   = useState({ source:"", amount:"" });
+  const [expenseCats, setExpenseCats] = useLocalStorage("expenseCats", ["Feed","Chicks","Medicine/Vet","Labor","Electricity","Fuel","Water","Repairs","Transport"]);
+  const [revenueCats, setRevenueCats] = useLocalStorage("revenueCats", ["Surplus feed","Manure","Empty sacks"]);
+  const [newExpense, setNewExpense]   = useState({ category:"", desc:"", unitPrice:"", qty:"" });
+  const [newRevenue, setNewRevenue]   = useState({ category:"", desc:"", unitPrice:"", qty:"" });
   const [surplusFeedBags, setSurplusFeedBags] = useLocalStorage("surplusFeedBags", 0);
   const [medInventoryLog, setMedInventoryLog] = useSyncedLog("medInventoryLog", houseId, userId, isOnline, syncTick);
   const [newMedEntry, setNewMedEntry] = useState({ type:"delivery", medicine:"", qty:"", unit:"", notes:"" });
@@ -3751,7 +3753,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
 
                     <div style={{fontSize:9,color:"#2E7D52",letterSpacing:1,fontWeight:700,marginBottom:2}}>REVENUE</div>
                     {row("Broiler sales (harvest)", harvestSales)}
-                    {otherRevenue.map(function(r){ return <div key={r.id}>{row(r.source||"Other revenue", parseFloat(r.amount)||0, function(){setOtherRevenue(function(p){return p.filter(function(x){return x.id!==r.id;});});})}</div>; })}
+                    {otherRevenue.map(function(r){ var lbl=(r.category||r.source||"Other revenue")+(r.desc?" — "+r.desc:"")+((r.qty&&r.unitPrice)?" ("+r.qty+" × ₱"+Number(r.unitPrice).toLocaleString()+")":""); return <div key={r.id}>{row(lbl, parseFloat(r.amount)||0, function(){setOtherRevenue(function(p){return p.filter(function(x){return x.id!==r.id;});});})}</div>; })}
                     <div style={{borderTop:"1px solid #E2E8F0",marginTop:4,paddingTop:2}}>
                       <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:12,fontWeight:700}}>
                         <span style={{color:"#1E293B"}}>Total Revenue</span>
@@ -3761,7 +3763,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
 
                     <div style={{fontSize:9,color:"#E91E63",letterSpacing:1,fontWeight:700,marginTop:14,marginBottom:2}}>EXPENSES</div>
                     {expenses.length===0 && <div style={{fontSize:11,color:"#94A3B8",padding:"6px 0"}}>No expenses entered yet.</div>}
-                    {expenses.map(function(e){ return <div key={e.id}>{row((e.category||"Other")+(e.desc?" — "+e.desc:""), parseFloat(e.amount)||0, function(){setExpenses(function(p){return p.filter(function(x){return x.id!==e.id;});});})}</div>; })}
+                    {expenses.map(function(e){ var lbl=(e.category||"Other")+(e.desc?" — "+e.desc:"")+((e.qty&&e.unitPrice)?" ("+e.qty+" × ₱"+Number(e.unitPrice).toLocaleString()+")":""); return <div key={e.id}>{row(lbl, parseFloat(e.amount)||0, function(){setExpenses(function(p){return p.filter(function(x){return x.id!==e.id;});});})}</div>; })}
                     <div style={{borderTop:"1px solid #E2E8F0",marginTop:4,paddingTop:2}}>
                       <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:12,fontWeight:700}}>
                         <span style={{color:"#1E293B"}}>Total Expenses</span>
@@ -3781,26 +3783,29 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   {/* Add other revenue */}
                   <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16,marginBottom:12}}>
                     <div style={{fontSize:10,color:"#2E7D52",letterSpacing:1.5,fontWeight:600,marginBottom:10}}>ADD OTHER REVENUE</div>
-                    <div style={{display:"grid",gridTemplateColumns:"2fr 1fr auto",gap:8,alignItems:"end"}}>
-                      <div><label style={LBL}>SOURCE</label><input value={newRevenue.source} onChange={function(e){setNewRevenue(function(p){return {...p,source:e.target.value};});}} placeholder="e.g. surplus feed, manure, sacks" style={{...INP,width:"100%"}} /></div>
-                      <div><label style={LBL}>AMOUNT (₱)</label><input type="number" step="0.01" value={newRevenue.amount} onChange={function(e){setNewRevenue(function(p){return {...p,amount:e.target.value};});}} placeholder="0.00" style={{...INP,width:"100%"}} /></div>
-                      <button onClick={function(){ if(!newRevenue.source||!newRevenue.amount) return; setOtherRevenue(function(p){return [...p,{id:Date.now(),source:newRevenue.source,amount:parseFloat(newRevenue.amount)||0}];}); setNewRevenue({source:"",amount:""}); }} style={{background:"#2E7D52",border:"none",color:"#FFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"9px 18px",cursor:"pointer",borderRadius:6}}>+ ADD</button>
+                    <datalist id="revCats">{revenueCats.map(function(c){return <option key={c} value={c}/>;})}</datalist>
+                    <div style={{display:"grid",gridTemplateColumns:"1.2fr 1.6fr 1fr 0.8fr auto",gap:8,alignItems:"end"}}>
+                      <div><label style={LBL}>CATEGORY</label><input list="revCats" value={newRevenue.category} onChange={function(e){setNewRevenue(function(p){return {...p,category:e.target.value};});}} placeholder="pick or type" style={{...INP,width:"100%"}} /></div>
+                      <div><label style={LBL}>DESCRIPTION</label><input value={newRevenue.desc} onChange={function(e){setNewRevenue(function(p){return {...p,desc:e.target.value};});}} placeholder="optional note" style={{...INP,width:"100%"}} /></div>
+                      <div><label style={LBL}>UNIT PRICE (₱)</label><input type="number" step="0.01" value={newRevenue.unitPrice} onChange={function(e){setNewRevenue(function(p){return {...p,unitPrice:e.target.value};});}} placeholder="0.00" style={{...INP,width:"100%"}} /></div>
+                      <div><label style={LBL}>QTY</label><input type="number" step="0.01" value={newRevenue.qty} onChange={function(e){setNewRevenue(function(p){return {...p,qty:e.target.value};});}} placeholder="1" style={{...INP,width:"100%"}} /></div>
+                      <button onClick={function(){ var up=parseFloat(newRevenue.unitPrice)||0; var q=parseFloat(newRevenue.qty)||0; var cat=newRevenue.category.trim(); if(!cat||up<=0||q<=0) return; setOtherRevenue(function(p){return [...p,{id:Date.now(),category:cat,desc:newRevenue.desc,unitPrice:up,qty:q,amount:up*q}];}); if(cat && revenueCats.indexOf(cat)<0) setRevenueCats(function(p){return [...p,cat];}); setNewRevenue({category:"",desc:"",unitPrice:"",qty:""}); }} style={{background:"#2E7D52",border:"none",color:"#FFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"9px 16px",cursor:"pointer",borderRadius:6}}>+ ADD</button>
                     </div>
+                    {newRevenue.unitPrice && newRevenue.qty && <div style={{fontSize:11,color:"#2E7D52",fontWeight:600,marginTop:8}}>= ₱{money((parseFloat(newRevenue.unitPrice)||0)*(parseFloat(newRevenue.qty)||0))}</div>}
                   </div>
 
                   {/* Add expense */}
                   <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16}}>
                     <div style={{fontSize:10,color:"#E91E63",letterSpacing:1.5,fontWeight:600,marginBottom:10}}>ADD EXPENSE</div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 2fr 1fr auto",gap:8,alignItems:"end"}}>
-                      <div><label style={LBL}>CATEGORY</label>
-                        <select value={newExpense.category} onChange={function(e){setNewExpense(function(p){return {...p,category:e.target.value};});}} style={{...SEL,width:"100%"}}>
-                          {["Feed","Chicks","Medicine/Vet","Labor","Electricity","Fuel","Water","Repairs","Transport","Other"].map(function(c){return <option key={c} value={c}>{c}</option>;})}
-                        </select>
-                      </div>
+                    <datalist id="expCats">{expenseCats.map(function(c){return <option key={c} value={c}/>;})}</datalist>
+                    <div style={{display:"grid",gridTemplateColumns:"1.2fr 1.6fr 1fr 0.8fr auto",gap:8,alignItems:"end"}}>
+                      <div><label style={LBL}>CATEGORY</label><input list="expCats" value={newExpense.category} onChange={function(e){setNewExpense(function(p){return {...p,category:e.target.value};});}} placeholder="pick or type" style={{...INP,width:"100%"}} /></div>
                       <div><label style={LBL}>DESCRIPTION</label><input value={newExpense.desc} onChange={function(e){setNewExpense(function(p){return {...p,desc:e.target.value};});}} placeholder="optional note" style={{...INP,width:"100%"}} /></div>
-                      <div><label style={LBL}>AMOUNT (₱)</label><input type="number" step="0.01" value={newExpense.amount} onChange={function(e){setNewExpense(function(p){return {...p,amount:e.target.value};});}} placeholder="0.00" style={{...INP,width:"100%"}} /></div>
-                      <button onClick={function(){ if(!newExpense.amount) return; setExpenses(function(p){return [...p,{id:Date.now(),category:newExpense.category,desc:newExpense.desc,amount:parseFloat(newExpense.amount)||0}];}); setNewExpense({category:newExpense.category,desc:"",amount:""}); }} style={{background:"#E91E63",border:"none",color:"#FFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"9px 18px",cursor:"pointer",borderRadius:6}}>+ ADD</button>
+                      <div><label style={LBL}>UNIT PRICE (₱)</label><input type="number" step="0.01" value={newExpense.unitPrice} onChange={function(e){setNewExpense(function(p){return {...p,unitPrice:e.target.value};});}} placeholder="0.00" style={{...INP,width:"100%"}} /></div>
+                      <div><label style={LBL}>QTY</label><input type="number" step="0.01" value={newExpense.qty} onChange={function(e){setNewExpense(function(p){return {...p,qty:e.target.value};});}} placeholder="1" style={{...INP,width:"100%"}} /></div>
+                      <button onClick={function(){ var up=parseFloat(newExpense.unitPrice)||0; var q=parseFloat(newExpense.qty)||0; var cat=newExpense.category.trim(); if(!cat||up<=0||q<=0) return; setExpenses(function(p){return [...p,{id:Date.now(),category:cat,desc:newExpense.desc,unitPrice:up,qty:q,amount:up*q}];}); if(cat && expenseCats.indexOf(cat)<0) setExpenseCats(function(p){return [...p,cat];}); setNewExpense({category:"",desc:"",unitPrice:"",qty:""}); }} style={{background:"#E91E63",border:"none",color:"#FFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"9px 16px",cursor:"pointer",borderRadius:6}}>+ ADD</button>
                     </div>
+                    {newExpense.unitPrice && newExpense.qty && <div style={{fontSize:11,color:"#E91E63",fontWeight:600,marginTop:8}}>= ₱{money((parseFloat(newExpense.unitPrice)||0)*(parseFloat(newExpense.qty)||0))}</div>}
                   </div>
                 </div>
               );

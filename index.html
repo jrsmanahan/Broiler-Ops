@@ -3520,16 +3520,16 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 {key:"harvestRecovery",   label:"Harvest Recovery",    fmt:function(v){return v.toFixed(2)+"%";}},
                 {key:"finalALWg",         label:"Harvest ALW",         fmt:function(v){return v+"g";}},
                 {key:"totalHarvestKg",    label:"Total Harvest KG",    fmt:function(v){return v.toLocaleString(undefined,{maximumFractionDigits:1})+" kg";}},
-                {key:"weightedAge",       label:"Weighted Avg Age",    fmt:function(v){return v.toFixed(1)+" d";}},
+                {key:"weightedAge",       label:"Weighted Avg Age",    fmt:function(v){return v.toFixed(1)+" d";}, lower:true},
                 {key:"totalMortality",    label:"Total Mortality",     fmt:function(v){return v+" birds";}, lower:true},
                 {key:"mortalityRate",     label:"Mortality Rate",      fmt:function(v){return v.toFixed(2)+"%";}, lower:true},
-                {key:"netFeedKg",         label:"Total Feed (net kg)", fmt:function(v){return Math.round(v).toLocaleString()+" kg";}},
-                {key:"feedPerBird",       label:"Feed / Bird",         fmt:function(v){return v.toFixed(2)+" kg";}},
+                {key:"netFeedKg",         label:"Total Feed (net kg)", fmt:function(v){return Math.round(v).toLocaleString()+" kg";}, lower:true},
+                {key:"feedPerBird",       label:"Feed / Bird",         fmt:function(v){return v.toFixed(2)+" kg";}, lower:true},
                 {key:"fcr",               label:"FCR",                 fmt:function(v){return v.toFixed(3);}, lower:true},
                 {key:"bpi",               label:"BPI",                 fmt:function(v){return v.toFixed(0);}},
-                {key:"cbcBags",           label:"CBC Delivered",       fmt:function(v){return v+" bags";}},
-                {key:"bscBags",           label:"BSC Delivered",       fmt:function(v){return v+" bags";}},
-                {key:"bfpBags",           label:"BFP Delivered",       fmt:function(v){return v+" bags";}},
+                {key:"cbcBags",           label:"CBC Delivered",       fmt:function(v){return v+" bags";}, lower:true},
+                {key:"bscBags",           label:"BSC Delivered",       fmt:function(v){return v+" bags";}, lower:true},
+                {key:"bfpBags",           label:"BFP Delivered",       fmt:function(v){return v+" bags";}, lower:true},
               ];
 
               return (

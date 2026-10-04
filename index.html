@@ -3678,6 +3678,26 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                     </div>
                     <div style={{textAlign:"center",fontSize:9,color:"#94A3B8",marginTop:6}}>truck ALW (kg) — {binW}g bands</div>
                   </div>
+                  {/* Analysis */}
+                  {(function(){
+                    var sorted = data.slice().sort(function(a,b){return b.g-a.g;});
+                    var top = sorted[0], bot = sorted[sorted.length-1];
+                    var uVerdict = uniformity>=80?"excellent":uniformity>=70?"acceptable":"below target";
+                    var cvVerdict = cv<=8?"very tight":cv<=12?"moderate":"wide";
+                    var line1 = "Uniformity is "+uniformity.toFixed(0)+"% within ±10% of the "+(meanG/1000).toFixed(2)+" kg mean — "+uVerdict+" (target ≥80%). Spread is "+cvVerdict+" at CV "+cv.toFixed(1)+"%, from "+(minG/1000).toFixed(2)+" to "+(maxG/1000).toFixed(2)+" kg.";
+                    var line2 = uniformity>=80 ? "A tight flock like this grades cleanly and fills buyer size specs with minimal sorting."
+                      : uniformity>=70 ? "Expect some sorting to hit specific buyer size bands. Watch feeder/drinker space and density next grow to tighten the spread."
+                      : "The wide spread means heavy sorting and more off-spec birds. Review brooding evenness, feeder/drinker access, and do early-week (D7/D14) weight checks to catch divergence sooner.";
+                    var line3 = data.length>1 ? ("Heaviest load "+top.plate+" at "+(top.g/1000).toFixed(3)+" kg ("+(top.g-meanG>=0?"+":"")+Math.round(top.g-meanG)+"g), lightest "+bot.plate+" at "+(bot.g/1000).toFixed(3)+" kg ("+Math.round(bot.g-meanG)+"g).") : null;
+                    return (
+                      <div style={{marginTop:14,background:uColor+"08",border:"1px solid "+uColor+"30",borderLeft:"3px solid "+uColor,borderRadius:8,padding:"12px 14px"}}>
+                        <div style={{fontSize:9,color:uColor,letterSpacing:1,fontWeight:700,marginBottom:6}}>ANALYSIS</div>
+                        <div style={{fontSize:12,color:"#334155",lineHeight:1.5}}>{line1}</div>
+                        <div style={{fontSize:12,color:"#334155",lineHeight:1.5,marginTop:6}}>{line2}</div>
+                        {line3 && <div style={{fontSize:11,color:"#64748B",marginTop:6}}>{line3}</div>}
+                      </div>
+                    );
+                  })()}
                   {/* Per-truck list */}
                   <div style={{marginTop:14,background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflow:"hidden"}}>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 70px",padding:"6px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1}}>

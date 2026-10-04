@@ -580,6 +580,16 @@ function acceptCumMortRate(day) {
   for (var d = 1; d <= day; d++) r += acceptDailyMortRate(d);
   return r;
 }
+// Status of a value vs the user's target / minimum. lowerBetter for FCR & age.
+function perfStatus(v, target, min, lowerBetter) {
+  if (v == null || v === undefined || isNaN(v)) return { color:"#94A3B8", label:"—" };
+  var good, ok;
+  if (lowerBetter) { good = v <= target; ok = v <= min; }
+  else { good = v >= target; ok = v >= min; }
+  if (good) return { color:"#2E7D52", label:"✓ ON TARGET" };
+  if (ok)   return { color:"#C4960C", label:"BELOW TARGET" };
+  return { color:"#E91E63", label:"UNDER MIN" };
+}
 // Acceptable feed reference: cumulative bags-per-1000-chicks (BT) anchor points.
 // Daily acceptable BT = cumBT(day) - cumBT(day-1), giving a smooth ramp scaled to any flock size.
 var BT_POINTS = [{day:7,bt:3.3},{day:14,bt:11.4},{day:21,bt:25.1},{day:28,bt:44.1},{day:30,bt:50.6}];
@@ -992,7 +1002,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [incidentFilter, setIncidentFilter] = useState("all");
   const [fgSection, setFgSection]         = useState("incidents"); // "incidents" | "kb" | "meds" | "lighting"
   const [hSection, setHSection]           = useState("harvest"); // "harvest" | "billing" | "payments"
-  const [reportSection, setReportSection] = useState("uniformity"); // "uniformity"
+  const [reportSection, setReportSection] = useState("uniformity"); // "uniformity" | "financial" | "targets"
+  const [perfTargets, setPerfTargets] = useLocalStorage("perfTargets", { alwTarget:2.1, alwMin:1.9, fcrTarget:1.45, fcrMin:1.55, hrTarget:98, hrMin:95, ageTarget:33, ageMin:36 });
   const [billFilterBuyer, setBillFilterBuyer] = useState("all");
   const [billFilterDay, setBillFilterDay]     = useState("all");
   // Editable Field Guide data
@@ -2002,6 +2013,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                       </div>
                       <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>target {targetALW || "—"}g</div>
                       <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>{lastWeighNote}</div>
+                      {actG!=null && (function(){var st=perfStatus(actG/1000,perfTargets.alwTarget,perfTargets.alwMin,false);return <div style={{fontSize:9,color:st.color,fontWeight:600,marginTop:2}}>vs tgt {perfTargets.alwTarget}kg: {st.label}</div>;})()}
                     </>
                   );
                 })()}
@@ -2015,6 +2027,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 </div>
                 <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>guide {standardFCR != null ? standardFCR : "—"}</div>
                 <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>{cumFeedConsumed} used · {feedDeliveries.reduce(function(s,d){return s+(d.qty||0);},0)} delivered bags</div>
+                {runningFCR!=null && (function(){var st=perfStatus(parseFloat(runningFCR),perfTargets.fcrTarget,perfTargets.fcrMin,true);return <div style={{fontSize:9,color:st.color,fontWeight:600,marginTop:2}}>vs tgt {perfTargets.fcrTarget}: {st.label}</div>;})()}
               </div>
               {/* Livability Rate — actual big, acceptable-mortality benchmark below */}
               <div style={{ background:"#FFFFFF", border:"1px solid "+hrColor+"25", borderRadius:8, padding:"12px 14px" }}>
@@ -2026,6 +2039,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 </div>
                 <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>{cumulMortTotal.toLocaleString()} mort <span style={{ color:hrColor, fontWeight:600 }}>(ok ≤{acceptMortCount.toLocaleString()})</span></div>
                 <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>{Math.max(birdsInHouse,0).toLocaleString()} remaining · {harvestedHeadsTotal.toLocaleString()} harvested</div>
+                {(function(){var st=perfStatus(hrPct,perfTargets.hrTarget,perfTargets.hrMin,false);return <div style={{fontSize:9,color:st.color,fontWeight:600,marginTop:2}}>vs tgt {perfTargets.hrTarget}%: {st.label}</div>;})()}
               </div>
               {/* BPI (EPEF) — running performance index */}
               <div style={{ background:"#FFFFFF", border:"1px solid "+bpiColor+"25", borderRadius:8, padding:"12px 14px" }}>
@@ -2035,7 +2049,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   <span style={{ fontSize:9, color:"#94A3B8" }}>{bpiLabel}</span>
                 </div>
                 <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>{runningALWkg != null ? Math.round(runningALWkg*1000)+"g" : "—"} · FCR {runningFCR != null ? runningFCR : "—"}</div>
-                <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>liv {hrPct.toFixed(1)}% · age {effectiveAge.toFixed(1)}d</div>
+                <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>liv {hrPct.toFixed(1)}% · age <span style={{color:perfStatus(effectiveAge,perfTargets.ageTarget,perfTargets.ageMin,true).color,fontWeight:600}}>{effectiveAge.toFixed(1)}d</span></div>
               </div>
             </div>
             {/* Today's medicines */}
@@ -3226,21 +3240,24 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                       <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#2E7D52"}}>{harvestRecovery?harvestRecovery.toFixed(2)+"%":"—"}</div>
                       <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{totalHarvestedHeads.toLocaleString()} of {recoveryBasis.toLocaleString()} placed</div>
                     </div>
-                    <div style={{background:"#FFFFFF",border:"1px solid #C4960C20",borderRadius:8,padding:"11px 13px"}}>
+                    {(function(){ var st=perfStatus(harvestALW, perfTargets.alwTarget, perfTargets.alwMin, false); return (
+                    <div style={{background:"#FFFFFF",border:"1px solid "+st.color+"25",borderRadius:8,padding:"11px 13px"}}>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>HARVEST ALW</div>
-                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#C4960C"}}>{harvestALW.toFixed(3)} kg</div>
-                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{totalHarvestKg.toLocaleString(undefined,{maximumFractionDigits:1})} kg total</div>
-                    </div>
-                    <div style={{background:"#FFFFFF",border:"1px solid #5B86E520",borderRadius:8,padding:"11px 13px"}}>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:st.color}}>{harvestALW.toFixed(3)} kg</div>
+                      <div style={{fontSize:9,color:st.color,fontWeight:600,marginTop:1}}>{st.label} <span style={{color:"#94A3B8",fontWeight:400}}>· tgt {perfTargets.alwTarget} / min {perfTargets.alwMin}</span></div>
+                    </div> ); })()}
+                    {(function(){ var st=perfStatus(weightedAge, perfTargets.ageTarget, perfTargets.ageMin, true); return (
+                    <div style={{background:"#FFFFFF",border:"1px solid "+st.color+"25",borderRadius:8,padding:"11px 13px"}}>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>WEIGHTED AVG AGE</div>
-                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#5B86E5"}}>{weightedAge.toFixed(1)} days</div>
-                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>at harvest</div>
-                    </div>
-                    <div style={{background:"#FFFFFF",border:"1px solid #E91E6320",borderRadius:8,padding:"11px 13px"}}>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:st.color}}>{weightedAge.toFixed(1)} days</div>
+                      <div style={{fontSize:9,color:st.color,fontWeight:600,marginTop:1}}>{st.label} <span style={{color:"#94A3B8",fontWeight:400}}>· tgt {perfTargets.ageTarget} / max {perfTargets.ageMin}</span></div>
+                    </div> ); })()}
+                    {(function(){ var st=perfStatus(fcr, perfTargets.fcrTarget, perfTargets.fcrMin, true); return (
+                    <div style={{background:"#FFFFFF",border:"1px solid "+st.color+"25",borderRadius:8,padding:"11px 13px"}}>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>FCR (NET)</div>
-                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:fcr?(fcr<1.6?"#2E7D52":fcr<1.8?"#C4960C":"#E91E63"):"#94A3B8"}}>{fcr?fcr.toFixed(3):"—"}</div>
-                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>excl. {surplusFeedBags||0} bags surplus</div>
-                    </div>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:fcr?st.color:"#94A3B8"}}>{fcr?fcr.toFixed(3):"—"}</div>
+                      <div style={{fontSize:9,color:fcr?st.color:"#94A3B8",fontWeight:600,marginTop:1}}>{fcr?st.label:"—"} <span style={{color:"#94A3B8",fontWeight:400}}>· tgt {perfTargets.fcrTarget} / max {perfTargets.fcrMin}</span></div>
+                    </div> ); })()}
                     <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"11px 13px"}}>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>TOTAL FEED (NET)</div>
                       <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#334155"}}>{Math.round(totalFeedKgConsumed).toLocaleString()} kg</div>
@@ -3251,6 +3268,12 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                       <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#E91E63"}}>{cumulMortTotal}</div>
                       <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{netPlacedBirds>0?((cumulMortTotal/netPlacedBirds)*100).toFixed(2):"—"}% of placed</div>
                     </div>
+                    {(function(){ var liv=netPlacedBirds>0?((netPlacedBirds-cumulMortTotal)/netPlacedBirds*100):null; var st=perfStatus(liv, perfTargets.hrTarget, perfTargets.hrMin, false); return (
+                    <div style={{background:"#FFFFFF",border:"1px solid "+st.color+"25",borderRadius:8,padding:"11px 13px"}}>
+                      <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>LIVABILITY</div>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:st.color}}>{liv!=null?liv.toFixed(2)+"%":"—"}</div>
+                      <div style={{fontSize:9,color:st.color,fontWeight:600,marginTop:1}}>{st.label} <span style={{color:"#94A3B8",fontWeight:400}}>· tgt {perfTargets.hrTarget} / min {perfTargets.hrMin}</span></div>
+                    </div> ); })()}
                     {(function(){
                       var gross = harvestTrucks.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0);
                       var avgPrice = totalHarvestKg>0 ? gross/totalHarvestKg : 0;
@@ -3615,7 +3638,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
             <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Reports</div>
             <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Flock analytics</div>
             <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-              {[["uniformity","UNIFORMITY"],["financial","FINANCIAL"]].map(function(s){
+              {[["uniformity","UNIFORMITY"],["financial","FINANCIAL"],["targets","TARGETS"]].map(function(s){
                 var id=s[0], lbl=s[1], on=reportSection===id;
                 return <button key={id} onClick={function(){setReportSection(id);}} style={{background:on?"#2E7D5220":"none",border:on?"1px solid #2E7D5260":"1px solid #CBD5E1",color:on?"#2E7D52":"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,letterSpacing:.8,padding:"6px 16px",cursor:"pointer",borderRadius:4,fontWeight:on?600:400}}>{lbl}</button>;
               })}
@@ -3807,6 +3830,37 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                     </div>
                     {newExpense.unitPrice && newExpense.qty && <div style={{fontSize:11,color:"#E91E63",fontWeight:600,marginTop:8}}>= ₱{money((parseFloat(newExpense.unitPrice)||0)*(parseFloat(newExpense.qty)||0))}</div>}
                   </div>
+                </div>
+              );
+            })()}
+
+            {reportSection==="targets" && (function(){
+              var rows = [
+                {key:"alw", label:"ALW (kg)",   tKey:"alwTarget", mKey:"alwMin", better:"higher", step:"0.01"},
+                {key:"fcr", label:"FCR",        tKey:"fcrTarget", mKey:"fcrMin", better:"lower",  step:"0.01"},
+                {key:"hr",  label:"Livability %", tKey:"hrTarget",  mKey:"hrMin",  better:"higher", step:"0.1"},
+                {key:"age", label:"Harvest age (days)", tKey:"ageTarget", mKey:"ageMin", better:"lower", step:"1"},
+              ];
+              var upd = function(k,v){ setPerfTargets(function(p){var n={...p}; n[k]=v===""?"":(parseFloat(v)); return n;}); };
+              return (
+                <div>
+                  <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Set your target and minimum for each metric. These color the ALW, FCR, livability and age figures across the dashboard and harvest report — green on target, amber below target, red under minimum.</div>
+                  <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflow:"hidden"}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr",padding:"8px 14px",background:"#F5F7FA",fontSize:9,color:"#94A3B8",letterSpacing:1}}>
+                      <div>METRIC</div><div style={{textAlign:"center"}}>TARGET</div><div style={{textAlign:"center"}}>MINIMUM</div><div style={{textAlign:"center"}}>BETTER WHEN</div>
+                    </div>
+                    {rows.map(function(r){
+                      return (
+                        <div key={r.key} style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr",padding:"8px 14px",borderBottom:"1px solid #F0F2F5",alignItems:"center",gap:8}}>
+                          <div style={{fontSize:12,fontWeight:600,color:"#1E293B"}}>{r.label}</div>
+                          <input type="number" step={r.step} value={perfTargets[r.tKey]} onChange={function(e){upd(r.tKey,e.target.value);}} style={{...INP,width:"100%",textAlign:"center"}} />
+                          <input type="number" step={r.step} value={perfTargets[r.mKey]} onChange={function(e){upd(r.mKey,e.target.value);}} style={{...INP,width:"100%",textAlign:"center"}} />
+                          <div style={{textAlign:"center",fontSize:10,color:"#94A3B8"}}>{r.better}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{fontSize:9,color:"#94A3B8",marginTop:10}}>Saved on this device. ✓ on target · amber below target · red under minimum.</div>
                 </div>
               );
             })()}

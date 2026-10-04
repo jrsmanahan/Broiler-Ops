@@ -1086,6 +1086,10 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [editingHarvestId, setEditingHarvestId] = useState(null);
   const [billing2307, setBilling2307] = useLocalStorage("billing2307", {});
   const [billingPaid, setBillingPaid] = useLocalStorage("billingPaid", {});
+  const [expenses, setExpenses]       = useLocalStorage("expenses", []);
+  const [otherRevenue, setOtherRevenue] = useLocalStorage("otherRevenue", []);
+  const [newExpense, setNewExpense]   = useState({ category:"Feed", desc:"", amount:"" });
+  const [newRevenue, setNewRevenue]   = useState({ source:"", amount:"" });
   const [surplusFeedBags, setSurplusFeedBags] = useLocalStorage("surplusFeedBags", 0);
   const [medInventoryLog, setMedInventoryLog] = useSyncedLog("medInventoryLog", houseId, userId, isOnline, syncTick);
   const [newMedEntry, setNewMedEntry] = useState({ type:"delivery", medicine:"", qty:"", unit:"", notes:"" });
@@ -3609,7 +3613,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
             <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Reports</div>
             <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Flock analytics</div>
             <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-              {[["uniformity","UNIFORMITY"]].map(function(s){
+              {[["uniformity","UNIFORMITY"],["financial","FINANCIAL"]].map(function(s){
                 var id=s[0], lbl=s[1], on=reportSection===id;
                 return <button key={id} onClick={function(){setReportSection(id);}} style={{background:on?"#2E7D5220":"none",border:on?"1px solid #2E7D5260":"1px solid #CBD5E1",color:on?"#2E7D52":"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,letterSpacing:.8,padding:"6px 16px",cursor:"pointer",borderRadius:4,fontWeight:on?600:400}}>{lbl}</button>;
               })}
@@ -3714,6 +3718,89 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                         </div>
                       );
                     })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {reportSection==="financial" && (function(){
+              function money(n){ return n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+              var harvestSales = harvestTrucks.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0);
+              var otherRevTotal = otherRevenue.reduce(function(s,r){return s+(parseFloat(r.amount)||0);},0);
+              var totalRevenue = harvestSales + otherRevTotal;
+              var totalExpenses = expenses.reduce(function(s,e){return s+(parseFloat(e.amount)||0);},0);
+              var netIncome = totalRevenue - totalExpenses;
+              var margin = totalRevenue>0 ? netIncome/totalRevenue*100 : 0;
+              var SEL={background:"#F5F7FA",border:"1px solid #CBD5E1",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:12,padding:"8px 10px",outline:"none",borderRadius:6};
+              var row=function(label,val,onDel,muted){ return (
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",fontSize:12}}>
+                  <span style={{color:muted?"#94A3B8":"#334155"}}>{label}</span>
+                  <span style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontFamily:"'Inter',sans-serif",color:"#1E293B",minWidth:110,textAlign:"right"}}>₱{money(val)}</span>
+                    {onDel && <button onClick={onDel} style={{background:"none",border:"1px solid #E91E6330",color:"#E91E6380",fontSize:10,width:20,height:20,cursor:"pointer",borderRadius:4,padding:0}}>×</button>}
+                    {!onDel && <span style={{width:20}}/>}
+                  </span>
+                </div>
+              ); };
+              return (
+                <div>
+                  {/* Income statement */}
+                  <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"16px",marginBottom:16}}>
+                    <div style={{fontSize:13,fontWeight:700,color:"#1E293B"}}>Income Statement</div>
+                    <div style={{fontSize:10,color:"#94A3B8",marginBottom:14}}>Current cycle{cycleConfig&&cycleConfig.placementDate?" · placed "+cycleConfig.placementDate:""}</div>
+
+                    <div style={{fontSize:9,color:"#2E7D52",letterSpacing:1,fontWeight:700,marginBottom:2}}>REVENUE</div>
+                    {row("Broiler sales (harvest)", harvestSales)}
+                    {otherRevenue.map(function(r){ return <div key={r.id}>{row(r.source||"Other revenue", parseFloat(r.amount)||0, function(){setOtherRevenue(function(p){return p.filter(function(x){return x.id!==r.id;});});})}</div>; })}
+                    <div style={{borderTop:"1px solid #E2E8F0",marginTop:4,paddingTop:2}}>
+                      <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:12,fontWeight:700}}>
+                        <span style={{color:"#1E293B"}}>Total Revenue</span>
+                        <span style={{display:"flex",gap:8}}><span style={{fontFamily:"'Inter',sans-serif",color:"#2E7D52",minWidth:110,textAlign:"right"}}>₱{money(totalRevenue)}</span><span style={{width:20}}/></span>
+                      </div>
+                    </div>
+
+                    <div style={{fontSize:9,color:"#E91E63",letterSpacing:1,fontWeight:700,marginTop:14,marginBottom:2}}>EXPENSES</div>
+                    {expenses.length===0 && <div style={{fontSize:11,color:"#94A3B8",padding:"6px 0"}}>No expenses entered yet.</div>}
+                    {expenses.map(function(e){ return <div key={e.id}>{row((e.category||"Other")+(e.desc?" — "+e.desc:""), parseFloat(e.amount)||0, function(){setExpenses(function(p){return p.filter(function(x){return x.id!==e.id;});});})}</div>; })}
+                    <div style={{borderTop:"1px solid #E2E8F0",marginTop:4,paddingTop:2}}>
+                      <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:12,fontWeight:700}}>
+                        <span style={{color:"#1E293B"}}>Total Expenses</span>
+                        <span style={{display:"flex",gap:8}}><span style={{fontFamily:"'Inter',sans-serif",color:"#E91E63",minWidth:110,textAlign:"right"}}>₱{money(totalExpenses)}</span><span style={{width:20}}/></span>
+                      </div>
+                    </div>
+
+                    <div style={{borderTop:"2px solid #1E293B",marginTop:8,paddingTop:8}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+                        <span style={{fontSize:13,fontWeight:800,color:"#1E293B"}}>NET INCOME</span>
+                        <span style={{display:"flex",gap:8,alignItems:"baseline"}}><span style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:18,color:netIncome>=0?"#2E7D52":"#E91E63",minWidth:110,textAlign:"right"}}>₱{money(netIncome)}</span><span style={{width:20}}/></span>
+                      </div>
+                      <div style={{fontSize:10,color:"#94A3B8",marginTop:2,textAlign:"right",paddingRight:28}}>margin {margin.toFixed(1)}%</div>
+                    </div>
+                  </div>
+
+                  {/* Add other revenue */}
+                  <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16,marginBottom:12}}>
+                    <div style={{fontSize:10,color:"#2E7D52",letterSpacing:1.5,fontWeight:600,marginBottom:10}}>ADD OTHER REVENUE</div>
+                    <div style={{display:"grid",gridTemplateColumns:"2fr 1fr auto",gap:8,alignItems:"end"}}>
+                      <div><label style={LBL}>SOURCE</label><input value={newRevenue.source} onChange={function(e){setNewRevenue(function(p){return {...p,source:e.target.value};});}} placeholder="e.g. surplus feed, manure, sacks" style={{...INP,width:"100%"}} /></div>
+                      <div><label style={LBL}>AMOUNT (₱)</label><input type="number" step="0.01" value={newRevenue.amount} onChange={function(e){setNewRevenue(function(p){return {...p,amount:e.target.value};});}} placeholder="0.00" style={{...INP,width:"100%"}} /></div>
+                      <button onClick={function(){ if(!newRevenue.source||!newRevenue.amount) return; setOtherRevenue(function(p){return [...p,{id:Date.now(),source:newRevenue.source,amount:parseFloat(newRevenue.amount)||0}];}); setNewRevenue({source:"",amount:""}); }} style={{background:"#2E7D52",border:"none",color:"#FFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"9px 18px",cursor:"pointer",borderRadius:6}}>+ ADD</button>
+                    </div>
+                  </div>
+
+                  {/* Add expense */}
+                  <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16}}>
+                    <div style={{fontSize:10,color:"#E91E63",letterSpacing:1.5,fontWeight:600,marginBottom:10}}>ADD EXPENSE</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 2fr 1fr auto",gap:8,alignItems:"end"}}>
+                      <div><label style={LBL}>CATEGORY</label>
+                        <select value={newExpense.category} onChange={function(e){setNewExpense(function(p){return {...p,category:e.target.value};});}} style={{...SEL,width:"100%"}}>
+                          {["Feed","Chicks","Medicine/Vet","Labor","Electricity","Fuel","Water","Repairs","Transport","Other"].map(function(c){return <option key={c} value={c}>{c}</option>;})}
+                        </select>
+                      </div>
+                      <div><label style={LBL}>DESCRIPTION</label><input value={newExpense.desc} onChange={function(e){setNewExpense(function(p){return {...p,desc:e.target.value};});}} placeholder="optional note" style={{...INP,width:"100%"}} /></div>
+                      <div><label style={LBL}>AMOUNT (₱)</label><input type="number" step="0.01" value={newExpense.amount} onChange={function(e){setNewExpense(function(p){return {...p,amount:e.target.value};});}} placeholder="0.00" style={{...INP,width:"100%"}} /></div>
+                      <button onClick={function(){ if(!newExpense.amount) return; setExpenses(function(p){return [...p,{id:Date.now(),category:newExpense.category,desc:newExpense.desc,amount:parseFloat(newExpense.amount)||0}];}); setNewExpense({category:newExpense.category,desc:"",amount:""}); }} style={{background:"#E91E63",border:"none",color:"#FFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"9px 18px",cursor:"pointer",borderRadius:6}}>+ ADD</button>
+                    </div>
                   </div>
                 </div>
               );

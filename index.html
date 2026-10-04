@@ -580,6 +580,22 @@ function acceptCumMortRate(day) {
   for (var d = 1; d <= day; d++) r += acceptDailyMortRate(d);
   return r;
 }
+// Incentive matrix — meeting a threshold earns the peso amount (tiers best→worst).
+var INCENTIVE_MATRIX = {
+  alw: { label:"ALW", better:"higher", fmt:function(v){return v.toFixed(3)+" kg";}, tiers:[{th:2.1,peso:1000},{th:2.0,peso:750},{th:1.9,peso:500}] },
+  fcr: { label:"FCR", better:"lower",  fmt:function(v){return v.toFixed(3);},       tiers:[{th:1.45,peso:1000},{th:1.5,peso:750},{th:1.55,peso:500}] },
+  hr:  { label:"Livability", better:"higher", fmt:function(v){return v.toFixed(2)+"%";}, tiers:[{th:97.5,peso:1000},{th:96,peso:750},{th:94.5,peso:500}] },
+  age: { label:"Harvest age", better:"lower", fmt:function(v){return v.toFixed(1)+" d";}, tiers:[{th:33,peso:1000},{th:34.5,peso:750},{th:36,peso:500}] },
+};
+function incentiveFor(value, m) {
+  if (value == null || isNaN(value)) return { peso:0, tierIdx:-1 };
+  for (var i=0;i<m.tiers.length;i++) {
+    var t=m.tiers[i];
+    var met = m.better==="higher" ? value>=t.th : value<=t.th;
+    if (met) return { peso:t.peso, tierIdx:i };
+  }
+  return { peso:0, tierIdx:-1 };
+}
 // Status of a value vs the user's target / minimum. lowerBetter for FCR & age.
 function perfStatus(v, target, min, lowerBetter) {
   if (v == null || v === undefined || isNaN(v)) return { color:"#94A3B8", label:"—" };
@@ -1002,8 +1018,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [incidentFilter, setIncidentFilter] = useState("all");
   const [fgSection, setFgSection]         = useState("incidents"); // "incidents" | "kb" | "meds" | "lighting"
   const [hSection, setHSection]           = useState("harvest"); // "harvest" | "billing" | "payments"
-  const [reportSection, setReportSection] = useState("uniformity"); // "uniformity" | "financial" | "targets"
-  const [perfTargets, setPerfTargets] = useLocalStorage("perfTargets", { alwTarget:2.1, alwMin:1.9, fcrTarget:1.45, fcrMin:1.55, hrTarget:98, hrMin:95, ageTarget:33, ageMin:36 });
+  const [reportSection, setReportSection] = useState("uniformity"); // "uniformity" | "financial" | "incentive"
+  // Targets derive from the incentive matrix: target = top tier, min = bottom tier.
+  const perfTargets = { alwTarget:2.1, alwMin:1.9, fcrTarget:1.45, fcrMin:1.55, hrTarget:97.5, hrMin:94.5, ageTarget:33, ageMin:36 };
   const [billFilterBuyer, setBillFilterBuyer] = useState("all");
   const [billFilterDay, setBillFilterDay]     = useState("all");
   // Editable Field Guide data
@@ -2013,7 +2030,6 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                       </div>
                       <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>target {targetALW || "—"}g</div>
                       <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>{lastWeighNote}</div>
-                      {actG!=null && (function(){var st=perfStatus(actG/1000,perfTargets.alwTarget,perfTargets.alwMin,false);return <div style={{fontSize:9,color:st.color,fontWeight:600,marginTop:2}}>vs tgt {perfTargets.alwTarget}kg: {st.label}</div>;})()}
                     </>
                   );
                 })()}
@@ -2027,7 +2043,6 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 </div>
                 <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>guide {standardFCR != null ? standardFCR : "—"}</div>
                 <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>{cumFeedConsumed} used · {feedDeliveries.reduce(function(s,d){return s+(d.qty||0);},0)} delivered bags</div>
-                {runningFCR!=null && (function(){var st=perfStatus(parseFloat(runningFCR),perfTargets.fcrTarget,perfTargets.fcrMin,true);return <div style={{fontSize:9,color:st.color,fontWeight:600,marginTop:2}}>vs tgt {perfTargets.fcrTarget}: {st.label}</div>;})()}
               </div>
               {/* Livability Rate — actual big, acceptable-mortality benchmark below */}
               <div style={{ background:"#FFFFFF", border:"1px solid "+hrColor+"25", borderRadius:8, padding:"12px 14px" }}>
@@ -2039,7 +2054,6 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 </div>
                 <div style={{ fontSize:11, color:"#64748B", marginTop:3 }}>{cumulMortTotal.toLocaleString()} mort <span style={{ color:hrColor, fontWeight:600 }}>(ok ≤{acceptMortCount.toLocaleString()})</span></div>
                 <div style={{ fontSize:9, color:"#94A3B8", marginTop:1 }}>{Math.max(birdsInHouse,0).toLocaleString()} remaining · {harvestedHeadsTotal.toLocaleString()} harvested</div>
-                {(function(){var st=perfStatus(hrPct,perfTargets.hrTarget,perfTargets.hrMin,false);return <div style={{fontSize:9,color:st.color,fontWeight:600,marginTop:2}}>vs tgt {perfTargets.hrTarget}%: {st.label}</div>;})()}
               </div>
               {/* BPI (EPEF) — running performance index */}
               <div style={{ background:"#FFFFFF", border:"1px solid "+bpiColor+"25", borderRadius:8, padding:"12px 14px" }}>
@@ -3244,19 +3258,19 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                     <div style={{background:"#FFFFFF",border:"1px solid "+st.color+"25",borderRadius:8,padding:"11px 13px"}}>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>HARVEST ALW</div>
                       <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:st.color}}>{harvestALW.toFixed(3)} kg</div>
-                      <div style={{fontSize:9,color:st.color,fontWeight:600,marginTop:1}}>{st.label} <span style={{color:"#94A3B8",fontWeight:400}}>· tgt {perfTargets.alwTarget} / min {perfTargets.alwMin}</span></div>
+                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{totalHarvestKg.toLocaleString(undefined,{maximumFractionDigits:1})} kg total</div>
                     </div> ); })()}
                     {(function(){ var st=perfStatus(weightedAge, perfTargets.ageTarget, perfTargets.ageMin, true); return (
                     <div style={{background:"#FFFFFF",border:"1px solid "+st.color+"25",borderRadius:8,padding:"11px 13px"}}>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>WEIGHTED AVG AGE</div>
                       <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:st.color}}>{weightedAge.toFixed(1)} days</div>
-                      <div style={{fontSize:9,color:st.color,fontWeight:600,marginTop:1}}>{st.label} <span style={{color:"#94A3B8",fontWeight:400}}>· tgt {perfTargets.ageTarget} / max {perfTargets.ageMin}</span></div>
+                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>at harvest</div>
                     </div> ); })()}
                     {(function(){ var st=perfStatus(fcr, perfTargets.fcrTarget, perfTargets.fcrMin, true); return (
-                    <div style={{background:"#FFFFFF",border:"1px solid "+st.color+"25",borderRadius:8,padding:"11px 13px"}}>
+                    <div style={{background:"#FFFFFF",border:"1px solid "+(fcr?st.color:"#E2E8F0")+"25",borderRadius:8,padding:"11px 13px"}}>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>FCR (NET)</div>
                       <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:fcr?st.color:"#94A3B8"}}>{fcr?fcr.toFixed(3):"—"}</div>
-                      <div style={{fontSize:9,color:fcr?st.color:"#94A3B8",fontWeight:600,marginTop:1}}>{fcr?st.label:"—"} <span style={{color:"#94A3B8",fontWeight:400}}>· tgt {perfTargets.fcrTarget} / max {perfTargets.fcrMin}</span></div>
+                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>excl. {surplusFeedBags||0} bags surplus</div>
                     </div> ); })()}
                     <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"11px 13px"}}>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>TOTAL FEED (NET)</div>
@@ -3272,7 +3286,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                     <div style={{background:"#FFFFFF",border:"1px solid "+st.color+"25",borderRadius:8,padding:"11px 13px"}}>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>LIVABILITY</div>
                       <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:st.color}}>{liv!=null?liv.toFixed(2)+"%":"—"}</div>
-                      <div style={{fontSize:9,color:st.color,fontWeight:600,marginTop:1}}>{st.label} <span style={{color:"#94A3B8",fontWeight:400}}>· tgt {perfTargets.hrTarget} / min {perfTargets.hrMin}</span></div>
+                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{cumulMortTotal.toLocaleString()} mortality</div>
                     </div> ); })()}
                     {(function(){
                       var gross = harvestTrucks.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0);
@@ -3638,7 +3652,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
             <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Reports</div>
             <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Flock analytics</div>
             <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-              {[["uniformity","UNIFORMITY"],["financial","FINANCIAL"],["targets","TARGETS"]].map(function(s){
+              {[["uniformity","UNIFORMITY"],["financial","FINANCIAL"],["incentive","INCENTIVE"]].map(function(s){
                 var id=s[0], lbl=s[1], on=reportSection===id;
                 return <button key={id} onClick={function(){setReportSection(id);}} style={{background:on?"#2E7D5220":"none",border:on?"1px solid #2E7D5260":"1px solid #CBD5E1",color:on?"#2E7D52":"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,letterSpacing:.8,padding:"6px 16px",cursor:"pointer",borderRadius:4,fontWeight:on?600:400}}>{lbl}</button>;
               })}
@@ -3677,7 +3691,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 <div>
                   {/* Stats */}
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:16}}>
-                    {statBox("MEAN ALW", (meanG/1000).toFixed(3)+" kg", Math.round(meanG)+"g · heads-weighted", "#C4960C")}
+                    {statBox("MEAN ALW", (meanG/1000).toFixed(3)+" kg", Math.round(meanG)+"g · heads-weighted", perfStatus(meanG/1000, perfTargets.alwTarget, perfTargets.alwMin, false).color)}
                     {statBox("UNIFORMITY ±10%", uniformity.toFixed(1)+"%", within.toLocaleString()+" of "+totHeads.toLocaleString()+" birds", uColor)}
                     {statBox("CV", cv.toFixed(1)+"%", "lower = more uniform", cvColor)}
                     {statBox("RANGE", (minG/1000).toFixed(2)+"–"+(maxG/1000).toFixed(2), "kg (truck ALW spread)", "#5B86E5")}
@@ -3834,33 +3848,62 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               );
             })()}
 
-            {reportSection==="targets" && (function(){
-              var rows = [
-                {key:"alw", label:"ALW (kg)",   tKey:"alwTarget", mKey:"alwMin", better:"higher", step:"0.01"},
-                {key:"fcr", label:"FCR",        tKey:"fcrTarget", mKey:"fcrMin", better:"lower",  step:"0.01"},
-                {key:"hr",  label:"Livability %", tKey:"hrTarget",  mKey:"hrMin",  better:"higher", step:"0.1"},
-                {key:"age", label:"Harvest age (days)", tKey:"ageTarget", mKey:"ageMin", better:"lower", step:"1"},
-              ];
-              var upd = function(k,v){ setPerfTargets(function(p){var n={...p}; n[k]=v===""?"":(parseFloat(v)); return n;}); };
+            {reportSection==="incentive" && (function(){
+              function money(n){ return n.toLocaleString(undefined,{maximumFractionDigits:0}); }
+              // Final-flock actuals
+              var totHeads = harvestTrucks.reduce(function(s,t){return s+(t.heads||0);},0);
+              var totKg = harvestTrucks.reduce(function(s,t){return s+(t.kg||0);},0);
+              var feedBags = feedDeliveries.reduce(function(s,d){return s+(d.qty||0);},0);
+              var netFeedKg = (feedBags-(surplusFeedBags||0))*50;
+              var actuals = {
+                alw: totHeads>0 ? totKg/totHeads : null,
+                fcr: totKg>0 ? netFeedKg/totKg : null,
+                hr:  netPlacedBirds>0 ? (netPlacedBirds-cumulMortTotal)/netPlacedBirds*100 : null,
+                age: totHeads>0 ? harvestTrucks.reduce(function(s,t){return s+((t.day||0)*(t.heads||0));},0)/totHeads : null,
+              };
+              var order = ["alw","fcr","hr","age"];
+              var totalEarned = 0;
+              order.forEach(function(k){ totalEarned += incentiveFor(actuals[k], INCENTIVE_MATRIX[k]).peso; });
+              var maxPossible = order.reduce(function(s,k){return s+INCENTIVE_MATRIX[k].tiers[0].peso;},0);
               return (
                 <div>
-                  <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Set your target and minimum for each metric. These color the ALW, FCR, livability and age figures across the dashboard and harvest report — green on target, amber below target, red under minimum.</div>
-                  <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflow:"hidden"}}>
-                    <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr",padding:"8px 14px",background:"#F5F7FA",fontSize:9,color:"#94A3B8",letterSpacing:1}}>
-                      <div>METRIC</div><div style={{textAlign:"center"}}>TARGET</div><div style={{textAlign:"center"}}>MINIMUM</div><div style={{textAlign:"center"}}>BETTER WHEN</div>
+                  <div style={{fontSize:11,color:"#64748B",marginBottom:14}}>Each metric that meets a threshold earns the crew the matching peso amount. Highlighted cells are the tier reached by this cycle's final results.</div>
+                  {/* Total earned */}
+                  <div style={{background:"#2E7D5210",border:"1px solid #2E7D5230",borderLeft:"3px solid #2E7D52",borderRadius:8,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1,fontWeight:700}}>TOTAL INCENTIVE EARNED</div>
+                      <div style={{fontSize:10,color:"#64748B",marginTop:2}}>of ₱{money(maxPossible)} possible</div>
                     </div>
-                    {rows.map(function(r){
+                    <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:26,color:"#2E7D52"}}>₱{money(totalEarned)}</div>
+                  </div>
+                  {/* Matrix */}
+                  <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto"}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 90px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:560}}>
+                      <div>METRIC</div>
+                      <div style={{textAlign:"center"}}>₱1,000</div>
+                      <div style={{textAlign:"center"}}>₱750</div>
+                      <div style={{textAlign:"center"}}>₱500</div>
+                      <div style={{textAlign:"right"}}>ACTUAL</div>
+                      <div style={{textAlign:"right"}}>EARNED</div>
+                    </div>
+                    {order.map(function(k){
+                      var m=INCENTIVE_MATRIX[k]; var val=actuals[k]; var inc=incentiveFor(val,m);
+                      var op = m.better==="higher" ? "≥" : "≤";
+                      var actCol = val==null ? "#94A3B8" : inc.tierIdx===0 ? "#2E7D52" : inc.tierIdx>0 ? "#C4960C" : "#E91E63";
                       return (
-                        <div key={r.key} style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr",padding:"8px 14px",borderBottom:"1px solid #F0F2F5",alignItems:"center",gap:8}}>
-                          <div style={{fontSize:12,fontWeight:600,color:"#1E293B"}}>{r.label}</div>
-                          <input type="number" step={r.step} value={perfTargets[r.tKey]} onChange={function(e){upd(r.tKey,e.target.value);}} style={{...INP,width:"100%",textAlign:"center"}} />
-                          <input type="number" step={r.step} value={perfTargets[r.mKey]} onChange={function(e){upd(r.mKey,e.target.value);}} style={{...INP,width:"100%",textAlign:"center"}} />
-                          <div style={{textAlign:"center",fontSize:10,color:"#94A3B8"}}>{r.better}</div>
+                        <div key={k} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 90px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:560}}>
+                          <div style={{fontWeight:600,color:"#1E293B"}}>{m.label}</div>
+                          {m.tiers.map(function(t,i){
+                            var hit = inc.tierIdx===i;
+                            return <div key={i} style={{textAlign:"center",color:hit?"#2E7D52":"#64748B",fontWeight:hit?700:400,background:hit?"#2E7D5214":"transparent",borderRadius:4,padding:"3px 0"}}>{op}{t.th}</div>;
+                          })}
+                          <div style={{textAlign:"right",color:actCol,fontWeight:700}}>{val!=null?m.fmt(val):"—"}</div>
+                          <div style={{textAlign:"right",fontWeight:700,color:inc.peso>0?"#2E7D52":"#94A3B8"}}>₱{money(inc.peso)}</div>
                         </div>
                       );
                     })}
                   </div>
-                  <div style={{fontSize:9,color:"#94A3B8",marginTop:10}}>Saved on this device. ✓ on target · amber below target · red under minimum.</div>
+                  <div style={{fontSize:9,color:"#94A3B8",marginTop:10}}>Actuals use the cycle's final harvest figures (ALW, FCR net, livability, weighted age). Thresholds also drive the green/amber/red colors on the dashboard and harvest report.</div>
                 </div>
               );
             })()}

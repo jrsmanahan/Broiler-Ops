@@ -591,7 +591,7 @@ var INCENTIVE_MILESTONES = [
 var INCENTIVE_MATRIX = {
   alw: { label:"ALW", better:"higher", fmt:function(v){return v.toFixed(3)+" kg";}, tiers:[{th:2.1,peso:1000},{th:2.0,peso:750},{th:1.9,peso:500}] },
   fcr: { label:"FCR", better:"lower",  fmt:function(v){return v.toFixed(3);},       tiers:[{th:1.45,peso:1000},{th:1.5,peso:750},{th:1.55,peso:500}] },
-  hr:  { label:"Livability", better:"higher", fmt:function(v){return v.toFixed(2)+"%";}, tiers:[{th:97.5,peso:1000},{th:96,peso:750},{th:94.5,peso:500}] },
+  hr:  { label:"Harvest recovery", better:"higher", fmt:function(v){return v.toFixed(2)+"%";}, tiers:[{th:97.5,peso:1000},{th:96,peso:750},{th:94.5,peso:500}] },
   age: { label:"Harvest age", better:"lower", fmt:function(v){return v.toFixed(1)+" d";}, tiers:[{th:33,peso:1000},{th:34.5,peso:750},{th:36,peso:500}] },
 };
 function incentiveFor(value, m) {
@@ -3256,11 +3256,12 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   </div>
                   {/* Key metrics grid */}
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:10}}>
-                    <div style={{background:"#FFFFFF",border:"1px solid #2E7D5220",borderRadius:8,padding:"11px 13px"}}>
+                    {(function(){ var st=perfStatus(harvestRecovery, perfTargets.hrTarget, perfTargets.hrMin, false); return (
+                    <div style={{background:"#FFFFFF",border:"1px solid "+(harvestRecovery?st.color:"#2E7D52")+"25",borderRadius:8,padding:"11px 13px"}}>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>HARVEST RECOVERY</div>
-                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#2E7D52"}}>{harvestRecovery?harvestRecovery.toFixed(2)+"%":"—"}</div>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:harvestRecovery?st.color:"#94A3B8"}}>{harvestRecovery?harvestRecovery.toFixed(2)+"%":"—"}</div>
                       <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{totalHarvestedHeads.toLocaleString()} of {recoveryBasis.toLocaleString()} placed</div>
-                    </div>
+                    </div> ); })()}
                     {(function(){ var st=perfStatus(harvestALW, perfTargets.alwTarget, perfTargets.alwMin, false); return (
                     <div style={{background:"#FFFFFF",border:"1px solid "+st.color+"25",borderRadius:8,padding:"11px 13px"}}>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>HARVEST ALW</div>
@@ -3289,10 +3290,10 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                       <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#E91E63"}}>{cumulMortTotal}</div>
                       <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{netPlacedBirds>0?((cumulMortTotal/netPlacedBirds)*100).toFixed(2):"—"}% of placed</div>
                     </div>
-                    {(function(){ var liv=netPlacedBirds>0?((netPlacedBirds-cumulMortTotal)/netPlacedBirds*100):null; var st=perfStatus(liv, perfTargets.hrTarget, perfTargets.hrMin, false); return (
-                    <div style={{background:"#FFFFFF",border:"1px solid "+st.color+"25",borderRadius:8,padding:"11px 13px"}}>
+                    {(function(){ var liv=netPlacedBirds>0?((netPlacedBirds-cumulMortTotal)/netPlacedBirds*100):null; return (
+                    <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"11px 13px"}}>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>LIVABILITY</div>
-                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:st.color}}>{liv!=null?liv.toFixed(2)+"%":"—"}</div>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#334155"}}>{liv!=null?liv.toFixed(2)+"%":"—"}</div>
                       <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{cumulMortTotal.toLocaleString()} mortality</div>
                     </div> ); })()}
                     {(function(){
@@ -3886,7 +3887,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               var actuals = {
                 alw: totHeads>0 ? totKg/totHeads : null,
                 fcr: totKg>0 ? netFeedKg/totKg : null,
-                hr:  netPlacedBirds>0 ? (netPlacedBirds-cumulMortTotal)/netPlacedBirds*100 : null,
+                hr:  (netPlacedBirds>0 && totHeads>0) ? (totHeads/netPlacedBirds*100) : null, // harvest recovery = harvested / placed
                 age: totHeads>0 ? harvestTrucks.reduce(function(s,t){return s+((t.day||0)*(t.heads||0));},0)/totHeads : null,
               };
               var order = ["alw","fcr","hr","age"];

@@ -580,7 +580,14 @@ function acceptCumMortRate(day) {
   for (var d = 1; d <= day; d++) r += acceptDailyMortRate(d);
   return r;
 }
-// Incentive matrix — meeting a threshold earns the peso amount (tiers best→worst).
+// Growth-milestone incentives — ALW (grams) at each weigh day earns a peso amount.
+var INCENTIVE_MILESTONES = [
+  { day:7,  tiers:[{th:220,peso:500},{th:200,peso:350},{th:180,peso:200}] },
+  { day:14, tiers:[{th:610,peso:500},{th:570,peso:350},{th:530,peso:200}] },
+  { day:21, tiers:[{th:1170,peso:500},{th:1110,peso:350},{th:1050,peso:200}] },
+  { day:28, tiers:[{th:1860,peso:500},{th:1780,peso:350},{th:1700,peso:200}] },
+];
+// Harvest-performance matrix — final-flock metrics earn the peso amount (tiers best→worst).
 var INCENTIVE_MATRIX = {
   alw: { label:"ALW", better:"higher", fmt:function(v){return v.toFixed(3)+" kg";}, tiers:[{th:2.1,peso:1000},{th:2.0,peso:750},{th:1.9,peso:500}] },
   fcr: { label:"FCR", better:"lower",  fmt:function(v){return v.toFixed(3);},       tiers:[{th:1.45,peso:1000},{th:1.5,peso:750},{th:1.55,peso:500}] },
@@ -3850,7 +3857,28 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
 
             {reportSection==="incentive" && (function(){
               function money(n){ return n.toLocaleString(undefined,{maximumFractionDigits:0}); }
-              // Final-flock actuals
+              // ALW (g) at a specific day: actual weigh-in if present, else projected/interpolated.
+              function alwPointsG(){
+                var byDay={};
+                shiftLogs.filter(function(l){return l.alw;}).forEach(function(l){ byDay[l.day]=Math.round(l.alw*1000); });
+                var hb={}; harvestTrucks.forEach(function(t){ if((t.heads||0)>=2000){ if(!hb[t.day])hb[t.day]={kg:0,heads:0}; hb[t.day].kg+=(t.kg||0); hb[t.day].heads+=(t.heads||0); } });
+                Object.keys(hb).forEach(function(d){ var h=hb[d]; if(h.heads>0) byDay[+d]=Math.round(h.kg/h.heads*1000); });
+                return Object.keys(byDay).map(function(d){return {day:+d,g:byDay[d]};}).sort(function(a,b){return a.day-b.day;});
+              }
+              function alwAtDay(D){
+                var pts=alwPointsG();
+                var exact=pts.filter(function(p){return p.day===D;})[0];
+                if(exact) return {g:exact.g, src:"weighed"};
+                if(D>currentDay) return {g:null, src:"pending"};
+                var std=ALW_STANDARD.filter(function(r){return r.day===D;})[0];
+                if(!pts.length) return {g:std?std.std:null, src:"standard"};
+                var before=pts.filter(function(p){return p.day<D;}), after=pts.filter(function(p){return p.day>D;});
+                if(before.length && after.length){ var b=before[before.length-1], a=after[0]; return {g:Math.round(b.g+(a.g-b.g)*(D-b.day)/(a.day-b.day)), src:"interpolated"}; }
+                if(before.length>=2){ var b2=before[before.length-2], b1=before[before.length-1]; var sl=(b1.g-b2.g)/(b1.day-b2.day); return {g:Math.round(b1.g+sl*(D-b1.day)), src:"projected"}; }
+                if(before.length===1){ var p0=before[0]; var sp=ALW_STANDARD.filter(function(r){return r.day===p0.day;})[0]; if(sp&&sp.std>0&&std) return {g:Math.round(std.std*(p0.g/sp.std)), src:"projected"}; return {g:p0.g, src:"projected"}; }
+                return {g:std?std.std:null, src:"standard"};
+              }
+              // Harvest-performance actuals
               var totHeads = harvestTrucks.reduce(function(s,t){return s+(t.heads||0);},0);
               var totKg = harvestTrucks.reduce(function(s,t){return s+(t.kg||0);},0);
               var feedBags = feedDeliveries.reduce(function(s,d){return s+(d.qty||0);},0);
@@ -3862,48 +3890,65 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 age: totHeads>0 ? harvestTrucks.reduce(function(s,t){return s+((t.day||0)*(t.heads||0));},0)/totHeads : null,
               };
               var order = ["alw","fcr","hr","age"];
-              var totalEarned = 0;
-              order.forEach(function(k){ totalEarned += incentiveFor(actuals[k], INCENTIVE_MATRIX[k]).peso; });
-              var maxPossible = order.reduce(function(s,k){return s+INCENTIVE_MATRIX[k].tiers[0].peso;},0);
+              var milestoneEarned = 0;
+              INCENTIVE_MILESTONES.forEach(function(ms){ var a=alwAtDay(ms.day); milestoneEarned += incentiveFor(a.g, {better:"higher", tiers:ms.tiers}).peso; });
+              var harvestEarned = 0;
+              order.forEach(function(k){ harvestEarned += incentiveFor(actuals[k], INCENTIVE_MATRIX[k]).peso; });
+              var totalEarned = milestoneEarned + harvestEarned;
+              var maxMs = INCENTIVE_MILESTONES.reduce(function(s,ms){return s+ms.tiers[0].peso;},0);
+              var maxHv = order.reduce(function(s,k){return s+INCENTIVE_MATRIX[k].tiers[0].peso;},0);
               return (
                 <div>
-                  <div style={{fontSize:11,color:"#64748B",marginBottom:14}}>Each metric that meets a threshold earns the crew the matching peso amount. Highlighted cells are the tier reached by this cycle's final results.</div>
                   {/* Total earned */}
                   <div style={{background:"#2E7D5210",border:"1px solid #2E7D5230",borderLeft:"3px solid #2E7D52",borderRadius:8,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                     <div>
                       <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1,fontWeight:700}}>TOTAL INCENTIVE EARNED</div>
-                      <div style={{fontSize:10,color:"#64748B",marginTop:2}}>of ₱{money(maxPossible)} possible</div>
+                      <div style={{fontSize:10,color:"#64748B",marginTop:2}}>milestones ₱{money(milestoneEarned)} + harvest ₱{money(harvestEarned)} · of ₱{money(maxMs+maxHv)} possible</div>
                     </div>
                     <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:26,color:"#2E7D52"}}>₱{money(totalEarned)}</div>
                   </div>
-                  {/* Matrix */}
+
+                  {/* Growth milestones */}
+                  <div style={{fontSize:10,color:"#C4960C",letterSpacing:1.5,fontWeight:700,marginBottom:8}}>GROWTH MILESTONES · ALW by day</div>
+                  <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto",marginBottom:18}}>
+                    <div style={{display:"grid",gridTemplateColumns:"70px 1fr 1fr 1fr 110px 80px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:540}}>
+                      <div>DAY</div><div style={{textAlign:"center"}}>₱500</div><div style={{textAlign:"center"}}>₱350</div><div style={{textAlign:"center"}}>₱200</div><div style={{textAlign:"right"}}>ACTUAL ALW</div><div style={{textAlign:"right"}}>EARNED</div>
+                    </div>
+                    {INCENTIVE_MILESTONES.map(function(ms){
+                      var a=alwAtDay(ms.day); var inc=incentiveFor(a.g,{better:"higher",tiers:ms.tiers});
+                      var actCol = a.g==null ? "#94A3B8" : inc.tierIdx===0 ? "#2E7D52" : inc.tierIdx>=0 ? "#C4960C" : "#E91E63";
+                      return (
+                        <div key={ms.day} style={{display:"grid",gridTemplateColumns:"70px 1fr 1fr 1fr 110px 80px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:540}}>
+                          <div style={{fontWeight:700,color:"#1E293B"}}>Day {ms.day}</div>
+                          {ms.tiers.map(function(t,i){ var hit=inc.tierIdx===i; return <div key={i} style={{textAlign:"center",color:hit?"#2E7D52":"#64748B",fontWeight:hit?700:400,background:hit?"#2E7D5214":"transparent",borderRadius:4,padding:"3px 0"}}>≥{t.th}g</div>; })}
+                          <div style={{textAlign:"right",color:actCol,fontWeight:700}}>{a.g!=null?a.g+"g":"—"}<span style={{display:"block",fontSize:8,color:"#94A3B8",fontWeight:400}}>{a.src}</span></div>
+                          <div style={{textAlign:"right",fontWeight:700,color:inc.peso>0?"#2E7D52":"#94A3B8"}}>₱{money(inc.peso)}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Harvest performance */}
+                  <div style={{fontSize:10,color:"#2E7D52",letterSpacing:1.5,fontWeight:700,marginBottom:8}}>HARVEST PERFORMANCE · final flock</div>
                   <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto"}}>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 90px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:560}}>
-                      <div>METRIC</div>
-                      <div style={{textAlign:"center"}}>₱1,000</div>
-                      <div style={{textAlign:"center"}}>₱750</div>
-                      <div style={{textAlign:"center"}}>₱500</div>
-                      <div style={{textAlign:"right"}}>ACTUAL</div>
-                      <div style={{textAlign:"right"}}>EARNED</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 80px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:560}}>
+                      <div>METRIC</div><div style={{textAlign:"center"}}>₱1,000</div><div style={{textAlign:"center"}}>₱750</div><div style={{textAlign:"center"}}>₱500</div><div style={{textAlign:"right"}}>ACTUAL</div><div style={{textAlign:"right"}}>EARNED</div>
                     </div>
                     {order.map(function(k){
                       var m=INCENTIVE_MATRIX[k]; var val=actuals[k]; var inc=incentiveFor(val,m);
                       var op = m.better==="higher" ? "≥" : "≤";
-                      var actCol = val==null ? "#94A3B8" : inc.tierIdx===0 ? "#2E7D52" : inc.tierIdx>0 ? "#C4960C" : "#E91E63";
+                      var actCol = val==null ? "#94A3B8" : inc.tierIdx===0 ? "#2E7D52" : inc.tierIdx>=0 ? "#C4960C" : "#E91E63";
                       return (
-                        <div key={k} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 90px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:560}}>
+                        <div key={k} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 80px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:560}}>
                           <div style={{fontWeight:600,color:"#1E293B"}}>{m.label}</div>
-                          {m.tiers.map(function(t,i){
-                            var hit = inc.tierIdx===i;
-                            return <div key={i} style={{textAlign:"center",color:hit?"#2E7D52":"#64748B",fontWeight:hit?700:400,background:hit?"#2E7D5214":"transparent",borderRadius:4,padding:"3px 0"}}>{op}{t.th}</div>;
-                          })}
+                          {m.tiers.map(function(t,i){ var hit=inc.tierIdx===i; return <div key={i} style={{textAlign:"center",color:hit?"#2E7D52":"#64748B",fontWeight:hit?700:400,background:hit?"#2E7D5214":"transparent",borderRadius:4,padding:"3px 0"}}>{op}{t.th}</div>; })}
                           <div style={{textAlign:"right",color:actCol,fontWeight:700}}>{val!=null?m.fmt(val):"—"}</div>
                           <div style={{textAlign:"right",fontWeight:700,color:inc.peso>0?"#2E7D52":"#94A3B8"}}>₱{money(inc.peso)}</div>
                         </div>
                       );
                     })}
                   </div>
-                  <div style={{fontSize:9,color:"#94A3B8",marginTop:10}}>Actuals use the cycle's final harvest figures (ALW, FCR net, livability, weighted age). Thresholds also drive the green/amber/red colors on the dashboard and harvest report.</div>
+                  <div style={{fontSize:9,color:"#94A3B8",marginTop:10}}>Milestone ALW uses the weigh-in for that day, or the projected ALW when a day wasn't weighed. Harvest metrics use the cycle's final figures.</div>
                 </div>
               );
             })()}

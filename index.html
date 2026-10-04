@@ -1080,7 +1080,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [feedDeliveries, setFeedDeliveries] = useSyncedLog("feedDeliveries", houseId, userId, isOnline, syncTick);
   const [newDelivery, setNewDelivery] = useState({ type:"CBC", qty:"", notes:"", date:todayPHT() });
   const [harvestTrucks, setHarvestTrucks] = useSyncedLog("harvestTrucks", houseId, userId, isOnline, syncTick);
-  const [newHarvest, setNewHarvest] = useState({ plate:"", heads:"", kg:"", price:"", day:String(currentDay), buyer:"" });
+  const [newHarvest, setNewHarvest] = useState({ plate:"", heads:"", kg:"", price:"", day:String(currentDay), buyer:"", tax2307:false });
   const [editingHarvestId, setEditingHarvestId] = useState(null);
   const [billing2307, setBilling2307] = useLocalStorage("billing2307", {});
   const [billingPaid, setBillingPaid] = useLocalStorage("billingPaid", {});
@@ -3271,6 +3271,10 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               <div style={{fontSize:10,color:"#2E7D52",letterSpacing:1.5,fontWeight:600,marginBottom:12}}>{editingHarvestId?"EDIT HARVEST TRUCK":"LOG HARVEST TRUCK"}</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:10}}>
                 <div>
+                  <label style={LBL}>BUYER</label>
+                  <input value={newHarvest.buyer} onChange={function(e){setNewHarvest(function(p){return {...p,buyer:e.target.value};});}} placeholder="buyer name" style={{...INP,width:"100%"}} />
+                </div>
+                <div>
                   <label style={LBL}>PLATE NUMBER</label>
                   <input value={newHarvest.plate} onChange={function(e){setNewHarvest(function(p){return {...p,plate:e.target.value};});}} placeholder="e.g. CBR 5200" style={{...INP,width:"100%"}} />
                 </div>
@@ -3297,24 +3301,24 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   {newHarvest.price && <span style={{color:"#2E7D52",marginLeft:10}}>· ₱{(parseFloat(newHarvest.kg)*parseFloat(newHarvest.price)).toLocaleString(undefined,{maximumFractionDigits:2})}</span>}
                 </div>
               )}
-              <div style={{marginBottom:12}}>
-                <label style={LBL}>BUYER</label>
-                <input value={newHarvest.buyer} onChange={function(e){setNewHarvest(function(p){return {...p,buyer:e.target.value};});}} placeholder="buyer name (for billing)" style={{...INP,width:"100%"}} />
-              </div>
+              <label style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,cursor:"pointer",fontSize:12,color:"#1E293B",fontWeight:600}}>
+                <input type="checkbox" checked={newHarvest.tax2307} onChange={function(e){var v=e.target.checked;setNewHarvest(function(p){return {...p,tax2307:v};});}} style={{width:16,height:16,cursor:"pointer"}} />
+                2307 (1% CWT) — bills this truck on its own invoice
+              </label>
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
                 <button onClick={function(){
                   if(!newHarvest.plate||!newHarvest.heads||!newHarvest.kg) return;
                   var h=parseFloat(newHarvest.heads)||0; var k=parseFloat(newHarvest.kg)||0; var pr=parseFloat(newHarvest.price)||0;
                   var dy=parseInt(newHarvest.day)>=0?parseInt(newHarvest.day):currentDay;
                   if(editingHarvestId){
-                    setHarvestTrucks(function(p){return p.map(function(x){return x.id===editingHarvestId?{...x,day:dy,plate:newHarvest.plate,heads:h,kg:k,price:pr,amount:k*pr,alw:h>0?k/h:0,buyer:newHarvest.buyer}:x;});});
+                    setHarvestTrucks(function(p){return p.map(function(x){return x.id===editingHarvestId?{...x,day:dy,plate:newHarvest.plate,heads:h,kg:k,price:pr,amount:k*pr,alw:h>0?k/h:0,buyer:newHarvest.buyer,tax2307:!!newHarvest.tax2307}:x;});});
                     setEditingHarvestId(null);
                   } else {
-                    setHarvestTrucks(function(p){return [...p,{id:Date.now(),day:dy,plate:newHarvest.plate,heads:h,kg:k,price:pr,amount:k*pr,alw:h>0?k/h:0,buyer:newHarvest.buyer}];});
+                    setHarvestTrucks(function(p){return [...p,{id:Date.now(),day:dy,plate:newHarvest.plate,heads:h,kg:k,price:pr,amount:k*pr,alw:h>0?k/h:0,buyer:newHarvest.buyer,tax2307:!!newHarvest.tax2307}];});
                   }
-                  setNewHarvest({plate:"",heads:"",kg:"",price:"",day:String(currentDay),buyer:""});
+                  setNewHarvest({plate:"",heads:"",kg:"",price:"",day:String(currentDay),buyer:"",tax2307:false});
                 }} style={{background:"#2E7D52",border:"none",color:"#FFFFFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"10px 24px",cursor:"pointer",borderRadius:6}}>{editingHarvestId?"✓ UPDATE TRUCK":"+ LOG TRUCK"}</button>
-                {editingHarvestId && <button onClick={function(){setEditingHarvestId(null);setNewHarvest({plate:"",heads:"",kg:"",price:"",day:String(currentDay),buyer:""});}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontWeight:600,fontSize:11,padding:"10px 18px",cursor:"pointer",borderRadius:6}}>CANCEL</button>}
+                {editingHarvestId && <button onClick={function(){setEditingHarvestId(null);setNewHarvest({plate:"",heads:"",kg:"",price:"",day:String(currentDay),buyer:"",tax2307:false});}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontWeight:600,fontSize:11,padding:"10px 18px",cursor:"pointer",borderRadius:6}}>CANCEL</button>}
               </div>
             </div>
 
@@ -3363,7 +3367,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                             <div style={{textAlign:"right",color:"#64748B"}}>{t.price?t.price.toLocaleString(undefined,{maximumFractionDigits:2}):"—"}</div>
                             <div style={{textAlign:"right",color:"#2E7D52",fontWeight:700}}>{amt>0?amt.toLocaleString(undefined,{maximumFractionDigits:0}):"—"}</div>
                             <div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
-                              <button onClick={function(){setEditingHarvestId(t.id);setNewHarvest({plate:t.plate||"",heads:String(t.heads||""),kg:String(t.kg||""),price:t.price?String(t.price):"",day:String(t.day),buyer:t.buyer||""});if(typeof window!=="undefined")window.scrollTo({top:0,behavior:"smooth"});}} style={{background:"none",border:"1px solid #5B86E540",color:"#5B86E5",fontFamily:"'Inter',sans-serif",fontSize:11,width:24,height:24,cursor:"pointer",borderRadius:4,padding:0}}>✎</button>
+                              <button onClick={function(){setHSection("harvest");setEditingHarvestId(t.id);setNewHarvest({plate:t.plate||"",heads:String(t.heads||""),kg:String(t.kg||""),price:t.price?String(t.price):"",day:String(t.day),buyer:t.buyer||"",tax2307:!!t.tax2307});if(typeof window!=="undefined")window.scrollTo({top:0,behavior:"smooth"});}} style={{background:"none",border:"1px solid #5B86E540",color:"#5B86E5",fontFamily:"'Inter',sans-serif",fontSize:11,width:24,height:24,cursor:"pointer",borderRadius:4,padding:0}}>✎</button>
                               <button onClick={function(){setHarvestTrucks(function(p){return p.filter(function(x){return x.id!==t.id;});});if(editingHarvestId===t.id)setEditingHarvestId(null);}} style={{background:"none",border:"1px solid #E91E6340",color:"#E91E6380",fontFamily:"'Inter',sans-serif",fontSize:11,width:24,height:24,cursor:"pointer",borderRadius:4,padding:0}}>×</button>
                             </div>
                           </div>
@@ -3408,8 +3412,10 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               var groups = {};
               harvestTrucks.forEach(function(t){
                 var buyer = (t.buyer&&t.buyer.trim())?t.buyer.trim():"— No buyer —";
-                var key = buyer+"||"+t.day;
-                if(!groups[key]) groups[key]={buyer:buyer, day:t.day, trucks:[]};
+                var taxed = !!t.tax2307;
+                // 2307 trucks bill individually (their own invoice); others group by buyer+date.
+                var key = taxed ? (buyer+"||"+t.day+"||"+t.id) : (buyer+"||"+t.day);
+                if(!groups[key]) groups[key]={buyer:buyer, day:t.day, taxed:taxed, trucks:[]};
                 groups[key].trucks.push(t);
               });
               var allKeys = Object.keys(groups).sort(function(a,b){
@@ -3449,19 +3455,16 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                     var dstr = dateFor(g.day);
                     var lines = g.trucks;
                     var grand = lines.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0);
-                    var taxed = !!billing2307[key];
+                    var taxed = !!g.taxed;
                     var less1 = grand*0.01, finalTot = grand-less1;
                     return (
                       <div key={key} style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,marginBottom:14,overflow:"hidden"}}>
                         <div style={{padding:"12px 16px",background:"#2E7D5210",borderBottom:"1px solid #2E7D5230",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
                           <div>
-                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:14,color:"#1E293B"}}>{g.buyer}</div>
-                            <div style={{fontSize:10,color:"#64748B"}}>{dstr} · Day {g.day}</div>
+                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:14,color:"#1E293B"}}>{g.buyer}{taxed?<span style={{fontSize:9,color:"#5B86E5",fontWeight:700,marginLeft:6,border:"1px solid #5B86E540",borderRadius:3,padding:"1px 5px"}}>2307</span>:null}</div>
+                            <div style={{fontSize:10,color:"#64748B"}}>{dstr} · Day {g.day}{taxed?" · "+(lines[0]?lines[0].plate:"")+" (own invoice)":""}</div>
                           </div>
                           <div style={{display:"flex",gap:10,alignItems:"center"}}>
-                            <label style={{fontSize:10,color:"#64748B",display:"flex",alignItems:"center",gap:4,cursor:"pointer"}}>
-                              <input type="checkbox" checked={taxed} onChange={function(e){var v=e.target.checked;setBilling2307(function(p){var n={...p}; if(v)n[key]=true; else delete n[key]; return n;});}} /> 2307 (1% CWT)
-                            </label>
                             <button onClick={function(){printInvoice(g.buyer,dstr,lines,grand,taxed);}} style={{background:"#2E7D52",border:"none",color:"#FFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:10,padding:"7px 14px",cursor:"pointer",borderRadius:6}}>🖨 PRINT / SEND</button>
                           </div>
                         </div>
@@ -3515,10 +3518,10 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               function dateFor(day){ if(!placement) return "Day "+day; return new Date(new Date(placement+"T00:00:00+08:00").getTime()+day*86400000).toLocaleDateString("en-PH",{year:"numeric",month:"short",day:"numeric"}); }
               function money(n){ return n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
               var groups={};
-              harvestTrucks.forEach(function(t){ var buyer=(t.buyer&&t.buyer.trim())?t.buyer.trim():"— No buyer —"; var key=buyer+"||"+t.day; if(!groups[key])groups[key]={buyer:buyer,day:t.day,trucks:[]}; groups[key].trucks.push(t); });
+              harvestTrucks.forEach(function(t){ var buyer=(t.buyer&&t.buyer.trim())?t.buyer.trim():"— No buyer —"; var taxed=!!t.tax2307; var key=taxed?(buyer+"||"+t.day+"||"+t.id):(buyer+"||"+t.day); if(!groups[key])groups[key]={buyer:buyer,day:t.day,taxed:taxed,trucks:[]}; groups[key].trucks.push(t); });
               var keys=Object.keys(groups).sort(function(a,b){var ga=groups[a],gb=groups[b]; if(gb.day!==ga.day)return gb.day-ga.day; return ga.buyer.localeCompare(gb.buyer);});
               var totBilled=0, totPaid=0;
-              keys.forEach(function(k){ var g=groups[k]; var grand=g.trucks.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0); var net=billing2307[k]?grand*0.99:grand; totBilled+=net; if(billingPaid[k])totPaid+=net; });
+              keys.forEach(function(k){ var g=groups[k]; var grand=g.trucks.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0); var net=g.taxed?grand*0.99:grand; totBilled+=net; if(billingPaid[k])totPaid+=net; });
               var outstanding=totBilled-totPaid;
               return (
                 <div>
@@ -3532,10 +3535,10 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                       <div>BUYER</div><div>DATE</div><div style={{textAlign:"right"}}>AMOUNT</div><div style={{textAlign:"center"}}>STATUS</div>
                     </div>
                     {keys.map(function(key){
-                      var g=groups[key]; var grand=g.trucks.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0); var net=billing2307[key]?grand*0.99:grand; var paid=!!billingPaid[key];
+                      var g=groups[key]; var grand=g.trucks.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0); var net=g.taxed?grand*0.99:grand; var paid=!!billingPaid[key];
                       return (
                         <div key={key} style={{display:"grid",gridTemplateColumns:"1fr 120px 120px 90px",padding:"10px 16px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:440}}>
-                          <div style={{fontWeight:600,color:"#1E293B"}}>{g.buyer}{billing2307[key]?<span style={{fontSize:8,color:"#94A3B8",marginLeft:4}}>2307</span>:null}</div>
+                          <div style={{fontWeight:600,color:"#1E293B"}}>{g.buyer}{g.taxed?<span style={{fontSize:8,color:"#5B86E5",marginLeft:4}}>2307 · {g.trucks[0]?g.trucks[0].plate:""}</span>:null}</div>
                           <div style={{color:"#64748B",fontSize:10}}>{dateFor(g.day)}</div>
                           <div style={{textAlign:"right",color:"#1E293B",fontWeight:600}}>₱{money(net)}</div>
                           <div style={{textAlign:"center"}}>

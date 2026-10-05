@@ -721,7 +721,7 @@ const TABS = [
   { id:"placement",  label:"DELIVERIES"   },
   { id:"fieldguide", label:"FIELD GUIDE"  },
   { id:"harvest",    label:"HARVEST"      },
-  { id:"reports",    label:"REPORTS"      },
+  { id:"reports",    label:"FINANCIAL"    },
   { id:"history",    label:"HISTORY"      },
 ];
 // ─── FEEDING GUIDE ────────────────────────────────────────────────────────────
@@ -1024,8 +1024,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [incidentSearch, setIncidentSearch] = useState("");
   const [incidentFilter, setIncidentFilter] = useState("all");
   const [fgSection, setFgSection]         = useState("incidents"); // "incidents" | "kb" | "meds" | "lighting"
-  const [hSection, setHSection]           = useState("harvest"); // "harvest" | "billing" | "payments"
-  const [reportSection, setReportSection] = useState("uniformity"); // "uniformity" | "financial" | "incentive"
+  const [hSection, setHSection]           = useState("harvest"); // "harvest" | "uniformity" | "incentive"
+  const [reportSection, setReportSection] = useState("financial"); // "financial" | "billing" | "payments"
   // Targets derive from the incentive matrix: target = top tier, min = bottom tier.
   const perfTargets = { alwTarget:2.1, alwMin:1.9, fcrTarget:1.45, fcrMin:1.55, hrTarget:97.5, hrMin:94.5, ageTarget:33, ageMin:36 };
   const [billFilterBuyer, setBillFilterBuyer] = useState("all");
@@ -3251,11 +3251,11 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
         {activeTab==="harvest" && (
           <div className="su">
             <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Harvest</div>
-            <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Log harvest trucks · billing · payment tracking</div>
+            <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Log harvest trucks · uniformity · incentives</div>
 
             {/* ── SUB-TABS ── */}
             <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-              {[["harvest","HARVEST"],["billing","BILLING"],["payments","PAYMENTS"]].map(function(s){
+              {[["harvest","HARVEST"],["uniformity","UNIFORMITY"],["incentive","INCENTIVE"]].map(function(s){
                 var id=s[0], lbl=s[1], on=hSection===id;
                 return <button key={id} onClick={function(){setHSection(id);}} style={{background:on?"#2E7D5220":"none",border:on?"1px solid #2E7D5260":"1px solid #CBD5E1",color:on?"#2E7D52":"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,letterSpacing:.8,padding:"6px 16px",cursor:"pointer",borderRadius:4,fontWeight:on?600:400}}>{lbl}</button>;
               })}
@@ -3477,248 +3477,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
             })()}
             </div>)}
 
-            {/* ── BILLING — grouped by buyer & date, with filters ── */}
-            {hSection==="billing" && (function(){
-              if(harvestTrucks.length===0) return <div style={{textAlign:"center",padding:"32px",color:"#94A3B8",fontSize:11}}>No harvest trucks logged yet. Log trucks with a buyer in the Harvest tab.</div>;
-              var placement = cycleConfig ? cycleConfig.placementDate : null;
-              function dateFor(day){
-                if(!placement) return "Day "+day;
-                return new Date(new Date(placement+"T00:00:00+08:00").getTime()+day*86400000).toLocaleDateString("en-PH",{year:"numeric",month:"short",day:"numeric"});
-              }
-              function money(n){ return n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-              function printInvoice(buyer, dstr, lines, grand, taxed){
-                var rows = lines.map(function(t){
-                  var amt=t.amount!=null?t.amount:(t.kg||0)*(t.price||0);
-                  return "<tr><td>"+t.plate+"</td><td class=r>"+(t.heads||0).toLocaleString()+"</td><td class=r>"+(t.kg||0).toFixed(2)+"</td><td class=r>"+(t.alw?t.alw.toFixed(3):"-")+"</td><td class=r>"+(t.price||0).toFixed(2)+"</td><td class=r>"+money(amt)+"</td></tr>";
-                }).join("");
-                var less1=grand*0.01, fin=grand-less1;
-                var totHeads = lines.reduce(function(s,t){return s+(t.heads||0);},0);
-                var totKg = lines.reduce(function(s,t){return s+(t.kg||0);},0);
-                var totals = "<tr class=tot><td class=r>GRAND TOTAL</td><td class=r>"+totHeads.toLocaleString()+"</td><td class=r>"+totKg.toFixed(2)+"</td><td></td><td></td><td class=r>PHP "+money(grand)+"</td></tr>";
-                if(taxed){
-                  totals += "<tr><td colspan=5 class=r>Less 1% (2307)</td><td class=r>- PHP "+money(less1)+"</td></tr>";
-                  totals += "<tr class=tot><td colspan=5 class=r>NET TOTAL</td><td class=r>PHP "+money(fin)+"</td></tr>";
-                }
-                var html = "<html><head><title>Billing - "+buyer+"</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#1E293B}h1{font-size:18px;margin:0}h2{font-size:13px;color:#64748B;font-weight:400;margin:2px 0 16px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:7px 10px;border-bottom:1px solid #E2E8F0}th{background:#F5F7FA;font-size:10px;letter-spacing:1px;text-align:left}.r{text-align:right}.tot td{font-weight:700;border-top:2px solid #333}</style></head><body>";
-                html += "<h1>Beracah Poultry Farm</h1><h2>Harvest Billing</h2>";
-                html += "<p><strong>Buyer:</strong> "+buyer+"<br><strong>Date:</strong> "+dstr+"</p>";
-                html += "<table><thead><tr><th>PLATE</th><th class=r>HEADS</th><th class=r>KG</th><th class=r>ALW</th><th class=r>P/KG</th><th class=r>TOTAL</th></tr></thead><tbody>"+rows+totals+"</tbody></table>";
-                html += "</body></html>";
-                var w = window.open("","_blank");
-                if(!w){ alert("Enable pop-ups to print the billing."); return; }
-                w.document.write(html); w.document.close(); w.focus(); setTimeout(function(){try{w.print();}catch(e){}},300);
-              }
-              var groups = {};
-              harvestTrucks.forEach(function(t){
-                var buyer = (t.buyer&&t.buyer.trim())?t.buyer.trim():"— No buyer —";
-                var taxed = !!t.tax2307;
-                // 2307 trucks bill individually (their own invoice); others group by buyer+date.
-                var key = taxed ? (buyer+"||"+t.day+"||"+t.id) : (buyer+"||"+t.day);
-                if(!groups[key]) groups[key]={buyer:buyer, day:t.day, taxed:taxed, trucks:[]};
-                groups[key].trucks.push(t);
-              });
-              var allKeys = Object.keys(groups).sort(function(a,b){
-                var ga=groups[a], gb=groups[b];
-                if(gb.day!==ga.day) return gb.day-ga.day;
-                return ga.buyer.localeCompare(gb.buyer);
-              });
-              var buyerOpts = []; var daySet={};
-              allKeys.forEach(function(k){ if(buyerOpts.indexOf(groups[k].buyer)<0) buyerOpts.push(groups[k].buyer); daySet[groups[k].day]=true; });
-              buyerOpts.sort();
-              var dayOpts = Object.keys(daySet).map(Number).sort(function(a,b){return b-a;});
-              var keys = allKeys.filter(function(k){
-                var g=groups[k];
-                if(billFilterBuyer!=="all" && g.buyer!==billFilterBuyer) return false;
-                if(billFilterDay!=="all" && String(g.day)!==String(billFilterDay)) return false;
-                return true;
-              });
-              var SEL={background:"#F5F7FA",border:"1px solid #CBD5E1",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:11,padding:"7px 10px",outline:"none",borderRadius:6};
-              // Consolidated summary of whatever is currently filtered → one document.
-              function printSummary(){
-                if(!keys.length) return;
-                var buyersInFilter=[]; keys.forEach(function(k){ if(buyersInFilter.indexOf(groups[k].buyer)<0) buyersInFilter.push(groups[k].buyer); });
-                var daysInFilter=[]; keys.forEach(function(k){ if(daysInFilter.indexOf(groups[k].day)<0) daysInFilter.push(groups[k].day); });
-                daysInFilter.sort(function(a,b){return a-b;});
-                var title = buyersInFilter.length===1 ? buyersInFilter[0] : "Multiple buyers";
-                var dateLabel = daysInFilter.length===1 ? dateFor(daysInFilter[0]) : (dateFor(daysInFilter[0])+" – "+dateFor(daysInFilter[daysInFilter.length-1]));
-                var body=""; var overall=0, ovHeads=0, ovKg=0;
-                keys.forEach(function(k){
-                  var g=groups[k]; var dstr=dateFor(g.day);
-                  var grand=g.trucks.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0);
-                  var gHeads=g.trucks.reduce(function(s,t){return s+(t.heads||0);},0);
-                  var gKg=g.trucks.reduce(function(s,t){return s+(t.kg||0);},0);
-                  var less1=grand*0.01, net=g.taxed?grand-less1:grand; overall+=net; ovHeads+=gHeads; ovKg+=gKg;
-                  body += "<h3>"+g.buyer+" — "+dstr+(g.taxed?" · 2307":"")+"</h3>";
-                  body += "<table><thead><tr><th>PLATE</th><th class=r>HEADS</th><th class=r>KG</th><th class=r>ALW</th><th class=r>P/KG</th><th class=r>TOTAL</th></tr></thead><tbody>";
-                  g.trucks.forEach(function(t){ var amt=t.amount!=null?t.amount:(t.kg||0)*(t.price||0); body+="<tr><td>"+t.plate+"</td><td class=r>"+(t.heads||0).toLocaleString()+"</td><td class=r>"+(t.kg||0).toFixed(2)+"</td><td class=r>"+(t.alw?t.alw.toFixed(3):"-")+"</td><td class=r>"+(t.price||0).toFixed(2)+"</td><td class=r>"+money(amt)+"</td></tr>"; });
-                  body += "<tr class=sub><td class=r>Subtotal</td><td class=r>"+gHeads.toLocaleString()+"</td><td class=r>"+gKg.toFixed(2)+"</td><td></td><td></td><td class=r>PHP "+money(grand)+"</td></tr>";
-                  if(g.taxed){ body+="<tr><td colspan=5 class=r>Less 1% (2307)</td><td class=r>- PHP "+money(less1)+"</td></tr>"; body+="<tr class=sub><td colspan=5 class=r>Net</td><td class=r>PHP "+money(net)+"</td></tr>"; }
-                  body += "</tbody></table>";
-                });
-                var html="<html><head><title>Billing Summary - "+title+"</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#1E293B}h1{font-size:18px;margin:0}h2{font-size:13px;color:#64748B;font-weight:400;margin:2px 0 16px}h3{font-size:12px;margin:18px 0 6px;color:#2E7D52}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px}th,td{padding:6px 10px;border-bottom:1px solid #E2E8F0}th{background:#F5F7FA;font-size:10px;letter-spacing:1px;text-align:left}.r{text-align:right}.sub td{font-weight:700}.grand td{font-weight:800;font-size:14px;border-top:2px solid #333;padding-top:10px}</style></head><body>";
-                html+="<h1>Beracah Poultry Farm</h1><h2>Harvest Billing Summary</h2>";
-                html+="<p><strong>Buyer:</strong> "+title+"<br><strong>Date:</strong> "+dateLabel+"</p>";
-                html+=body;
-                html+="<table><tbody><tr class=grand><td class=r>GRAND TOTAL</td><td class=r>"+ovHeads.toLocaleString()+" hds</td><td class=r>"+ovKg.toFixed(2)+" kg</td><td></td><td></td><td class=r>PHP "+money(overall)+"</td></tr></tbody></table>";
-                html+="</body></html>";
-                var w=window.open("","_blank"); if(!w){alert("Enable pop-ups to print the summary.");return;} w.document.write(html); w.document.close(); w.focus(); setTimeout(function(){try{w.print();}catch(e){}},300);
-              }
-              return (
-                <div>
-                  {/* Filters */}
-                  <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
-                    <span style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>FILTER</span>
-                    <select value={billFilterBuyer} onChange={function(e){setBillFilterBuyer(e.target.value);}} style={SEL}>
-                      <option value="all">All buyers</option>
-                      {buyerOpts.map(function(b){return <option key={b} value={b}>{b}</option>;})}
-                    </select>
-                    <select value={billFilterDay} onChange={function(e){setBillFilterDay(e.target.value);}} style={SEL}>
-                      <option value="all">All dates</option>
-                      {dayOpts.map(function(d){return <option key={d} value={String(d)}>{dateFor(d)} · D{d}</option>;})}
-                    </select>
-                    {(billFilterBuyer!=="all"||billFilterDay!=="all") && <button onClick={function(){setBillFilterBuyer("all");setBillFilterDay("all");}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,padding:"6px 12px",cursor:"pointer",borderRadius:6}}>Clear</button>}
-                    {keys.length>0 && <button onClick={printSummary} style={{background:"#2E7D52",border:"none",color:"#FFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:10,padding:"7px 14px",cursor:"pointer",borderRadius:6,marginLeft:"auto"}}>🖨 PRINT SUMMARY ({keys.length})</button>}
-                  </div>
-                  {keys.length===0 && <div style={{textAlign:"center",padding:"24px",color:"#94A3B8",fontSize:11}}>No invoices match the filter.</div>}
-                  {keys.map(function(key){
-                    var g = groups[key];
-                    var dstr = dateFor(g.day);
-                    var lines = g.trucks;
-                    var grand = lines.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0);
-                    var taxed = !!g.taxed;
-                    var less1 = grand*0.01, finalTot = grand-less1;
-                    return (
-                      <div key={key} style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,marginBottom:14,overflow:"hidden"}}>
-                        <div style={{padding:"12px 16px",background:"#2E7D5210",borderBottom:"1px solid #2E7D5230",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
-                          <div>
-                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:14,color:"#1E293B"}}>{g.buyer}{taxed?<span style={{fontSize:9,color:"#5B86E5",fontWeight:700,marginLeft:6,border:"1px solid #5B86E540",borderRadius:3,padding:"1px 5px"}}>2307</span>:null}</div>
-                            <div style={{fontSize:10,color:"#64748B"}}>{dstr} · Day {g.day}{taxed?" · "+(lines[0]?lines[0].plate:"")+" (own invoice)":""}</div>
-                          </div>
-                          <div style={{display:"flex",gap:10,alignItems:"center"}}>
-                            <button onClick={function(){printInvoice(g.buyer,dstr,lines,grand,taxed);}} style={{background:"#2E7D52",border:"none",color:"#FFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:10,padding:"7px 14px",cursor:"pointer",borderRadius:6}}>🖨 PRINT / SEND</button>
-                          </div>
-                        </div>
-                        <div style={{overflowX:"auto"}}>
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 70px 90px 60px 60px 100px",padding:"6px 16px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:500}}>
-                            <div>PLATE</div><div style={{textAlign:"right"}}>HEADS</div><div style={{textAlign:"right"}}>KG</div><div style={{textAlign:"right"}}>ALW</div><div style={{textAlign:"right"}}>₱/KG</div><div style={{textAlign:"right"}}>TOTAL</div>
-                          </div>
-                          {lines.map(function(t){
-                            var amt=t.amount!=null?t.amount:(t.kg||0)*(t.price||0);
-                            return (
-                              <div key={t.id} style={{display:"grid",gridTemplateColumns:"1fr 70px 90px 60px 60px 100px",padding:"8px 16px",borderBottom:"1px solid #F0F2F5",fontSize:11,minWidth:500}}>
-                                <div style={{fontWeight:600,color:"#1E293B"}}>{t.plate}</div>
-                                <div style={{textAlign:"right",color:"#334155"}}>{(t.heads||0).toLocaleString()}</div>
-                                <div style={{textAlign:"right",color:"#334155"}}>{(t.kg||0).toLocaleString(undefined,{maximumFractionDigits:2})}</div>
-                                <div style={{textAlign:"right",color:"#334155"}}>{t.alw?t.alw.toFixed(3):"—"}</div>
-                                <div style={{textAlign:"right",color:"#334155"}}>{t.price?t.price.toLocaleString(undefined,{maximumFractionDigits:2}):"—"}</div>
-                                <div style={{textAlign:"right",color:"#2E7D52",fontWeight:700}}>{money(amt)}</div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div style={{padding:"10px 16px",borderTop:"2px solid #E2E8F0"}}>
-                          <div style={{display:"flex",justifyContent:"flex-end",gap:24,fontSize:11,color:"#64748B",marginBottom:4}}>
-                            <span>{lines.reduce(function(s,t){return s+(t.heads||0);},0).toLocaleString()} heads</span>
-                            <span>{lines.reduce(function(s,t){return s+(t.kg||0);},0).toLocaleString(undefined,{maximumFractionDigits:2})} kg</span>
-                          </div>
-                          <div style={{display:"flex",justifyContent:"flex-end",gap:40,fontSize:12}}>
-                            <span style={{color:"#64748B"}}>GRAND TOTAL</span>
-                            <span style={{fontFamily:"'Inter',sans-serif",fontWeight:700,color:"#1E293B",minWidth:120,textAlign:"right"}}>₱{money(grand)}</span>
-                          </div>
-                          {taxed && (
-                            <div>
-                              <div style={{display:"flex",justifyContent:"flex-end",gap:40,fontSize:11,marginTop:4}}>
-                                <span style={{color:"#E91E63"}}>Less 1% (2307)</span>
-                                <span style={{color:"#E91E63",minWidth:120,textAlign:"right"}}>− ₱{money(less1)}</span>
-                              </div>
-                              <div style={{display:"flex",justifyContent:"flex-end",gap:40,fontSize:13,marginTop:4}}>
-                                <span style={{color:"#2E7D52",fontWeight:700}}>TOTAL</span>
-                                <span style={{fontFamily:"'Inter',sans-serif",fontWeight:800,color:"#2E7D52",minWidth:120,textAlign:"right"}}>₱{money(finalTot)}</span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-
-            {/* ── PAYMENTS — paid / pending tracking ── */}
-            {hSection==="payments" && (function(){
-              if(harvestTrucks.length===0) return <div style={{textAlign:"center",padding:"32px",color:"#94A3B8",fontSize:11}}>No harvest trucks logged yet.</div>;
-              var placement = cycleConfig ? cycleConfig.placementDate : null;
-              function dateFor(day){ if(!placement) return "Day "+day; return new Date(new Date(placement+"T00:00:00+08:00").getTime()+day*86400000).toLocaleDateString("en-PH",{year:"numeric",month:"short",day:"numeric"}); }
-              function money(n){ return n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-              var groups={};
-              harvestTrucks.forEach(function(t){ var buyer=(t.buyer&&t.buyer.trim())?t.buyer.trim():"— No buyer —"; var taxed=!!t.tax2307; var key=taxed?(buyer+"||"+t.day+"||"+t.id):(buyer+"||"+t.day); if(!groups[key])groups[key]={buyer:buyer,day:t.day,taxed:taxed,trucks:[]}; groups[key].trucks.push(t); });
-              var allKeys=Object.keys(groups).sort(function(a,b){var ga=groups[a],gb=groups[b]; if(gb.day!==ga.day)return gb.day-ga.day; return ga.buyer.localeCompare(gb.buyer);});
-              var buyerOpts=[]; var daySet={};
-              allKeys.forEach(function(k){ if(buyerOpts.indexOf(groups[k].buyer)<0) buyerOpts.push(groups[k].buyer); daySet[groups[k].day]=true; });
-              buyerOpts.sort();
-              var dayOpts=Object.keys(daySet).map(Number).sort(function(a,b){return b-a;});
-              var keys=allKeys.filter(function(k){ var g=groups[k]; if(billFilterBuyer!=="all"&&g.buyer!==billFilterBuyer)return false; if(billFilterDay!=="all"&&String(g.day)!==String(billFilterDay))return false; return true; });
-              var totBilled=0, totPaid=0;
-              keys.forEach(function(k){ var g=groups[k]; var grand=g.trucks.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0); var net=g.taxed?grand*0.99:grand; totBilled+=net; if(billingPaid[k])totPaid+=net; });
-              var outstanding=totBilled-totPaid;
-              var SEL={background:"#F5F7FA",border:"1px solid #CBD5E1",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:11,padding:"7px 10px",outline:"none",borderRadius:6};
-              return (
-                <div>
-                  {/* Filters */}
-                  <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
-                    <span style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>FILTER</span>
-                    <select value={billFilterBuyer} onChange={function(e){setBillFilterBuyer(e.target.value);}} style={SEL}>
-                      <option value="all">All buyers</option>
-                      {buyerOpts.map(function(b){return <option key={b} value={b}>{b}</option>;})}
-                    </select>
-                    <select value={billFilterDay} onChange={function(e){setBillFilterDay(e.target.value);}} style={SEL}>
-                      <option value="all">All dates</option>
-                      {dayOpts.map(function(d){return <option key={d} value={String(d)}>{dateFor(d)} · D{d}</option>;})}
-                    </select>
-                    {(billFilterBuyer!=="all"||billFilterDay!=="all") && <button onClick={function(){setBillFilterBuyer("all");setBillFilterDay("all");}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,padding:"6px 12px",cursor:"pointer",borderRadius:6}}>Clear</button>}
-                  </div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:16}}>
-                    <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"11px 13px"}}><div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8}}>TOTAL BILLED</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#1E293B"}}>₱{money(totBilled)}</div></div>
-                    <div style={{background:"#2E7D5208",border:"1px solid #2E7D5230",borderRadius:8,padding:"11px 13px"}}><div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8}}>COLLECTED</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#2E7D52"}}>₱{money(totPaid)}</div></div>
-                    <div style={{background:"#E91E6308",border:"1px solid #E91E6330",borderRadius:8,padding:"11px 13px"}}><div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8}}>OUTSTANDING</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#E91E63"}}>₱{money(outstanding)}</div></div>
-                  </div>
-                  <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto"}}>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 120px 120px 90px",padding:"8px 16px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:440}}>
-                      <div>BUYER</div><div>DATE</div><div style={{textAlign:"right"}}>AMOUNT</div><div style={{textAlign:"center"}}>STATUS</div>
-                    </div>
-                    {keys.length===0 && <div style={{textAlign:"center",padding:"20px",color:"#94A3B8",fontSize:11}}>No invoices match the filter.</div>}
-                    {keys.map(function(key){
-                      var g=groups[key]; var grand=g.trucks.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0); var net=g.taxed?grand*0.99:grand; var paid=!!billingPaid[key];
-                      return (
-                        <div key={key} style={{display:"grid",gridTemplateColumns:"1fr 120px 120px 90px",padding:"10px 16px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:440}}>
-                          <div style={{fontWeight:600,color:"#1E293B"}}>{g.buyer}{g.taxed?<span style={{fontSize:8,color:"#5B86E5",marginLeft:4}}>2307 · {g.trucks[0]?g.trucks[0].plate:""}</span>:null}</div>
-                          <div style={{color:"#64748B",fontSize:10}}>{dateFor(g.day)}</div>
-                          <div style={{textAlign:"right",color:"#1E293B",fontWeight:600}}>₱{money(net)}</div>
-                          <div style={{textAlign:"center"}}>
-                            <button onClick={function(){setBillingPaid(function(p){var n={...p}; if(paid)delete n[key]; else n[key]=true; return n;});}} style={{background:paid?"#2E7D5218":"#E91E6312",border:"1px solid "+(paid?"#2E7D5250":"#E91E6340"),color:paid?"#2E7D52":"#E91E63",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:9,padding:"5px 10px",cursor:"pointer",borderRadius:12}}>{paid?"✓ PAID":"PENDING"}</button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-        )}
-        {activeTab==="reports" && (
-          <div className="su">
-            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Reports</div>
-            <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Flock analytics</div>
-            <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-              {[["uniformity","UNIFORMITY"],["financial","FINANCIAL"],["incentive","INCENTIVE"]].map(function(s){
-                var id=s[0], lbl=s[1], on=reportSection===id;
-                return <button key={id} onClick={function(){setReportSection(id);}} style={{background:on?"#2E7D5220":"none",border:on?"1px solid #2E7D5260":"1px solid #CBD5E1",color:on?"#2E7D52":"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,letterSpacing:.8,padding:"6px 16px",cursor:"pointer",borderRadius:4,fontWeight:on?600:400}}>{lbl}</button>;
-              })}
-            </div>
-
-            {reportSection==="uniformity" && (function(){
+            {hSection==="uniformity" && (function(){
               var trucks = harvestTrucks.filter(function(t){return (t.heads||0)>0 && ((t.alw||0)>0 || (t.kg||0)>0);});
               if(!trucks.length) return <div style={{textAlign:"center",padding:"32px",color:"#94A3B8",fontSize:11}}>No harvest trucks logged yet. Uniformity is built from the ALW of each truck.</div>;
               var data = trucks.map(function(t){ var g = t.alw? t.alw*1000 : (t.kg/t.heads*1000); return {g:g, heads:t.heads||0, plate:t.plate}; });
@@ -3821,6 +3580,116 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 </div>
               );
             })()}
+
+            {hSection==="incentive" && (function(){
+              function money(n){ return n.toLocaleString(undefined,{maximumFractionDigits:0}); }
+              // ALW (g) at a specific day: actual weigh-in if present, else projected/interpolated.
+              function alwPointsG(){
+                var byDay={};
+                shiftLogs.filter(function(l){return l.alw;}).forEach(function(l){ byDay[l.day]=Math.round(l.alw*1000); });
+                var hb={}; harvestTrucks.forEach(function(t){ if((t.heads||0)>=2000){ if(!hb[t.day])hb[t.day]={kg:0,heads:0}; hb[t.day].kg+=(t.kg||0); hb[t.day].heads+=(t.heads||0); } });
+                Object.keys(hb).forEach(function(d){ var h=hb[d]; if(h.heads>0) byDay[+d]=Math.round(h.kg/h.heads*1000); });
+                return Object.keys(byDay).map(function(d){return {day:+d,g:byDay[d]};}).sort(function(a,b){return a.day-b.day;});
+              }
+              function alwAtDay(D){
+                var pts=alwPointsG();
+                var exact=pts.filter(function(p){return p.day===D;})[0];
+                if(exact) return {g:exact.g, src:"weighed"};
+                if(D>currentDay) return {g:null, src:"pending"};
+                var std=ALW_STANDARD.filter(function(r){return r.day===D;})[0];
+                if(!pts.length) return {g:std?std.std:null, src:"standard"};
+                var before=pts.filter(function(p){return p.day<D;}), after=pts.filter(function(p){return p.day>D;});
+                if(before.length && after.length){ var b=before[before.length-1], a=after[0]; return {g:Math.round(b.g+(a.g-b.g)*(D-b.day)/(a.day-b.day)), src:"interpolated"}; }
+                if(before.length>=2){ var b2=before[before.length-2], b1=before[before.length-1]; var sl=(b1.g-b2.g)/(b1.day-b2.day); return {g:Math.round(b1.g+sl*(D-b1.day)), src:"projected"}; }
+                if(before.length===1){ var p0=before[0]; var sp=ALW_STANDARD.filter(function(r){return r.day===p0.day;})[0]; if(sp&&sp.std>0&&std) return {g:Math.round(std.std*(p0.g/sp.std)), src:"projected"}; return {g:p0.g, src:"projected"}; }
+                return {g:std?std.std:null, src:"standard"};
+              }
+              // Harvest-performance actuals
+              var totHeads = harvestTrucks.reduce(function(s,t){return s+(t.heads||0);},0);
+              var totKg = harvestTrucks.reduce(function(s,t){return s+(t.kg||0);},0);
+              var feedBags = feedDeliveries.reduce(function(s,d){return s+(d.qty||0);},0);
+              var netFeedKg = (feedBags-(surplusFeedBags||0))*50;
+              var actuals = {
+                alw: totHeads>0 ? totKg/totHeads : null,
+                fcr: totKg>0 ? netFeedKg/totKg : null,
+                hr:  (netPlacedBirds>0 && totHeads>0) ? (totHeads/netPlacedBirds*100) : null, // harvest recovery = harvested / placed
+                age: totHeads>0 ? harvestTrucks.reduce(function(s,t){return s+((t.day||0)*(t.heads||0));},0)/totHeads : null,
+              };
+              var order = ["alw","fcr","hr","age"];
+              var milestoneEarned = 0;
+              INCENTIVE_MILESTONES.forEach(function(ms){ var a=alwAtDay(ms.day); milestoneEarned += incentiveFor(a.g, {better:"higher", tiers:ms.tiers}).peso; });
+              var harvestEarned = 0;
+              order.forEach(function(k){ harvestEarned += incentiveFor(actuals[k], INCENTIVE_MATRIX[k]).peso; });
+              var totalEarned = milestoneEarned + harvestEarned;
+              var maxMs = INCENTIVE_MILESTONES.reduce(function(s,ms){return s+ms.tiers[0].peso;},0);
+              var maxHv = order.reduce(function(s,k){return s+INCENTIVE_MATRIX[k].tiers[0].peso;},0);
+              return (
+                <div>
+                  {/* Total earned */}
+                  <div style={{background:"#2E7D5210",border:"1px solid #2E7D5230",borderLeft:"3px solid #2E7D52",borderRadius:8,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1,fontWeight:700}}>TOTAL INCENTIVE EARNED</div>
+                      <div style={{fontSize:10,color:"#64748B",marginTop:2}}>milestones ₱{money(milestoneEarned)} + harvest ₱{money(harvestEarned)} · of ₱{money(maxMs+maxHv)} possible</div>
+                    </div>
+                    <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:26,color:"#2E7D52"}}>₱{money(totalEarned)}</div>
+                  </div>
+
+                  {/* Growth milestones */}
+                  <div style={{fontSize:10,color:"#C4960C",letterSpacing:1.5,fontWeight:700,marginBottom:8}}>GROWTH MILESTONES · ALW by day</div>
+                  <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto",marginBottom:18}}>
+                    <div style={{display:"grid",gridTemplateColumns:"70px 1fr 1fr 1fr 110px 80px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:540}}>
+                      <div>DAY</div><div style={{textAlign:"center"}}>₱500</div><div style={{textAlign:"center"}}>₱350</div><div style={{textAlign:"center"}}>₱200</div><div style={{textAlign:"right"}}>ACTUAL ALW</div><div style={{textAlign:"right"}}>EARNED</div>
+                    </div>
+                    {INCENTIVE_MILESTONES.map(function(ms){
+                      var a=alwAtDay(ms.day); var inc=incentiveFor(a.g,{better:"higher",tiers:ms.tiers});
+                      var actCol = a.g==null ? "#94A3B8" : inc.tierIdx===0 ? "#2E7D52" : inc.tierIdx>=0 ? "#C4960C" : "#E91E63";
+                      return (
+                        <div key={ms.day} style={{display:"grid",gridTemplateColumns:"70px 1fr 1fr 1fr 110px 80px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:540}}>
+                          <div style={{fontWeight:700,color:"#1E293B"}}>Day {ms.day}</div>
+                          {ms.tiers.map(function(t,i){ var hit=inc.tierIdx===i; return <div key={i} style={{textAlign:"center",color:hit?"#2E7D52":"#64748B",fontWeight:hit?700:400,background:hit?"#2E7D5214":"transparent",borderRadius:4,padding:"3px 0"}}>≥{t.th}g</div>; })}
+                          <div style={{textAlign:"right",color:actCol,fontWeight:700}}>{a.g!=null?a.g+"g":"—"}<span style={{display:"block",fontSize:8,color:"#94A3B8",fontWeight:400}}>{a.src}</span></div>
+                          <div style={{textAlign:"right",fontWeight:700,color:inc.peso>0?"#2E7D52":"#94A3B8"}}>₱{money(inc.peso)}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Harvest performance */}
+                  <div style={{fontSize:10,color:"#2E7D52",letterSpacing:1.5,fontWeight:700,marginBottom:8}}>HARVEST PERFORMANCE · final flock</div>
+                  <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto"}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 80px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:560}}>
+                      <div>METRIC</div><div style={{textAlign:"center"}}>₱1,000</div><div style={{textAlign:"center"}}>₱750</div><div style={{textAlign:"center"}}>₱500</div><div style={{textAlign:"right"}}>ACTUAL</div><div style={{textAlign:"right"}}>EARNED</div>
+                    </div>
+                    {order.map(function(k){
+                      var m=INCENTIVE_MATRIX[k]; var val=actuals[k]; var inc=incentiveFor(val,m);
+                      var op = m.better==="higher" ? "≥" : "≤";
+                      var actCol = val==null ? "#94A3B8" : inc.tierIdx===0 ? "#2E7D52" : inc.tierIdx>=0 ? "#C4960C" : "#E91E63";
+                      return (
+                        <div key={k} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 80px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:560}}>
+                          <div style={{fontWeight:600,color:"#1E293B"}}>{m.label}</div>
+                          {m.tiers.map(function(t,i){ var hit=inc.tierIdx===i; return <div key={i} style={{textAlign:"center",color:hit?"#2E7D52":"#64748B",fontWeight:hit?700:400,background:hit?"#2E7D5214":"transparent",borderRadius:4,padding:"3px 0"}}>{op}{t.th}</div>; })}
+                          <div style={{textAlign:"right",color:actCol,fontWeight:700}}>{val!=null?m.fmt(val):"—"}</div>
+                          <div style={{textAlign:"right",fontWeight:700,color:inc.peso>0?"#2E7D52":"#94A3B8"}}>₱{money(inc.peso)}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{fontSize:9,color:"#94A3B8",marginTop:10}}>Milestone ALW uses the weigh-in for that day, or the projected ALW when a day wasn't weighed. Harvest metrics use the cycle's final figures.</div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+        {activeTab==="reports" && (
+          <div className="su">
+            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Financial</div>
+            <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Income statement · billing · payments</div>
+            <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
+              {[["financial","FINANCIAL"],["billing","BILLING"],["payments","PAYMENTS"]].map(function(s){
+                var id=s[0], lbl=s[1], on=reportSection===id;
+                return <button key={id} onClick={function(){setReportSection(id);}} style={{background:on?"#2E7D5220":"none",border:on?"1px solid #2E7D5260":"1px solid #CBD5E1",color:on?"#2E7D52":"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,letterSpacing:.8,padding:"6px 16px",cursor:"pointer",borderRadius:4,fontWeight:on?600:400}}>{lbl}</button>;
+              })}
+            </div>
 
             {reportSection==="financial" && (function(){
               function money(n){ return n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -4109,100 +3978,231 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               );
             })()}
 
-            {reportSection==="incentive" && (function(){
-              function money(n){ return n.toLocaleString(undefined,{maximumFractionDigits:0}); }
-              // ALW (g) at a specific day: actual weigh-in if present, else projected/interpolated.
-              function alwPointsG(){
-                var byDay={};
-                shiftLogs.filter(function(l){return l.alw;}).forEach(function(l){ byDay[l.day]=Math.round(l.alw*1000); });
-                var hb={}; harvestTrucks.forEach(function(t){ if((t.heads||0)>=2000){ if(!hb[t.day])hb[t.day]={kg:0,heads:0}; hb[t.day].kg+=(t.kg||0); hb[t.day].heads+=(t.heads||0); } });
-                Object.keys(hb).forEach(function(d){ var h=hb[d]; if(h.heads>0) byDay[+d]=Math.round(h.kg/h.heads*1000); });
-                return Object.keys(byDay).map(function(d){return {day:+d,g:byDay[d]};}).sort(function(a,b){return a.day-b.day;});
+            {/* ── BILLING — grouped by buyer & date, with filters ── */}
+            {reportSection==="billing" && (function(){
+              if(harvestTrucks.length===0) return <div style={{textAlign:"center",padding:"32px",color:"#94A3B8",fontSize:11}}>No harvest trucks logged yet. Log trucks with a buyer in the Harvest tab.</div>;
+              var placement = cycleConfig ? cycleConfig.placementDate : null;
+              function dateFor(day){
+                if(!placement) return "Day "+day;
+                return new Date(new Date(placement+"T00:00:00+08:00").getTime()+day*86400000).toLocaleDateString("en-PH",{year:"numeric",month:"short",day:"numeric"});
               }
-              function alwAtDay(D){
-                var pts=alwPointsG();
-                var exact=pts.filter(function(p){return p.day===D;})[0];
-                if(exact) return {g:exact.g, src:"weighed"};
-                if(D>currentDay) return {g:null, src:"pending"};
-                var std=ALW_STANDARD.filter(function(r){return r.day===D;})[0];
-                if(!pts.length) return {g:std?std.std:null, src:"standard"};
-                var before=pts.filter(function(p){return p.day<D;}), after=pts.filter(function(p){return p.day>D;});
-                if(before.length && after.length){ var b=before[before.length-1], a=after[0]; return {g:Math.round(b.g+(a.g-b.g)*(D-b.day)/(a.day-b.day)), src:"interpolated"}; }
-                if(before.length>=2){ var b2=before[before.length-2], b1=before[before.length-1]; var sl=(b1.g-b2.g)/(b1.day-b2.day); return {g:Math.round(b1.g+sl*(D-b1.day)), src:"projected"}; }
-                if(before.length===1){ var p0=before[0]; var sp=ALW_STANDARD.filter(function(r){return r.day===p0.day;})[0]; if(sp&&sp.std>0&&std) return {g:Math.round(std.std*(p0.g/sp.std)), src:"projected"}; return {g:p0.g, src:"projected"}; }
-                return {g:std?std.std:null, src:"standard"};
+              function money(n){ return n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+              function printInvoice(buyer, dstr, lines, grand, taxed){
+                var rows = lines.map(function(t){
+                  var amt=t.amount!=null?t.amount:(t.kg||0)*(t.price||0);
+                  return "<tr><td>"+t.plate+"</td><td class=r>"+(t.heads||0).toLocaleString()+"</td><td class=r>"+(t.kg||0).toFixed(2)+"</td><td class=r>"+(t.alw?t.alw.toFixed(3):"-")+"</td><td class=r>"+(t.price||0).toFixed(2)+"</td><td class=r>"+money(amt)+"</td></tr>";
+                }).join("");
+                var less1=grand*0.01, fin=grand-less1;
+                var totHeads = lines.reduce(function(s,t){return s+(t.heads||0);},0);
+                var totKg = lines.reduce(function(s,t){return s+(t.kg||0);},0);
+                var totals = "<tr class=tot><td class=r>GRAND TOTAL</td><td class=r>"+totHeads.toLocaleString()+"</td><td class=r>"+totKg.toFixed(2)+"</td><td></td><td></td><td class=r>PHP "+money(grand)+"</td></tr>";
+                if(taxed){
+                  totals += "<tr><td colspan=5 class=r>Less 1% (2307)</td><td class=r>- PHP "+money(less1)+"</td></tr>";
+                  totals += "<tr class=tot><td colspan=5 class=r>NET TOTAL</td><td class=r>PHP "+money(fin)+"</td></tr>";
+                }
+                var html = "<html><head><title>Billing - "+buyer+"</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#1E293B}h1{font-size:18px;margin:0}h2{font-size:13px;color:#64748B;font-weight:400;margin:2px 0 16px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:7px 10px;border-bottom:1px solid #E2E8F0}th{background:#F5F7FA;font-size:10px;letter-spacing:1px;text-align:left}.r{text-align:right}.tot td{font-weight:700;border-top:2px solid #333}</style></head><body>";
+                html += "<h1>Beracah Poultry Farm</h1><h2>Harvest Billing</h2>";
+                html += "<p><strong>Buyer:</strong> "+buyer+"<br><strong>Date:</strong> "+dstr+"</p>";
+                html += "<table><thead><tr><th>PLATE</th><th class=r>HEADS</th><th class=r>KG</th><th class=r>ALW</th><th class=r>P/KG</th><th class=r>TOTAL</th></tr></thead><tbody>"+rows+totals+"</tbody></table>";
+                html += "</body></html>";
+                var w = window.open("","_blank");
+                if(!w){ alert("Enable pop-ups to print the billing."); return; }
+                w.document.write(html); w.document.close(); w.focus(); setTimeout(function(){try{w.print();}catch(e){}},300);
               }
-              // Harvest-performance actuals
-              var totHeads = harvestTrucks.reduce(function(s,t){return s+(t.heads||0);},0);
-              var totKg = harvestTrucks.reduce(function(s,t){return s+(t.kg||0);},0);
-              var feedBags = feedDeliveries.reduce(function(s,d){return s+(d.qty||0);},0);
-              var netFeedKg = (feedBags-(surplusFeedBags||0))*50;
-              var actuals = {
-                alw: totHeads>0 ? totKg/totHeads : null,
-                fcr: totKg>0 ? netFeedKg/totKg : null,
-                hr:  (netPlacedBirds>0 && totHeads>0) ? (totHeads/netPlacedBirds*100) : null, // harvest recovery = harvested / placed
-                age: totHeads>0 ? harvestTrucks.reduce(function(s,t){return s+((t.day||0)*(t.heads||0));},0)/totHeads : null,
-              };
-              var order = ["alw","fcr","hr","age"];
-              var milestoneEarned = 0;
-              INCENTIVE_MILESTONES.forEach(function(ms){ var a=alwAtDay(ms.day); milestoneEarned += incentiveFor(a.g, {better:"higher", tiers:ms.tiers}).peso; });
-              var harvestEarned = 0;
-              order.forEach(function(k){ harvestEarned += incentiveFor(actuals[k], INCENTIVE_MATRIX[k]).peso; });
-              var totalEarned = milestoneEarned + harvestEarned;
-              var maxMs = INCENTIVE_MILESTONES.reduce(function(s,ms){return s+ms.tiers[0].peso;},0);
-              var maxHv = order.reduce(function(s,k){return s+INCENTIVE_MATRIX[k].tiers[0].peso;},0);
+              var groups = {};
+              harvestTrucks.forEach(function(t){
+                var buyer = (t.buyer&&t.buyer.trim())?t.buyer.trim():"— No buyer —";
+                var taxed = !!t.tax2307;
+                // 2307 trucks bill individually (their own invoice); others group by buyer+date.
+                var key = taxed ? (buyer+"||"+t.day+"||"+t.id) : (buyer+"||"+t.day);
+                if(!groups[key]) groups[key]={buyer:buyer, day:t.day, taxed:taxed, trucks:[]};
+                groups[key].trucks.push(t);
+              });
+              var allKeys = Object.keys(groups).sort(function(a,b){
+                var ga=groups[a], gb=groups[b];
+                if(gb.day!==ga.day) return gb.day-ga.day;
+                return ga.buyer.localeCompare(gb.buyer);
+              });
+              var buyerOpts = []; var daySet={};
+              allKeys.forEach(function(k){ if(buyerOpts.indexOf(groups[k].buyer)<0) buyerOpts.push(groups[k].buyer); daySet[groups[k].day]=true; });
+              buyerOpts.sort();
+              var dayOpts = Object.keys(daySet).map(Number).sort(function(a,b){return b-a;});
+              var keys = allKeys.filter(function(k){
+                var g=groups[k];
+                if(billFilterBuyer!=="all" && g.buyer!==billFilterBuyer) return false;
+                if(billFilterDay!=="all" && String(g.day)!==String(billFilterDay)) return false;
+                return true;
+              });
+              var SEL={background:"#F5F7FA",border:"1px solid #CBD5E1",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:11,padding:"7px 10px",outline:"none",borderRadius:6};
+              // Consolidated summary of whatever is currently filtered → one document.
+              function printSummary(){
+                if(!keys.length) return;
+                var buyersInFilter=[]; keys.forEach(function(k){ if(buyersInFilter.indexOf(groups[k].buyer)<0) buyersInFilter.push(groups[k].buyer); });
+                var daysInFilter=[]; keys.forEach(function(k){ if(daysInFilter.indexOf(groups[k].day)<0) daysInFilter.push(groups[k].day); });
+                daysInFilter.sort(function(a,b){return a-b;});
+                var title = buyersInFilter.length===1 ? buyersInFilter[0] : "Multiple buyers";
+                var dateLabel = daysInFilter.length===1 ? dateFor(daysInFilter[0]) : (dateFor(daysInFilter[0])+" – "+dateFor(daysInFilter[daysInFilter.length-1]));
+                var body=""; var overall=0, ovHeads=0, ovKg=0;
+                keys.forEach(function(k){
+                  var g=groups[k]; var dstr=dateFor(g.day);
+                  var grand=g.trucks.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0);
+                  var gHeads=g.trucks.reduce(function(s,t){return s+(t.heads||0);},0);
+                  var gKg=g.trucks.reduce(function(s,t){return s+(t.kg||0);},0);
+                  var less1=grand*0.01, net=g.taxed?grand-less1:grand; overall+=net; ovHeads+=gHeads; ovKg+=gKg;
+                  body += "<h3>"+g.buyer+" — "+dstr+(g.taxed?" · 2307":"")+"</h3>";
+                  body += "<table><thead><tr><th>PLATE</th><th class=r>HEADS</th><th class=r>KG</th><th class=r>ALW</th><th class=r>P/KG</th><th class=r>TOTAL</th></tr></thead><tbody>";
+                  g.trucks.forEach(function(t){ var amt=t.amount!=null?t.amount:(t.kg||0)*(t.price||0); body+="<tr><td>"+t.plate+"</td><td class=r>"+(t.heads||0).toLocaleString()+"</td><td class=r>"+(t.kg||0).toFixed(2)+"</td><td class=r>"+(t.alw?t.alw.toFixed(3):"-")+"</td><td class=r>"+(t.price||0).toFixed(2)+"</td><td class=r>"+money(amt)+"</td></tr>"; });
+                  body += "<tr class=sub><td class=r>Subtotal</td><td class=r>"+gHeads.toLocaleString()+"</td><td class=r>"+gKg.toFixed(2)+"</td><td></td><td></td><td class=r>PHP "+money(grand)+"</td></tr>";
+                  if(g.taxed){ body+="<tr><td colspan=5 class=r>Less 1% (2307)</td><td class=r>- PHP "+money(less1)+"</td></tr>"; body+="<tr class=sub><td colspan=5 class=r>Net</td><td class=r>PHP "+money(net)+"</td></tr>"; }
+                  body += "</tbody></table>";
+                });
+                var html="<html><head><title>Billing Summary - "+title+"</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#1E293B}h1{font-size:18px;margin:0}h2{font-size:13px;color:#64748B;font-weight:400;margin:2px 0 16px}h3{font-size:12px;margin:18px 0 6px;color:#2E7D52}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px}th,td{padding:6px 10px;border-bottom:1px solid #E2E8F0}th{background:#F5F7FA;font-size:10px;letter-spacing:1px;text-align:left}.r{text-align:right}.sub td{font-weight:700}.grand td{font-weight:800;font-size:14px;border-top:2px solid #333;padding-top:10px}</style></head><body>";
+                html+="<h1>Beracah Poultry Farm</h1><h2>Harvest Billing Summary</h2>";
+                html+="<p><strong>Buyer:</strong> "+title+"<br><strong>Date:</strong> "+dateLabel+"</p>";
+                html+=body;
+                html+="<table><tbody><tr class=grand><td class=r>GRAND TOTAL</td><td class=r>"+ovHeads.toLocaleString()+" hds</td><td class=r>"+ovKg.toFixed(2)+" kg</td><td></td><td></td><td class=r>PHP "+money(overall)+"</td></tr></tbody></table>";
+                html+="</body></html>";
+                var w=window.open("","_blank"); if(!w){alert("Enable pop-ups to print the summary.");return;} w.document.write(html); w.document.close(); w.focus(); setTimeout(function(){try{w.print();}catch(e){}},300);
+              }
               return (
                 <div>
-                  {/* Total earned */}
-                  <div style={{background:"#2E7D5210",border:"1px solid #2E7D5230",borderLeft:"3px solid #2E7D52",borderRadius:8,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <div>
-                      <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1,fontWeight:700}}>TOTAL INCENTIVE EARNED</div>
-                      <div style={{fontSize:10,color:"#64748B",marginTop:2}}>milestones ₱{money(milestoneEarned)} + harvest ₱{money(harvestEarned)} · of ₱{money(maxMs+maxHv)} possible</div>
-                    </div>
-                    <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:26,color:"#2E7D52"}}>₱{money(totalEarned)}</div>
+                  {/* Filters */}
+                  <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+                    <span style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>FILTER</span>
+                    <select value={billFilterBuyer} onChange={function(e){setBillFilterBuyer(e.target.value);}} style={SEL}>
+                      <option value="all">All buyers</option>
+                      {buyerOpts.map(function(b){return <option key={b} value={b}>{b}</option>;})}
+                    </select>
+                    <select value={billFilterDay} onChange={function(e){setBillFilterDay(e.target.value);}} style={SEL}>
+                      <option value="all">All dates</option>
+                      {dayOpts.map(function(d){return <option key={d} value={String(d)}>{dateFor(d)} · D{d}</option>;})}
+                    </select>
+                    {(billFilterBuyer!=="all"||billFilterDay!=="all") && <button onClick={function(){setBillFilterBuyer("all");setBillFilterDay("all");}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,padding:"6px 12px",cursor:"pointer",borderRadius:6}}>Clear</button>}
+                    {keys.length>0 && <button onClick={printSummary} style={{background:"#2E7D52",border:"none",color:"#FFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:10,padding:"7px 14px",cursor:"pointer",borderRadius:6,marginLeft:"auto"}}>🖨 PRINT SUMMARY ({keys.length})</button>}
                   </div>
-
-                  {/* Growth milestones */}
-                  <div style={{fontSize:10,color:"#C4960C",letterSpacing:1.5,fontWeight:700,marginBottom:8}}>GROWTH MILESTONES · ALW by day</div>
-                  <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto",marginBottom:18}}>
-                    <div style={{display:"grid",gridTemplateColumns:"70px 1fr 1fr 1fr 110px 80px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:540}}>
-                      <div>DAY</div><div style={{textAlign:"center"}}>₱500</div><div style={{textAlign:"center"}}>₱350</div><div style={{textAlign:"center"}}>₱200</div><div style={{textAlign:"right"}}>ACTUAL ALW</div><div style={{textAlign:"right"}}>EARNED</div>
-                    </div>
-                    {INCENTIVE_MILESTONES.map(function(ms){
-                      var a=alwAtDay(ms.day); var inc=incentiveFor(a.g,{better:"higher",tiers:ms.tiers});
-                      var actCol = a.g==null ? "#94A3B8" : inc.tierIdx===0 ? "#2E7D52" : inc.tierIdx>=0 ? "#C4960C" : "#E91E63";
-                      return (
-                        <div key={ms.day} style={{display:"grid",gridTemplateColumns:"70px 1fr 1fr 1fr 110px 80px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:540}}>
-                          <div style={{fontWeight:700,color:"#1E293B"}}>Day {ms.day}</div>
-                          {ms.tiers.map(function(t,i){ var hit=inc.tierIdx===i; return <div key={i} style={{textAlign:"center",color:hit?"#2E7D52":"#64748B",fontWeight:hit?700:400,background:hit?"#2E7D5214":"transparent",borderRadius:4,padding:"3px 0"}}>≥{t.th}g</div>; })}
-                          <div style={{textAlign:"right",color:actCol,fontWeight:700}}>{a.g!=null?a.g+"g":"—"}<span style={{display:"block",fontSize:8,color:"#94A3B8",fontWeight:400}}>{a.src}</span></div>
-                          <div style={{textAlign:"right",fontWeight:700,color:inc.peso>0?"#2E7D52":"#94A3B8"}}>₱{money(inc.peso)}</div>
+                  {keys.length===0 && <div style={{textAlign:"center",padding:"24px",color:"#94A3B8",fontSize:11}}>No invoices match the filter.</div>}
+                  {keys.map(function(key){
+                    var g = groups[key];
+                    var dstr = dateFor(g.day);
+                    var lines = g.trucks;
+                    var grand = lines.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0);
+                    var taxed = !!g.taxed;
+                    var less1 = grand*0.01, finalTot = grand-less1;
+                    return (
+                      <div key={key} style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,marginBottom:14,overflow:"hidden"}}>
+                        <div style={{padding:"12px 16px",background:"#2E7D5210",borderBottom:"1px solid #2E7D5230",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                          <div>
+                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:14,color:"#1E293B"}}>{g.buyer}{taxed?<span style={{fontSize:9,color:"#5B86E5",fontWeight:700,marginLeft:6,border:"1px solid #5B86E540",borderRadius:3,padding:"1px 5px"}}>2307</span>:null}</div>
+                            <div style={{fontSize:10,color:"#64748B"}}>{dstr} · Day {g.day}{taxed?" · "+(lines[0]?lines[0].plate:"")+" (own invoice)":""}</div>
+                          </div>
+                          <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                            <button onClick={function(){printInvoice(g.buyer,dstr,lines,grand,taxed);}} style={{background:"#2E7D52",border:"none",color:"#FFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:10,padding:"7px 14px",cursor:"pointer",borderRadius:6}}>🖨 PRINT / SEND</button>
+                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
+                        <div style={{overflowX:"auto"}}>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 70px 90px 60px 60px 100px",padding:"6px 16px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:500}}>
+                            <div>PLATE</div><div style={{textAlign:"right"}}>HEADS</div><div style={{textAlign:"right"}}>KG</div><div style={{textAlign:"right"}}>ALW</div><div style={{textAlign:"right"}}>₱/KG</div><div style={{textAlign:"right"}}>TOTAL</div>
+                          </div>
+                          {lines.map(function(t){
+                            var amt=t.amount!=null?t.amount:(t.kg||0)*(t.price||0);
+                            return (
+                              <div key={t.id} style={{display:"grid",gridTemplateColumns:"1fr 70px 90px 60px 60px 100px",padding:"8px 16px",borderBottom:"1px solid #F0F2F5",fontSize:11,minWidth:500}}>
+                                <div style={{fontWeight:600,color:"#1E293B"}}>{t.plate}</div>
+                                <div style={{textAlign:"right",color:"#334155"}}>{(t.heads||0).toLocaleString()}</div>
+                                <div style={{textAlign:"right",color:"#334155"}}>{(t.kg||0).toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+                                <div style={{textAlign:"right",color:"#334155"}}>{t.alw?t.alw.toFixed(3):"—"}</div>
+                                <div style={{textAlign:"right",color:"#334155"}}>{t.price?t.price.toLocaleString(undefined,{maximumFractionDigits:2}):"—"}</div>
+                                <div style={{textAlign:"right",color:"#2E7D52",fontWeight:700}}>{money(amt)}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div style={{padding:"10px 16px",borderTop:"2px solid #E2E8F0"}}>
+                          <div style={{display:"flex",justifyContent:"flex-end",gap:24,fontSize:11,color:"#64748B",marginBottom:4}}>
+                            <span>{lines.reduce(function(s,t){return s+(t.heads||0);},0).toLocaleString()} heads</span>
+                            <span>{lines.reduce(function(s,t){return s+(t.kg||0);},0).toLocaleString(undefined,{maximumFractionDigits:2})} kg</span>
+                          </div>
+                          <div style={{display:"flex",justifyContent:"flex-end",gap:40,fontSize:12}}>
+                            <span style={{color:"#64748B"}}>GRAND TOTAL</span>
+                            <span style={{fontFamily:"'Inter',sans-serif",fontWeight:700,color:"#1E293B",minWidth:120,textAlign:"right"}}>₱{money(grand)}</span>
+                          </div>
+                          {taxed && (
+                            <div>
+                              <div style={{display:"flex",justifyContent:"flex-end",gap:40,fontSize:11,marginTop:4}}>
+                                <span style={{color:"#E91E63"}}>Less 1% (2307)</span>
+                                <span style={{color:"#E91E63",minWidth:120,textAlign:"right"}}>− ₱{money(less1)}</span>
+                              </div>
+                              <div style={{display:"flex",justifyContent:"flex-end",gap:40,fontSize:13,marginTop:4}}>
+                                <span style={{color:"#2E7D52",fontWeight:700}}>TOTAL</span>
+                                <span style={{fontFamily:"'Inter',sans-serif",fontWeight:800,color:"#2E7D52",minWidth:120,textAlign:"right"}}>₱{money(finalTot)}</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
-                  {/* Harvest performance */}
-                  <div style={{fontSize:10,color:"#2E7D52",letterSpacing:1.5,fontWeight:700,marginBottom:8}}>HARVEST PERFORMANCE · final flock</div>
+            {/* ── PAYMENTS — paid / pending tracking ── */}
+            {reportSection==="payments" && (function(){
+              if(harvestTrucks.length===0) return <div style={{textAlign:"center",padding:"32px",color:"#94A3B8",fontSize:11}}>No harvest trucks logged yet.</div>;
+              var placement = cycleConfig ? cycleConfig.placementDate : null;
+              function dateFor(day){ if(!placement) return "Day "+day; return new Date(new Date(placement+"T00:00:00+08:00").getTime()+day*86400000).toLocaleDateString("en-PH",{year:"numeric",month:"short",day:"numeric"}); }
+              function money(n){ return n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+              var groups={};
+              harvestTrucks.forEach(function(t){ var buyer=(t.buyer&&t.buyer.trim())?t.buyer.trim():"— No buyer —"; var taxed=!!t.tax2307; var key=taxed?(buyer+"||"+t.day+"||"+t.id):(buyer+"||"+t.day); if(!groups[key])groups[key]={buyer:buyer,day:t.day,taxed:taxed,trucks:[]}; groups[key].trucks.push(t); });
+              var allKeys=Object.keys(groups).sort(function(a,b){var ga=groups[a],gb=groups[b]; if(gb.day!==ga.day)return gb.day-ga.day; return ga.buyer.localeCompare(gb.buyer);});
+              var buyerOpts=[]; var daySet={};
+              allKeys.forEach(function(k){ if(buyerOpts.indexOf(groups[k].buyer)<0) buyerOpts.push(groups[k].buyer); daySet[groups[k].day]=true; });
+              buyerOpts.sort();
+              var dayOpts=Object.keys(daySet).map(Number).sort(function(a,b){return b-a;});
+              var keys=allKeys.filter(function(k){ var g=groups[k]; if(billFilterBuyer!=="all"&&g.buyer!==billFilterBuyer)return false; if(billFilterDay!=="all"&&String(g.day)!==String(billFilterDay))return false; return true; });
+              var totBilled=0, totPaid=0;
+              keys.forEach(function(k){ var g=groups[k]; var grand=g.trucks.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0); var net=g.taxed?grand*0.99:grand; totBilled+=net; if(billingPaid[k])totPaid+=net; });
+              var outstanding=totBilled-totPaid;
+              var SEL={background:"#F5F7FA",border:"1px solid #CBD5E1",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:11,padding:"7px 10px",outline:"none",borderRadius:6};
+              return (
+                <div>
+                  {/* Filters */}
+                  <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+                    <span style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>FILTER</span>
+                    <select value={billFilterBuyer} onChange={function(e){setBillFilterBuyer(e.target.value);}} style={SEL}>
+                      <option value="all">All buyers</option>
+                      {buyerOpts.map(function(b){return <option key={b} value={b}>{b}</option>;})}
+                    </select>
+                    <select value={billFilterDay} onChange={function(e){setBillFilterDay(e.target.value);}} style={SEL}>
+                      <option value="all">All dates</option>
+                      {dayOpts.map(function(d){return <option key={d} value={String(d)}>{dateFor(d)} · D{d}</option>;})}
+                    </select>
+                    {(billFilterBuyer!=="all"||billFilterDay!=="all") && <button onClick={function(){setBillFilterBuyer("all");setBillFilterDay("all");}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,padding:"6px 12px",cursor:"pointer",borderRadius:6}}>Clear</button>}
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:16}}>
+                    <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"11px 13px"}}><div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8}}>TOTAL BILLED</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#1E293B"}}>₱{money(totBilled)}</div></div>
+                    <div style={{background:"#2E7D5208",border:"1px solid #2E7D5230",borderRadius:8,padding:"11px 13px"}}><div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8}}>COLLECTED</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#2E7D52"}}>₱{money(totPaid)}</div></div>
+                    <div style={{background:"#E91E6308",border:"1px solid #E91E6330",borderRadius:8,padding:"11px 13px"}}><div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8}}>OUTSTANDING</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#E91E63"}}>₱{money(outstanding)}</div></div>
+                  </div>
                   <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto"}}>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 80px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:560}}>
-                      <div>METRIC</div><div style={{textAlign:"center"}}>₱1,000</div><div style={{textAlign:"center"}}>₱750</div><div style={{textAlign:"center"}}>₱500</div><div style={{textAlign:"right"}}>ACTUAL</div><div style={{textAlign:"right"}}>EARNED</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 120px 120px 90px",padding:"8px 16px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:440}}>
+                      <div>BUYER</div><div>DATE</div><div style={{textAlign:"right"}}>AMOUNT</div><div style={{textAlign:"center"}}>STATUS</div>
                     </div>
-                    {order.map(function(k){
-                      var m=INCENTIVE_MATRIX[k]; var val=actuals[k]; var inc=incentiveFor(val,m);
-                      var op = m.better==="higher" ? "≥" : "≤";
-                      var actCol = val==null ? "#94A3B8" : inc.tierIdx===0 ? "#2E7D52" : inc.tierIdx>=0 ? "#C4960C" : "#E91E63";
+                    {keys.length===0 && <div style={{textAlign:"center",padding:"20px",color:"#94A3B8",fontSize:11}}>No invoices match the filter.</div>}
+                    {keys.map(function(key){
+                      var g=groups[key]; var grand=g.trucks.reduce(function(s,t){return s+(t.amount!=null?t.amount:(t.kg||0)*(t.price||0));},0); var net=g.taxed?grand*0.99:grand; var paid=!!billingPaid[key];
                       return (
-                        <div key={k} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 80px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:560}}>
-                          <div style={{fontWeight:600,color:"#1E293B"}}>{m.label}</div>
-                          {m.tiers.map(function(t,i){ var hit=inc.tierIdx===i; return <div key={i} style={{textAlign:"center",color:hit?"#2E7D52":"#64748B",fontWeight:hit?700:400,background:hit?"#2E7D5214":"transparent",borderRadius:4,padding:"3px 0"}}>{op}{t.th}</div>; })}
-                          <div style={{textAlign:"right",color:actCol,fontWeight:700}}>{val!=null?m.fmt(val):"—"}</div>
-                          <div style={{textAlign:"right",fontWeight:700,color:inc.peso>0?"#2E7D52":"#94A3B8"}}>₱{money(inc.peso)}</div>
+                        <div key={key} style={{display:"grid",gridTemplateColumns:"1fr 120px 120px 90px",padding:"10px 16px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:440}}>
+                          <div style={{fontWeight:600,color:"#1E293B"}}>{g.buyer}{g.taxed?<span style={{fontSize:8,color:"#5B86E5",marginLeft:4}}>2307 · {g.trucks[0]?g.trucks[0].plate:""}</span>:null}</div>
+                          <div style={{color:"#64748B",fontSize:10}}>{dateFor(g.day)}</div>
+                          <div style={{textAlign:"right",color:"#1E293B",fontWeight:600}}>₱{money(net)}</div>
+                          <div style={{textAlign:"center"}}>
+                            <button onClick={function(){setBillingPaid(function(p){var n={...p}; if(paid)delete n[key]; else n[key]=true; return n;});}} style={{background:paid?"#2E7D5218":"#E91E6312",border:"1px solid "+(paid?"#2E7D5250":"#E91E6340"),color:paid?"#2E7D52":"#E91E63",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:9,padding:"5px 10px",cursor:"pointer",borderRadius:12}}>{paid?"✓ PAID":"PENDING"}</button>
+                          </div>
                         </div>
                       );
                     })}
                   </div>
-                  <div style={{fontSize:9,color:"#94A3B8",marginTop:10}}>Milestone ALW uses the weigh-in for that day, or the projected ALW when a day wasn't weighed. Harvest metrics use the cycle's final figures.</div>
                 </div>
               );
             })()}

@@ -1132,7 +1132,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [newExpense, setNewExpense]   = useState({ category:"", desc:"", unitPrice:"", qty:"" });
   const [newRevenue, setNewRevenue]   = useState({ category:"", desc:"", unitPrice:"", qty:"" });
   const [newMonthly, setNewMonthly]   = useState({ category:"", desc:"", monthly:"" });
-  const [newAdmin, setNewAdmin]       = useState({ category:"", desc:"", unitPrice:"", qty:"" });
+  const [newAdmin, setNewAdmin]       = useState({ category:"", desc:"", unitPrice:"", qty:"", basis:"annual" });
   const [surplusFeedBags, setSurplusFeedBags] = useLocalStorage("surplusFeedBags", 0);
   const [medInventoryLog, setMedInventoryLog] = useSyncedLog("medInventoryLog", houseId, userId, isOnline, syncTick);
   const [newMedEntry, setNewMedEntry] = useState({ type:"delivery", medicine:"", qty:"", unit:"", unitPrice:"", notes:"" });
@@ -1189,7 +1189,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
       const fProduction = fManual + fMed;
       const fMaxHDay = harvestTrucks.reduce(function(m,t){return Math.max(m,t.day||0);},0);
       const fGrowDays = fMaxHDay>0 ? fMaxHDay : currentDay;
-      const fAdmin = adminExpenses.reduce(function(s,e){return s+((parseFloat(e.amount)||0)*(fGrowDays/365));},0);
+      const fAdmin = adminExpenses.reduce(function(s,e){var full=parseFloat(e.amount)||0; return s+(e.basis==="actual"?full:full*(fGrowDays/365));},0);
       const fTotalExp = fProduction + fAdmin;
       const fNet = fRevenue - fTotalExp;
       const fHeads = harvestTrucks.reduce(function(s,t){return s+(t.heads||0);},0);
@@ -3832,9 +3832,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               var manualExpenses = expenses.reduce(function(s,e){return s+(parseFloat(e.amount)||0);},0);
               var maxHDay = harvestTrucks.reduce(function(m,t){return Math.max(m,t.day||0);},0);
               var growDays = maxHDay>0 ? maxHDay : currentDay;
-              // Admin: all non-production costs, entered as an annual figure, spread across the calendar year (annual × grow days ÷ 365).
+              // Admin: all non-production costs. Each line is either spread across the year (annual × days ÷ 365) or charged actual-in-full this cycle.
               var yearProrate = growDays/365;
-              var adminRows = adminExpenses.map(function(e){ var full=parseFloat(e.amount)||0; return {id:e.id, category:e.category||"Admin", desc:e.desc, qty:(e.qty!=null&&e.qty!=="")?Number(e.qty):null, unitPrice:(e.unitPrice!=null&&e.unitPrice!=="")?Number(e.unitPrice):null, full:full, charge:full*yearProrate}; });
+              var adminRows = adminExpenses.map(function(e){ var full=parseFloat(e.amount)||0; var basis=e.basis==="actual"?"actual":"annual"; var charge=basis==="actual"?full:full*yearProrate; return {id:e.id, category:e.category||"Admin", desc:e.desc, qty:(e.qty!=null&&e.qty!=="")?Number(e.qty):null, unitPrice:(e.unitPrice!=null&&e.unitPrice!=="")?Number(e.unitPrice):null, full:full, basis:basis, charge:charge}; });
               var adminCharge = adminRows.reduce(function(s,r){return s+r.charge;},0);
               var productionExpense = manualExpenses + medExpense;   // direct, scales with flock
               var totalExpenses = productionExpense + adminCharge;
@@ -3874,14 +3874,14 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 var expHead="<tr><td style='font-size:10px;color:#94A3B8'>ITEM</td><td class=r style='font-size:10px;color:#94A3B8'>QTY</td><td class=r style='font-size:10px;color:#94A3B8'>UNIT PRICE</td><td class=r style='font-size:10px;color:#94A3B8'>AMOUNT</td><td class=r style='font-size:10px;color:#94A3B8'>CAT. TOTAL</td></tr>";
                 var adRows="";
                 if(adminRows.length){
-                  adRows+="<tr><td style='font-size:10px;color:#94A3B8'>ITEM</td><td class=r style='font-size:10px;color:#94A3B8'>ANNUAL</td><td></td><td class=r style='font-size:10px;color:#94A3B8'>THIS CYCLE</td><td></td></tr>";
-                  adminRows.forEach(function(r){ adRows+="<tr><td style='color:#475569'>"+r.category+(r.desc?" - "+r.desc:"")+"</td><td class=r style='color:#475569'>"+m2(r.full)+"</td><td></td><td class=r style='color:#475569'>"+m2(r.charge)+"</td><td></td></tr>"; });
+                  adRows+="<tr><td style='font-size:10px;color:#94A3B8'>ITEM</td><td class=r style='font-size:10px;color:#94A3B8'>AMOUNT</td><td style='font-size:10px;color:#94A3B8'>BASIS</td><td class=r style='font-size:10px;color:#94A3B8'>THIS CYCLE</td><td></td></tr>";
+                  adminRows.forEach(function(r){ adRows+="<tr><td style='color:#475569'>"+r.category+(r.desc?" - "+r.desc:"")+"</td><td class=r style='color:#475569'>"+m2(r.full)+(r.basis==="actual"?"":"/yr")+"</td><td style='color:#94A3B8;font-size:10px'>"+(r.basis==="actual"?"actual":"spread")+"</td><td class=r style='color:#475569'>"+m2(r.charge)+"</td><td></td></tr>"; });
                 }
                 var html="<html><head><title>Income Statement - Beracah</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#1E293B}h1{font-size:18px;margin:0}h2{font-size:13px;color:#64748B;font-weight:400;margin:2px 0 16px}h3{font-size:11px;letter-spacing:1px;margin:16px 0 4px}table{width:100%;border-collapse:collapse;font-size:12px}td{padding:6px 10px;border-bottom:1px solid #E2E8F0}.r{text-align:right}.sec{color:#2E7D52}.sec.exp{color:#C0392B}.tot td{font-weight:700;border-top:2px solid #333}.net td{font-weight:800;font-size:15px;border-top:2px solid #333;padding-top:10px}</style></head><body>";
                 html+="<h1>Beracah Poultry Farm</h1><h2>Income Statement"+(cycleConfig&&cycleConfig.placementDate?" · cycle placed "+cycleConfig.placementDate:"")+"</h2>";
                 html+="<h3 class=sec>REVENUE</h3><table>"+revRows+"<tr class=tot><td>Total Revenue</td><td class=r>"+m2(totalRevenue)+"</td></tr></table>";
                 html+="<h3 class='sec exp'>DIRECT · production (chicks, feed, meds)</h3><table>"+expHead+expRows+"<tr class=tot><td>Direct subtotal</td><td></td><td></td><td></td><td class=r>"+m2(productionExpense)+"</td></tr></table>";
-                if(adminRows.length){ html+="<h3 class='sec exp'>ADMIN · annual, prorated ("+growDays+" days, x"+yearProrate.toFixed(3)+")</h3><table>"+adRows+"<tr class=tot><td>Admin subtotal (this cycle)</td><td></td><td></td><td class=r>"+m2(adminCharge)+"</td><td></td></tr></table>"; }
+                if(adminRows.length){ html+="<h3 class='sec exp'>ADMIN · spread (x"+yearProrate.toFixed(3)+" of year) or actual · "+growDays+" days</h3><table>"+adRows+"<tr class=tot><td>Admin subtotal (this cycle)</td><td></td><td></td><td class=r>"+m2(adminCharge)+"</td><td></td></tr></table>"; }
                 html+="<table><tr class=tot><td>TOTAL EXPENSES</td><td class=r>"+m2(totalExpenses)+"</td></tr></table>";
                 html+="<table><tr class=net><td>NET INCOME</td><td class=r>"+m2(netIncome)+"</td></tr></table>";
                 html+="<p style='font-size:11px;color:#64748B'>Margin: "+margin.toFixed(1)+"%</p>";
@@ -3988,23 +3988,23 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                       );
                     })()}
 
-                    {/* Admin · annual, prorated */}
+                    {/* Admin · spread or actual */}
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginTop:16,marginBottom:2}}>
-                      <span style={{fontSize:9,color:"#E91E63",letterSpacing:1,fontWeight:700}}>ADMIN · ANNUAL <span style={{color:"#94A3B8",fontWeight:400,letterSpacing:0}}>(all other costs, spread over the year)</span></span>
-                      <span style={{fontSize:9,color:"#94A3B8"}}>{growDays} days · ×{yearProrate.toFixed(3)} of year · ₱{money(adminCharge)}</span>
+                      <span style={{fontSize:9,color:"#E91E63",letterSpacing:1,fontWeight:700}}>ADMIN <span style={{color:"#94A3B8",fontWeight:400,letterSpacing:0}}>(all other costs — spread over year, or actual this cycle)</span></span>
+                      <span style={{fontSize:9,color:"#94A3B8"}}>{growDays} days · ₱{money(adminCharge)} this cycle</span>
                     </div>
                     {(function(){
-                      if(!adminRows.length) return <div style={{fontSize:11,color:"#94A3B8",padding:"6px 0"}}>No admin / one-time purchases entered yet.</div>;
+                      if(!adminRows.length) return <div style={{fontSize:11,color:"#94A3B8",padding:"6px 0"}}>No admin costs entered yet.</div>;
                       var AGC="2.6fr 1.1fr 1.1fr 20px"; var IF={fontFamily:"'Inter',sans-serif"};
                       return (
                         <div>
                           <div style={{display:"grid",gridTemplateColumns:AGC,gap:8,fontSize:8.5,color:"#94A3B8",letterSpacing:.5,fontWeight:700,padding:"0 0 4px",borderBottom:"1px solid #F1F5F9"}}>
-                            <span>ITEM</span><span style={{textAlign:"right"}}>ANNUAL ₱</span><span style={{textAlign:"right"}}>THIS CYCLE ₱</span><span/>
+                            <span>ITEM</span><span style={{textAlign:"right"}}>AMOUNT ₱</span><span style={{textAlign:"right"}}>THIS CYCLE ₱</span><span/>
                           </div>
-                          {adminRows.map(function(r){ return (
+                          {adminRows.map(function(r){ var isAct=r.basis==="actual"; return (
                             <div key={r.id} style={{display:"grid",gridTemplateColumns:AGC,gap:8,fontSize:11,padding:"4px 0",alignItems:"center",borderBottom:"1px solid #F8FAFC"}}>
-                              <span style={{color:"#475569",paddingLeft:4}}><b style={{color:"#334155"}}>{r.category}</b>{r.desc?" — "+r.desc:""}</span>
-                              <span style={{...IF,textAlign:"right",color:"#64748B"}}>₱{money(r.full)}</span>
+                              <span style={{color:"#475569",paddingLeft:4}}><b style={{color:"#334155"}}>{r.category}</b>{r.desc?" — "+r.desc:""} <span style={{fontSize:8,fontWeight:700,color:isAct?"#2E7D52":"#5B86E5",background:isAct?"#E8F5EE":"#EEF3FD",padding:"1px 5px",borderRadius:3,letterSpacing:.3}}>{isAct?"ACTUAL":"SPREAD"}</span></span>
+                              <span style={{...IF,textAlign:"right",color:"#64748B"}}>₱{money(r.full)}{!isAct&&<span style={{fontSize:8,color:"#94A3B8"}}>/yr</span>}</span>
                               <span style={{...IF,textAlign:"right",color:"#334155"}}>₱{money(r.charge)}</span>
                               <span style={{textAlign:"right"}}><button onClick={function(){setAdminExpenses(function(p){return p.filter(function(x){return x.id!==r.id;});});}} style={{background:"none",border:"1px solid #E91E6330",color:"#E91E6380",fontSize:10,width:18,height:18,cursor:"pointer",borderRadius:4,padding:0}}>×</button></span>
                             </div>
@@ -4091,16 +4091,19 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
 
                   {/* Add admin (annual) */}
                   <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16}}>
-                    <div style={{fontSize:10,color:"#E91E63",letterSpacing:1.5,fontWeight:600,marginBottom:10}}>ADD ADMIN <span style={{color:"#94A3B8",letterSpacing:0,fontWeight:400,textTransform:"none"}}>· electricity, water, salary, fuel, internet, equipment — enter annual, spread over the year</span></div>
+                    <div style={{fontSize:10,color:"#E91E63",letterSpacing:1.5,fontWeight:600,marginBottom:10}}>ADD ADMIN <span style={{color:"#94A3B8",letterSpacing:0,fontWeight:400,textTransform:"none"}}>· spread an annual cost over the year, or charge an actual bill in full to this cycle</span></div>
                     <datalist id="admCats">{adminCats.map(function(c){return <option key={c} value={c}/>;})}</datalist>
-                    <div style={{display:"grid",gridTemplateColumns:"1.2fr 1.6fr 1fr 0.8fr auto",gap:8,alignItems:"end"}}>
+                    {(function(){ var isAct=newAdmin.basis==="actual"; return (
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1.4fr 1fr 0.6fr auto",gap:8,alignItems:"end"}}>
+                      <div><label style={LBL}>BASIS</label><select value={newAdmin.basis} onChange={function(e){setNewAdmin(function(p){return {...p,basis:e.target.value};});}} style={{...INP,width:"100%",cursor:"pointer"}}><option value="annual">Spread / year</option><option value="actual">Actual this cycle</option></select></div>
                       <div><label style={LBL}>CATEGORY</label><input list="admCats" value={newAdmin.category} onChange={function(e){setNewAdmin(function(p){return {...p,category:e.target.value};});}} placeholder="pick or type" style={{...INP,width:"100%"}} /></div>
                       <div><label style={LBL}>DESCRIPTION</label><input value={newAdmin.desc} onChange={function(e){setNewAdmin(function(p){return {...p,desc:e.target.value};});}} placeholder="optional note" style={{...INP,width:"100%"}} /></div>
-                      <div><label style={LBL}>UNIT PRICE (₱)</label><input type="number" step="0.01" value={newAdmin.unitPrice} onChange={function(e){setNewAdmin(function(p){return {...p,unitPrice:e.target.value};});}} placeholder="0.00" style={{...INP,width:"100%"}} /></div>
+                      <div><label style={LBL}>{isAct?"UNIT PRICE (₱)":"UNIT PRICE/YR (₱)"}</label><input type="number" step="0.01" value={newAdmin.unitPrice} onChange={function(e){setNewAdmin(function(p){return {...p,unitPrice:e.target.value};});}} placeholder="0.00" style={{...INP,width:"100%"}} /></div>
                       <div><label style={LBL}>QTY</label><input type="number" step="0.01" value={newAdmin.qty} onChange={function(e){setNewAdmin(function(p){return {...p,qty:e.target.value};});}} placeholder="1" style={{...INP,width:"100%"}} /></div>
-                      <button onClick={function(){ var up=parseFloat(newAdmin.unitPrice)||0; var q=parseFloat(newAdmin.qty)||0; var cat=newAdmin.category.trim(); if(!cat||up<=0||q<=0) return; setAdminExpenses(function(p){return [...p,{id:Date.now(),category:cat,desc:newAdmin.desc,unitPrice:up,qty:q,amount:up*q}];}); if(cat && adminCats.indexOf(cat)<0) setAdminCats(function(p){return [...p,cat];}); setNewAdmin({category:"",desc:"",unitPrice:"",qty:""}); }} style={{background:"#E91E63",border:"none",color:"#FFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"9px 16px",cursor:"pointer",borderRadius:6}}>+ ADD</button>
+                      <button onClick={function(){ var up=parseFloat(newAdmin.unitPrice)||0; var q=parseFloat(newAdmin.qty)||0; var cat=newAdmin.category.trim(); if(!cat||up<=0||q<=0) return; setAdminExpenses(function(p){return [...p,{id:Date.now(),category:cat,desc:newAdmin.desc,unitPrice:up,qty:q,amount:up*q,basis:newAdmin.basis}];}); if(cat && adminCats.indexOf(cat)<0) setAdminCats(function(p){return [...p,cat];}); setNewAdmin({category:"",desc:"",unitPrice:"",qty:"",basis:newAdmin.basis}); }} style={{background:"#E91E63",border:"none",color:"#FFF",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:11,padding:"9px 16px",cursor:"pointer",borderRadius:6}}>+ ADD</button>
                     </div>
-                    {newAdmin.unitPrice && newAdmin.qty && (function(){ var full=(parseFloat(newAdmin.unitPrice)||0)*(parseFloat(newAdmin.qty)||0); return <div style={{fontSize:11,color:"#E91E63",fontWeight:600,marginTop:8}}>₱{money(full)}/yr → ₱{money(full*yearProrate)} this cycle ({growDays} days)</div>; })()}
+                    ); })()}
+                    {newAdmin.unitPrice && newAdmin.qty && (function(){ var full=(parseFloat(newAdmin.unitPrice)||0)*(parseFloat(newAdmin.qty)||0); var isAct=newAdmin.basis==="actual"; return <div style={{fontSize:11,color:"#E91E63",fontWeight:600,marginTop:8}}>{isAct?("₱"+money(full)+" charged in full this cycle"):("₱"+money(full)+"/yr → ₱"+money(full*yearProrate)+" this cycle ("+growDays+" days)")}</div>; })()}
                   </div>
                 </div>
               );
@@ -4384,7 +4387,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 var fMed = medInventoryLog.filter(function(e){return e.type==="delivery";}).reduce(function(s,e){return s+(e.cost!=null?e.cost:(e.qty||0)*(e.unitPrice||0));},0);
                 var fProd = expenses.reduce(function(s,e){return s+(parseFloat(e.amount)||0);},0) + fMed;
                 var fGD = curWeightedAge!=null ? (harvestTrucks.reduce(function(m,t){return Math.max(m,t.day||0);},0)||currentDay) : currentDay;
-                var fAD = adminExpenses.reduce(function(s,e){return s+((parseFloat(e.amount)||0)*(fGD/365));},0);
+                var fAD = adminExpenses.reduce(function(s,e){var full=parseFloat(e.amount)||0; return s+(e.basis==="actual"?full:full*(fGD/365));},0);
                 var fTE = fProd + fAD;
                 var fNet = fRev - fTE;
                 cur.netIncome=fNet; cur.revenue=fRev; cur.totalExp=fTE;

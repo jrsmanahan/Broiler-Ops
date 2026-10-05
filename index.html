@@ -3798,6 +3798,10 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               var prodKg = harvestTrucks.reduce(function(s,t){return s+(t.kg||0);},0);
               var costPerBird = prodHeads>0 ? totalExpenses/prodHeads : null;
               var costPerKg = prodKg>0 ? totalExpenses/prodKg : null;
+              var pricePerBird = prodHeads>0 ? harvestSales/prodHeads : null;
+              var pricePerKg = prodKg>0 ? harvestSales/prodKg : null;
+              var netPerBird = prodHeads>0 ? netIncome/prodHeads : null;
+              var netPerKg = prodKg>0 ? netIncome/prodKg : null;
               var SEL={background:"#F5F7FA",border:"1px solid #CBD5E1",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontSize:12,padding:"8px 10px",outline:"none",borderRadius:6};
               function printIncome(){
                 function m2(n){ return "PHP "+n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -3821,10 +3825,15 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 html+="<h3 class=sec>REVENUE</h3><table>"+revRows+"<tr class=tot><td>Total Revenue</td><td class=r>"+m2(totalRevenue)+"</td></tr></table>";
                 html+="<h3 class='sec exp'>EXPENSES</h3><table>"+expRows+"<tr class=tot><td>Total Expenses</td><td class=r>"+m2(totalExpenses)+"</td></tr></table>";
                 html+="<table><tr class=net><td>NET INCOME</td><td class=r>"+m2(netIncome)+"</td></tr></table>";
-                html+="<p style='font-size:11px;color:#64748B'>Margin: "+margin.toFixed(1)+"%";
-                if(costPerBird!=null) html+=" &nbsp;·&nbsp; Cost/bird: "+m2(costPerBird);
-                if(costPerKg!=null) html+=" &nbsp;·&nbsp; Cost/kg: "+m2(costPerKg);
-                html+="</p>";
+                html+="<p style='font-size:11px;color:#64748B'>Margin: "+margin.toFixed(1)+"%</p>";
+                if(prodHeads>0 || prodKg>0){
+                  html+="<h3 style='color:#64748B'>UNIT ECONOMICS</h3><table>";
+                  html+="<tr><td></td><td class=r style='font-weight:700'>PER BIRD</td><td class=r style='font-weight:700'>PER KG</td></tr>";
+                  html+="<tr><td>Ave selling price</td><td class=r>"+(pricePerBird!=null?m2(pricePerBird):"-")+"</td><td class=r>"+(pricePerKg!=null?m2(pricePerKg):"-")+"</td></tr>";
+                  html+="<tr><td>Cost to produce</td><td class=r>"+(costPerBird!=null?m2(costPerBird):"-")+"</td><td class=r>"+(costPerKg!=null?m2(costPerKg):"-")+"</td></tr>";
+                  html+="<tr class=tot><td>Net income</td><td class=r>"+(netPerBird!=null?m2(netPerBird):"-")+"</td><td class=r>"+(netPerKg!=null?m2(netPerKg):"-")+"</td></tr>";
+                  html+="</table><p style='font-size:10px;color:#94A3B8'>Based on "+prodHeads.toLocaleString()+" harvested birds · "+prodKg.toLocaleString(undefined,{maximumFractionDigits:1})+" kg. Selling price excludes other revenue.</p>";
+                }
                 html+="</body></html>";
                 var w=window.open("","_blank"); if(!w){alert("Enable pop-ups to print the income statement.");return;} w.document.write(html); w.document.close(); w.focus(); setTimeout(function(){try{w.print();}catch(e){}},300);
               }
@@ -3840,6 +3849,22 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               ); };
               return (
                 <div>
+                  {/* KPI strip */}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
+                    <div style={{background:"#F0FAF4",border:"1px solid #BFE3CE",borderRadius:8,padding:"12px 14px"}}>
+                      <div style={{fontSize:9,color:"#2E7D52",letterSpacing:.8,fontWeight:700,marginBottom:2}}>REVENUE</div>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:19,color:"#1E293B"}}>₱{money(totalRevenue)}</div>
+                    </div>
+                    <div style={{background:"#FDF0F4",border:"1px solid #F3C6D5",borderRadius:8,padding:"12px 14px"}}>
+                      <div style={{fontSize:9,color:"#E91E63",letterSpacing:.8,fontWeight:700,marginBottom:2}}>EXPENSES</div>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:19,color:"#1E293B"}}>₱{money(totalExpenses)}</div>
+                    </div>
+                    <div style={{background:netIncome>=0?"#F0FAF4":"#FDF0F4",border:"1px solid "+(netIncome>=0?"#BFE3CE":"#F3C6D5"),borderRadius:8,padding:"12px 14px"}}>
+                      <div style={{fontSize:9,color:netIncome>=0?"#2E7D52":"#E91E63",letterSpacing:.8,fontWeight:700,marginBottom:2}}>NET INCOME</div>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:19,color:netIncome>=0?"#2E7D52":"#E91E63"}}>₱{money(netIncome)}</div>
+                      <div style={{fontSize:9,color:"#94A3B8",marginTop:1}}>margin {margin.toFixed(1)}%</div>
+                    </div>
+                  </div>
                   {/* Income statement */}
                   <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"16px",marginBottom:16}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -3896,19 +3921,34 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                     </div>
                   </div>
 
-                  {/* Cost to produce */}
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
-                    <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"12px 14px"}}>
-                      <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>COST TO PRODUCE / BIRD</div>
-                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#1E293B"}}>{costPerBird!=null?"₱"+money(costPerBird):"—"}</div>
-                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{prodHeads.toLocaleString()} harvested birds</div>
-                    </div>
-                    <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"12px 14px"}}>
-                      <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,marginBottom:2}}>COST TO PRODUCE / KG</div>
-                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:18,color:"#1E293B"}}>{costPerKg!=null?"₱"+money(costPerKg):"—"}</div>
-                      <div style={{fontSize:9,color:"#64748B",marginTop:1}}>{prodKg.toLocaleString(undefined,{maximumFractionDigits:1})} kg harvested</div>
-                    </div>
-                  </div>
+                  {/* Unit economics */}
+                  {(function(){
+                    var uc=function(val,color){ return <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:17,color:color||"#1E293B",textAlign:"right"}}>{val!=null?"₱"+money(val):"—"}</div>; };
+                    var head=function(t){ return <div style={{fontSize:9,color:"#94A3B8",letterSpacing:.8,fontWeight:700,textAlign:"right"}}>{t}</div>; };
+                    var lbl=function(t,sub){ return <div><div style={{fontSize:11,fontWeight:700,color:"#334155"}}>{t}</div>{sub&&<div style={{fontSize:9,color:"#94A3B8"}}>{sub}</div>}</div>; };
+                    var line={borderTop:"1px solid #F1F5F9"};
+                    return (
+                      <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"16px",marginBottom:16}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
+                          <div style={{fontSize:13,fontWeight:700,color:"#1E293B"}}>Unit Economics</div>
+                          <div style={{fontSize:9,color:"#94A3B8"}}>{prodHeads.toLocaleString()} birds · {prodKg.toLocaleString(undefined,{maximumFractionDigits:0})} kg</div>
+                        </div>
+                        <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr",gap:"6px 14px",alignItems:"center"}}>
+                          <div/>{head("PER BIRD")}{head("PER KG")}
+                          <div style={{...line,paddingTop:8}}>{lbl("Ave selling price","harvest revenue")}</div>
+                          <div style={{...line,paddingTop:8}}>{uc(pricePerBird)}</div>
+                          <div style={{...line,paddingTop:8}}>{uc(pricePerKg)}</div>
+                          <div style={{...line,paddingTop:8}}>{lbl("Cost to produce","all expenses")}</div>
+                          <div style={{...line,paddingTop:8}}>{uc(costPerBird,"#C0392B")}</div>
+                          <div style={{...line,paddingTop:8}}>{uc(costPerKg,"#C0392B")}</div>
+                          <div style={{borderTop:"2px solid #1E293B",paddingTop:8}}>{lbl("Net income")}</div>
+                          <div style={{borderTop:"2px solid #1E293B",paddingTop:8}}>{uc(netPerBird,netPerBird>=0?"#2E7D52":"#E91E63")}</div>
+                          <div style={{borderTop:"2px solid #1E293B",paddingTop:8}}>{uc(netPerKg,netPerKg>=0?"#2E7D52":"#E91E63")}</div>
+                        </div>
+                        <div style={{fontSize:9,color:"#94A3B8",marginTop:10}}>Selling price is harvest sales only; net income includes other revenue.</div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Add other revenue */}
                   <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16,marginBottom:12}}>

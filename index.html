@@ -3803,9 +3803,19 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 function m2(n){ return "PHP "+n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
                 var revRows = "<tr><td>Broiler sales (harvest)</td><td class=r>"+m2(harvestSales)+"</td></tr>";
                 otherRevenue.forEach(function(r){ var lbl=(r.category||r.source||"Other revenue")+(r.desc?" - "+r.desc:"")+((r.qty&&r.unitPrice)?" ("+r.qty+" x "+Number(r.unitPrice).toLocaleString()+")":""); revRows+="<tr><td>"+lbl+"</td><td class=r>"+m2(parseFloat(r.amount)||0)+"</td></tr>"; });
-                var expRows = (expenses.length||medExpense>0)? "" : "<tr><td colspan=2 style='color:#94A3B8'>No expenses entered.</td></tr>";
-                if(medExpense>0) expRows+="<tr><td>Medicine / Vet (auto from med log)</td><td class=r>"+m2(medExpense)+"</td></tr>";
-                expenses.forEach(function(e){ var lbl=(e.category||"Other")+(e.desc?" - "+e.desc:"")+((e.qty&&e.unitPrice)?" ("+e.qty+" x "+Number(e.unitPrice).toLocaleString()+")":""); expRows+="<tr><td>"+lbl+"</td><td class=r>"+m2(parseFloat(e.amount)||0)+"</td></tr>"; });
+                var expItems=[];
+                if(medExpense>0) expItems.push({cat:"Medicine / Vet", line:"auto from med log", amt:medExpense});
+                expenses.forEach(function(e){ var suffix=(e.qty&&e.unitPrice)?" ("+e.qty+" x "+Number(e.unitPrice).toLocaleString()+")":""; expItems.push({cat:e.category||"Other", line:(e.desc?e.desc:"-")+suffix, amt:parseFloat(e.amount)||0}); });
+                var expRows="";
+                if(!expItems.length){ expRows="<tr><td colspan=2 style='color:#94A3B8'>No expenses entered.</td></tr>"; }
+                else {
+                  var ebc={}; expItems.forEach(function(it){ (ebc[it.cat]=ebc[it.cat]||[]).push(it); });
+                  Object.keys(ebc).sort().forEach(function(cat){
+                    var list=ebc[cat]; var sub=list.reduce(function(s,x){return s+x.amt;},0);
+                    expRows+="<tr style='background:#F5F7FA'><td style='font-weight:700'>"+cat+"</td><td class=r style='font-weight:700'>"+m2(sub)+"</td></tr>";
+                    list.forEach(function(it){ expRows+="<tr><td style='padding-left:24px;color:#475569'>"+it.line+"</td><td class=r style='color:#475569'>"+m2(it.amt)+"</td></tr>"; });
+                  });
+                }
                 var html="<html><head><title>Income Statement - Beracah</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#1E293B}h1{font-size:18px;margin:0}h2{font-size:13px;color:#64748B;font-weight:400;margin:2px 0 16px}h3{font-size:11px;letter-spacing:1px;margin:16px 0 4px}table{width:100%;border-collapse:collapse;font-size:12px}td{padding:6px 10px;border-bottom:1px solid #E2E8F0}.r{text-align:right}.sec{color:#2E7D52}.sec.exp{color:#C0392B}.tot td{font-weight:700;border-top:2px solid #333}.net td{font-weight:800;font-size:15px;border-top:2px solid #333;padding-top:10px}</style></head><body>";
                 html+="<h1>Beracah Poultry Farm</h1><h2>Income Statement"+(cycleConfig&&cycleConfig.placementDate?" · cycle placed "+cycleConfig.placementDate:"")+"</h2>";
                 html+="<h3 class=sec>REVENUE</h3><table>"+revRows+"<tr class=tot><td>Total Revenue</td><td class=r>"+m2(totalRevenue)+"</td></tr></table>";
@@ -3851,9 +3861,25 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                     </div>
 
                     <div style={{fontSize:9,color:"#E91E63",letterSpacing:1,fontWeight:700,marginTop:14,marginBottom:2}}>EXPENSES</div>
-                    {expenses.length===0 && medExpense<=0 && <div style={{fontSize:11,color:"#94A3B8",padding:"6px 0"}}>No expenses entered yet.</div>}
-                    {medExpense>0 && row("Medicine / Vet (auto from med log)", medExpense)}
-                    {expenses.map(function(e){ var lbl=(e.category||"Other")+(e.desc?" — "+e.desc:"")+((e.qty&&e.unitPrice)?" ("+e.qty+" × ₱"+Number(e.unitPrice).toLocaleString()+")":""); return <div key={e.id}>{row(lbl, parseFloat(e.amount)||0, function(){setExpenses(function(p){return p.filter(function(x){return x.id!==e.id;});});})}</div>; })}
+                    {(function(){
+                      var items=[];
+                      if(medExpense>0) items.push({cat:"Medicine / Vet", line:"auto from med log", amt:medExpense, auto:true});
+                      expenses.forEach(function(e){ var suffix=(e.qty&&e.unitPrice)?" ("+e.qty+" × ₱"+Number(e.unitPrice).toLocaleString()+")":""; items.push({cat:e.category||"Other", line:(e.desc?e.desc:"—")+suffix, amt:parseFloat(e.amount)||0, id:e.id}); });
+                      if(!items.length) return <div style={{fontSize:11,color:"#94A3B8",padding:"6px 0"}}>No expenses entered yet.</div>;
+                      var byCat={}; items.forEach(function(it){ (byCat[it.cat]=byCat[it.cat]||[]).push(it); });
+                      var cats=Object.keys(byCat).sort();
+                      return cats.map(function(cat){
+                        var list=byCat[cat]; var sub=list.reduce(function(s,x){return s+x.amt;},0);
+                        return (
+                          <div key={cat}>
+                            <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#64748B",fontWeight:700,letterSpacing:.3,marginTop:8,marginBottom:1}}>
+                              <span>{cat}</span><span style={{paddingRight:28}}>₱{money(sub)}</span>
+                            </div>
+                            {list.map(function(it,i){ return <div key={it.id||("m"+i)} style={{paddingLeft:10}}>{row(it.line, it.amt, it.auto?null:function(){setExpenses(function(p){return p.filter(function(x){return x.id!==it.id;});});}, true)}</div>; })}
+                          </div>
+                        );
+                      });
+                    })()}
                     <div style={{borderTop:"1px solid #E2E8F0",marginTop:4,paddingTop:2}}>
                       <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:12,fontWeight:700}}>
                         <span style={{color:"#1E293B"}}>Total Expenses</span>

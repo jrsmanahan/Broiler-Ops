@@ -1136,10 +1136,11 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [newAdmin, setNewAdmin]       = useState({ category:"", desc:"", unitPrice:"", qty:"", date: todayPHT() });
   const [adminYear, setAdminYear]     = useState(new Date().getFullYear());
   const [surplusFeedBags, setSurplusFeedBags] = useLocalStorage("surplusFeedBags", 0);
+  const [downtimeStage, setDowntimeStage]     = useLocalStorage("downtimeStage", ""); // ""=auto, "cleaning", "disinfecting", "active"(reopened)
   const [medInventoryLog, setMedInventoryLog] = useSyncedLog("medInventoryLog", houseId, userId, isOnline, syncTick);
   const [newMedEntry, setNewMedEntry] = useState({ type:"delivery", medicine:"", qty:"", unit:"", unitPrice:"", notes:"" });
   const [checksSection, setChecksSection] = useState("cropfill");
-  const OPS_KEYS = ["shiftLogs","taskChecks","tunnelLogs","cropLogs","litterLogs","flushLogs","crateEntries","placementTrucks","crateWeight","chicksPerCrate","activeBracket","litterScores","litterFlags","litterNotes","feedDeliveries","medInventoryLog","harvestTrucks","surplusFeedBags","dayOverride_legacy","dayAnchor_legacy"];
+  const OPS_KEYS = ["shiftLogs","taskChecks","tunnelLogs","cropLogs","litterLogs","flushLogs","crateEntries","placementTrucks","crateWeight","chicksPerCrate","activeBracket","litterScores","litterFlags","litterNotes","feedDeliveries","medInventoryLog","harvestTrucks","surplusFeedBags","downtimeStage","dayOverride_legacy","dayAnchor_legacy"];
   // Per-grow financial entries reset each cycle (category lists are kept so they persist).
   // adminExpenses is intentionally excluded — it's a calendar-year ledger that survives End Cycle.
   const FIN_KEYS = ["expenses","otherRevenue"];
@@ -1322,7 +1323,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
     setActiveBracket(getBroodBracket(nd));
   };
   // ── Computed ─────────────────────────────────────────────────────────────
-  const phase      = getPhase(currentDay);
+  let phase        = getPhase(currentDay);
   const todayMeds  = medProgram.filter(m => m.day === currentDay);
   const todayAM    = todayMeds.filter(m => m.session === "AM");
   const todayPM    = todayMeds.filter(m => m.session === "PM");
@@ -1611,7 +1612,15 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   }, 0) * 50;
   const remainingPopMetric = netPlacedBirds - cumulMortTotal;
   const harvestedHeadsTotal = harvestTrucks.reduce(function(s,t){return s+(t.heads||0);},0);
-  const birdsInHouse = netPlacedBirds - cumulMortTotal - harvestedHeadsTotal;
+  const rawInHouse = netPlacedBirds - cumulMortTotal - harvestedHeadsTotal;
+  // Downtime between grows: house empties → Cleaning → Disinfecting → next placement.
+  // "" = follow the count (auto), "active" = reopened (force production), else the chosen stage.
+  const autoEmpty = harvestedHeadsTotal > 0 && rawInHouse <= 0;
+  const downStage = downtimeStage==="active" ? "" : (downtimeStage || (autoEmpty ? "cleaning" : ""));
+  const isDowntime = downStage !== "";
+  const birdsInHouse = isDowntime ? 0 : rawInHouse;
+  if (downStage==="disinfecting") phase = { label: "DISINFECTING", color: "#0E7490", short: "DISINF" };
+  else if (downStage==="cleaning") phase = { label: "CLEANING", color: "#64748B", short: "CLEAN" };
   const hrPct = netPlacedBirds > 0 ? (remainingPopMetric / netPlacedBirds * 100) : 100;
   // Acceptable cumulative mortality to date, from the day-bracket standard.
   const acceptMortCount = Math.round(acceptCumMortRate(currentDay) * netPlacedBirds);
@@ -1990,9 +1999,11 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               <div>
                 <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:20, color:phase.color }}>{phase.label} — Day {currentDay}</div>
                 <div style={{ fontSize:11, color:"#64748B", marginTop:2 }}>
-                  {currentDay===0 && "Chick placement day. Record truck arrivals, DOA, and controller setup."}
-                  {currentDay>=1 && currentDay<=14 && "Brooding stage · Bracket "+(getBroodBracket(currentDay))+" · "+(14-currentDay)+" days to tunnel transition"}
-                  {currentDay>14 && currentDay<=45 && (function(){
+                  {downStage==="cleaning" && "Cleaning · house emptied ("+harvestedHeadsTotal.toLocaleString()+" harvested). Shovel out litter, then move to Disinfecting →"}
+                  {downStage==="disinfecting" && "Disinfecting · wash down & disinfect the house. When dry and ready, End Cycle to archive this grow and start the next."}
+                  {!isDowntime && currentDay===0 && "Chick placement day. Record truck arrivals, DOA, and controller setup."}
+                  {!isDowntime && currentDay>=1 && currentDay<=14 && "Brooding stage · Bracket "+(getBroodBracket(currentDay))+" · "+(14-currentDay)+" days to tunnel transition"}
+                  {!isDowntime && currentDay>14 && currentDay<=45 && (function(){
                     // Harvest-timing only — weight & trend live on the ALW card.
                     var p = trendProj;
                     if (p.bulkHarvest) return "Bulk harvest underway · ALW tracked from ≥2,000-head truck trend" + (p.obsGain!==null?" ("+(p.obsGain>=0?"+":"")+Math.round(p.obsGain)+"g/day)":"");
@@ -2000,16 +2011,35 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                     if (p.daysLeft <= 0) return "Tunnel stage · at/over " + (p.target/1000) + "kg harvest target now";
                     return "Tunnel stage · " + p.daysLeft + " day" + (p.daysLeft!==1?"s":"") + " to " + (p.target/1000) + "kg (D" + p.harvestDay + ")";
                   })()}
-                  {currentDay>45 && "Harvest window. Contact supervisor for truck coordination."}
+                  {!isDowntime && currentDay>45 && "Harvest window. Contact supervisor for truck coordination."}
                 </div>
               </div>
-              {isAlwDay && (
+              {isAlwDay && !isDowntime && (
                 <div style={{ background:"#C4960C18", border:"1px solid #C4960C50", borderRadius:6, padding:"10px 14px", textAlign:"center" }}>
                   <div style={{ fontSize:18 }}>⚖</div>
                   <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:11, color:"#C4960C" }}>ALW WEIGH</div>
                   <div style={{ fontSize:9, color:"#64748B" }}>1% population</div>
                 </div>
               )}
+              {(function(){
+                var btn=function(onClick,bg,bd,col,txt){ return <button onClick={onClick} style={{ background:bg, border:bd, color:col, fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:9, letterSpacing:.5, padding:"8px 12px", cursor:"pointer", borderRadius:6, whiteSpace:"nowrap" }}>{txt}</button>; };
+                if(downStage==="cleaning") return (
+                  <div style={{display:"flex",flexDirection:"column",gap:6,alignSelf:"center"}}>
+                    {btn(function(){setDowntimeStage("disinfecting");}, "#0E7490","none","#FFF","DISINFECTING →")}
+                    {btn(function(){setDowntimeStage("active");}, "none","1px solid #CBD5E1","#94A3B8","↩ Reopen house")}
+                  </div>
+                );
+                if(downStage==="disinfecting") return (
+                  <div style={{display:"flex",flexDirection:"column",gap:6,alignSelf:"center"}}>
+                    {btn(function(){setDowntimeStage("cleaning");}, "none","1px solid #64748B50","#64748B","← Back to cleaning")}
+                    {btn(function(){setDowntimeStage("active");}, "none","1px solid #CBD5E1","#94A3B8","↩ Reopen house")}
+                  </div>
+                );
+                if(harvestedHeadsTotal>0) return (
+                  <button onClick={function(){ setDowntimeStage("cleaning"); }} style={{ background:"#64748B", border:"none", color:"#FFF", fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:9, letterSpacing:.5, padding:"9px 13px", cursor:"pointer", borderRadius:6, whiteSpace:"nowrap", alignSelf:"center" }}>🧹 MARK HOUSE EMPTY{rawInHouse>0?" ("+rawInHouse.toLocaleString()+" left)":""}</button>
+                );
+                return null;
+              })()}
             </div>
             {/* ── Daily log status banner ── */}
             {(function(){

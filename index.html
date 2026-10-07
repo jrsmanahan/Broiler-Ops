@@ -517,9 +517,10 @@ const MED_PROGRAM_DEFAULT = [
 ];
 const ALW_DAYS = [0, 3, 7, 10, 14, 18, 21, 25, 28, 32, 35];
 const BRACKET_NAMES = ["Day 0","Day 1–3","Day 4–6","Day 7–9","Day 10–12","Day 13–15","Day 16–18","Day 19–21","Day 22–24","Day 25–27","Day 28–30","Day 31–33","Day 34–36","Day 37–39"];
+const DOWNTIME_BRACKETS = ["Cleaning","Disinfecting"];  // between-grow downtime checklists
 function buildDefaultTaskMap() {
   const out = {};
-  BRACKET_NAMES.forEach(function(b) {
+  BRACKET_NAMES.concat(DOWNTIME_BRACKETS).forEach(function(b) {
     out[b] = []; // starts empty — fully custom, built by the flockmen
   });
   return out;
@@ -1621,6 +1622,10 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const birdsInHouse = isDowntime ? 0 : rawInHouse;
   if (downStage==="disinfecting") phase = { label: "DISINFECTING", color: "#0E7490", short: "DISINF" };
   else if (downStage==="cleaning") phase = { label: "CLEANING", color: "#64748B", short: "CLEAN" };
+  // Which task bracket "now" points to — a downtime checklist during cleanout, else the day bracket.
+  const downtimeBracket = downStage==="disinfecting" ? "Disinfecting" : downStage==="cleaning" ? "Cleaning" : null;
+  const currentBracket = downtimeBracket || getBroodBracket(currentDay);
+  React.useEffect(function(){ if(downtimeBracket) setActiveBracket(downtimeBracket); }, [downtimeBracket]);
   const hrPct = netPlacedBirds > 0 ? (remainingPopMetric / netPlacedBirds * 100) : 100;
   // Acceptable cumulative mortality to date, from the day-bracket standard.
   const acceptMortCount = Math.round(acceptCumMortRate(currentDay) * netPlacedBirds);
@@ -2168,18 +2173,18 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               </div>
             )}
             {/* Today's task preview */}
-            {currentDay <= 14 && (
+            {(currentDay <= 14 || isDowntime) && (
               <div style={{ background:"#FFFFFF", border:"1px solid #E2E8F0", borderRadius:8, overflow:"hidden", marginBottom:16 }}>
                 <div style={{ padding:"10px 16px", borderBottom:"1px solid #E2E8F0", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                  <div style={{ fontSize:10, color:"#64748B", letterSpacing:1.5, fontWeight:600 }}>TASK BRACKET — {getBroodBracket(currentDay)}</div>
-                  <button onClick={() => { setActiveBracket(getBroodBracket(currentDay)); setActiveTab("tasks"); }} style={{ background:"none", border:"1px solid #CBD5E1", color:"#64748B", fontFamily:"'Inter',sans-serif", fontSize:9, padding:"3px 10px", cursor:"pointer", borderRadius:3 }}>
+                  <div style={{ fontSize:10, color:"#64748B", letterSpacing:1.5, fontWeight:600 }}>{isDowntime?"STAGE TASKS":"TASK BRACKET"} — {currentBracket}</div>
+                  <button onClick={() => { setActiveBracket(currentBracket); setActiveTab("tasks"); }} style={{ background:"none", border:"1px solid #CBD5E1", color:"#64748B", fontFamily:"'Inter',sans-serif", fontSize:9, padding:"3px 10px", cursor:"pointer", borderRadius:3 }}>
                     OPEN TASKS →
                   </button>
                 </div>
-                {(tasksByBracket[getBroodBracket(currentDay)]||[]).length === 0 ? (
-                  <div style={{ padding:"16px", fontSize:11, color:"#94A3B8", textAlign:"center" }}>No tasks added yet for this bracket — tap OPEN TASKS to add some</div>
+                {(tasksByBracket[currentBracket]||[]).length === 0 ? (
+                  <div style={{ padding:"16px", fontSize:11, color:"#94A3B8", textAlign:"center" }}>No tasks added yet for this stage — tap OPEN TASKS to add some</div>
                 ) : (function() {
-                  const allTasks = tasksByBracket[getBroodBracket(currentDay)]||[];
+                  const allTasks = tasksByBracket[currentBracket]||[];
                   const pending = allTasks.filter(function(t){ return !taskChecks[t.id]; });
                   const total = allTasks.length;
                   const doneCount = total - pending.length;
@@ -2309,21 +2314,22 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
         )}
 {activeTab==="tasks" && (
           <div className="su">
-            <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:16, marginBottom:4 }}>Brooding Tasks</div>
-            <div style={{ fontSize:11, color:"#64748B", marginBottom:16 }}>Build your own checklist per bracket · use ▲▼ to reorder · carries over to the next grow</div>
+            <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:700, fontSize:16, marginBottom:4 }}>Tasks</div>
+            <div style={{ fontSize:11, color:"#64748B", marginBottom:16 }}>Checklist per stage — grow brackets + cleaning & disinfecting · ▲▼ to reorder · carries over to the next grow</div>
             {/* Bracket tabs */}
             <div style={{ display:"flex", gap:6, marginBottom:16, flexWrap:"wrap" }}>
-              {Object.keys(tasksByBracket).map(b => {
+              {Object.keys(tasksByBracket).filter(function(b){return DOWNTIME_BRACKETS.indexOf(b)<0;}).concat(DOWNTIME_BRACKETS).map(b => {
                 const list = tasksByBracket[b]||[];
                 const total = list.length;
                 const done = list.filter(function(t){return taskChecks[t.id];}).length;
-                const isCurrent = b === getBroodBracket(currentDay);
+                const isCurrent = b === currentBracket;
+                const accent = b==="Disinfecting" ? "#0E7490" : b==="Cleaning" ? "#64748B" : "#D4652A";
                 return (
                   <button key={b} onClick={() => setActiveBracket(b)} style={{
-                    background: activeBracket===b ? "#D4652A" : isCurrent ? "#D4652A18" : "#FFFFFF", border: activeBracket===b ? "none" : isCurrent ? "1px solid #D4652A40" : "1px solid #E2E8F0", color: activeBracket===b ? "#F5F7FA" : isCurrent ? "#D4652A" : "#64748B",
+                    background: activeBracket===b ? accent : isCurrent ? accent+"18" : "#FFFFFF", border: activeBracket===b ? "none" : isCurrent ? "1px solid "+accent+"40" : "1px solid #E2E8F0", color: activeBracket===b ? "#F5F7FA" : isCurrent ? accent : "#64748B",
                     fontFamily:"'Inter',sans-serif", fontSize:10, letterSpacing:.8, padding:"7px 16px", cursor:"pointer", borderRadius:4, fontWeight:600,
                   }}>
-                    {b} {["D0–3","D7–9","D10–13","D14"].includes(b) && "⚖"} <span style={{ opacity:.7, fontSize:9 }}>{done}/{total}</span>
+                    {b==="Cleaning"?"🧹 ":b==="Disinfecting"?"🧴 ":""}{b} <span style={{ opacity:.7, fontSize:9 }}>{done}/{total}</span>
                   </button>
                 );
               })}

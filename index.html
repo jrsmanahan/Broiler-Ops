@@ -1746,7 +1746,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   };
   // Crate ALW computed
   const crateALW = (() => {
-    const tare = parseFloat(crateWeight)||1.8;
+    const tare = (function(){ var t=parseFloat(crateWeight); return isNaN(t)?1.8:t; })();  // 0 is a valid tare (crate already removed)
     const perCrate = parseInt(chicksPerCrate)||100;
     const entries = crateEntries.filter(e=>e.grossWeight>0&&e.numCrates>0);
     if (!entries.length) return null;
@@ -2802,7 +2802,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 <div style={{border:"1px solid #E2E8F0",borderRadius:6,overflowX:"auto"}}>
                   <div style={{minWidth:520}}>
                   <div style={{display:"grid",gridTemplateColumns:"40px 110px 80px 90px 100px 1fr 36px",padding:"7px 14px",background:"#F5F7FA",fontSize:8,color:"#64748B",letterSpacing:1,borderBottom:"1px solid #E2E8F0"}}><div>#</div><div>GROSS (kg)</div><div>CRATES</div><div>NET (kg)</div><div>BIRDS</div><div>NOTES</div><div></div></div>
-                  {[...crateEntries].reverse().map((e,i)=>{const tare=parseFloat(crateWeight)||1.8;const perCrate=parseInt(chicksPerCrate)||100;const net=e.grossWeight-(tare*e.numCrates);const birds=e.numCrates*perCrate;const rowAlw=(net/birds*1000);return(
+                  {[...crateEntries].reverse().map((e,i)=>{const _t=parseFloat(crateWeight);const tare=isNaN(_t)?1.8:_t;const perCrate=parseInt(chicksPerCrate)||100;const net=e.grossWeight-(tare*e.numCrates);const birds=e.numCrates*perCrate;const rowAlw=(net/birds*1000);return(
                     <div key={e.id} className="row" style={{display:"grid",gridTemplateColumns:"40px 110px 80px 90px 100px 1fr 36px",padding:"8px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center"}}><div style={{fontSize:9,color:"#CBD5E1"}}>{crateEntries.length-i}</div><div style={{color:"#1E293B",fontWeight:600}}>{e.grossWeight} kg</div><div style={{color:"#64748B"}}>{e.numCrates}</div><div style={{color:"#5B86E5"}}>{net.toFixed(2)} kg</div><div style={{color:"#64748B"}}>{birds.toLocaleString()}</div><div style={{color:"#64748B",fontSize:10}}>{e.notes||"—"} <span style={{color:"#CBD5E1",marginLeft:6}}>→ {rowAlw.toFixed(1)}g/bird</span></div><button onClick={()=>setCrateEntries(p=>p.filter(x=>x.id!==e.id))} style={{background:"none",border:"1px solid #E91E6340",color:"#E91E6380",fontFamily:"'Inter',sans-serif",fontSize:11,width:28,height:28,cursor:"pointer",borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button></div>
                   );})}
                   <div style={{display:"grid",gridTemplateColumns:"40px 110px 80px 90px 100px 1fr 36px",padding:"8px 14px",background:"#F5F7FA",fontSize:11,alignItems:"center",borderTop:"1px solid #252527"}}><div/><div style={{fontSize:9,color:"#5B86E5",letterSpacing:.5}}>TOTAL</div><div/><div style={{color:"#5B86E5",fontWeight:700}}>{crateEntries.reduce((s,e)=>{const t=parseFloat(crateWeight)||1.8;return s+(e.grossWeight-(t*e.numCrates));},0).toFixed(2)} kg</div><div style={{color:"#5B86E5",fontWeight:700}}>{crateEntries.reduce((s,e)=>s+(e.numCrates*(parseInt(chicksPerCrate)||100)),0).toLocaleString()}</div><div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,color:"#5B86E5"}}>{crateALW?"ALW = "+(crateALW.toFixed(1))+"g":"—"}</div><div/></div>

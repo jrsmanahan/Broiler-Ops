@@ -770,41 +770,40 @@ const TABS = [
 ];
 // ─── FEEDING GUIDE ────────────────────────────────────────────────────────────
 const FEEDING_GUIDE_DEFAULT = [
-  {day:0, alw:40, dailyBt:0.0, cummBt:0.0, cbcBt:0.0, bscBt:0.0, bfpBt:0.0},
-  {day:1, alw:63, dailyBt:0.275, cummBt:0.28, cbcBt:0.275, bscBt:0.0, bfpBt:0.0},
-  {day:2, alw:86, dailyBt:0.325, cummBt:0.6, cbcBt:0.325, bscBt:0.0, bfpBt:0.0},
-  {day:3, alw:109, dailyBt:0.4, cummBt:1.0, cbcBt:0.4, bscBt:0.0, bfpBt:0.0},
-  {day:4, alw:131, dailyBt:0.45, cummBt:1.45, cbcBt:0.45, bscBt:0.0, bfpBt:0.0},
-  {day:5, alw:154, dailyBt:0.5, cummBt:1.95, cbcBt:0.5, bscBt:0.0, bfpBt:0.0},
-  {day:6, alw:177, dailyBt:0.6, cummBt:2.55, cbcBt:0.6, bscBt:0.0, bfpBt:0.0},
-  {day:7, alw:200, dailyBt:0.725, cummBt:3.27, cbcBt:0.725, bscBt:0.0, bfpBt:0.0},
-  {day:8, alw:253, dailyBt:0.825, cummBt:4.1, cbcBt:0.825, bscBt:0.0, bfpBt:0.0},
-  {day:9, alw:306, dailyBt:0.95, cummBt:5.05, cbcBt:0.95, bscBt:0.0, bfpBt:0.0},
-  {day:10, alw:359, dailyBt:1.05, cummBt:6.1, cbcBt:1.05, bscBt:0.0, bfpBt:0.0},
-  {day:11, alw:411, dailyBt:1.175, cummBt:7.27, cbcBt:1.175, bscBt:0.0, bfpBt:0.0},
-  {day:12, alw:464, dailyBt:1.275, cummBt:8.55, cbcBt:1.275, bscBt:0.0, bfpBt:0.0},
-  {day:13, alw:517, dailyBt:1.4, cummBt:9.95, cbcBt:1.4, bscBt:0.0, bfpBt:0.0},
-  {day:14, alw:570, dailyBt:1.5, cummBt:11.45, cbcBt:1.05, bscBt:0.45, bfpBt:0.0},
-  {day:15, alw:647, dailyBt:1.6, cummBt:13.05, cbcBt:0.85, bscBt:0.75, bfpBt:0.0},
-  {day:16, alw:724, dailyBt:1.725, cummBt:14.77, cbcBt:0.65, bscBt:1.075, bfpBt:0.0},
-  {day:17, alw:801, dailyBt:1.825, cummBt:16.6, cbcBt:0.0, bscBt:1.825, bfpBt:0.0},
-  {day:18, alw:879, dailyBt:1.95, cummBt:18.55, cbcBt:0.0, bscBt:1.95, bfpBt:0.0},
-  {day:19, alw:956, dailyBt:2.05, cummBt:20.6, cbcBt:0.0, bscBt:2.05, bfpBt:0.0},
-  {day:20, alw:1033, dailyBt:2.175, cummBt:22.77, cbcBt:0.0, bscBt:1.675, bfpBt:0.5},
-  {day:21, alw:1110, dailyBt:2.275, cummBt:25.05, cbcBt:0.0, bscBt:1.125, bfpBt:1.15},
-  {day:22, alw:1206, dailyBt:2.4, cummBt:27.45, cbcBt:0.0, bscBt:1.2, bfpBt:1.2},
-  {day:23, alw:1301, dailyBt:2.5, cummBt:29.95, cbcBt:0.0, bscBt:0.4, bfpBt:2.1},
-  {day:24, alw:1397, dailyBt:2.6, cummBt:32.55, cbcBt:0.0, bscBt:0.0, bfpBt:2.6},
-  {day:25, alw:1493, dailyBt:2.725, cummBt:35.27, cbcBt:0.0, bscBt:0.0, bfpBt:2.725},
-  {day:26, alw:1589, dailyBt:2.825, cummBt:38.1, cbcBt:0.0, bscBt:0.0, bfpBt:2.825},
-  {day:27, alw:1684, dailyBt:2.95, cummBt:41.05, cbcBt:0.0, bscBt:0.0, bfpBt:2.95},
-  {day:28, alw:1780, dailyBt:3.05, cummBt:44.1, cbcBt:0.0, bscBt:0.0, bfpBt:3.05},
-  {day:29, alw:1885, dailyBt:3.175, cummBt:47.27, cbcBt:0.0, bscBt:0.0, bfpBt:3.175},
-  {day:30, alw:1990, dailyBt:3.275, cummBt:50.55, cbcBt:0.0, bscBt:0.0, bfpBt:3.275},
-  {day:31, alw:2095, dailyBt:3.4, cummBt:53.95, cbcBt:0.0, bscBt:0.0, bfpBt:3.4},
-  {day:32, alw:2200, dailyBt:3.5, cummBt:57.45, cbcBt:0.0, bscBt:0.0, bfpBt:3.5},
-  {day:33, alw:2305, dailyBt:3.6, cummBt:61.05, cbcBt:0.0, bscBt:0.0, bfpBt:3.6},
-  {day:34, alw:2410, dailyBt:1.45, cummBt:62.5, cbcBt:0.0, bscBt:0.0, bfpBt:1.45},
+  {day:0, alw:43, dailyBt:0.0, cummBt:0.0, cbcBt:0.0, bscBt:0.0, bfpBt:0.0},
+  {day:1, alw:59, dailyBt:0.25, cummBt:0.3, cbcBt:0.25, bscBt:0.0, bfpBt:0.0},
+  {day:2, alw:76, dailyBt:0.3333, cummBt:0.6, cbcBt:0.3333, bscBt:0.0, bfpBt:0.0},
+  {day:3, alw:96, dailyBt:0.3889, cummBt:1.0, cbcBt:0.3889, bscBt:0.0, bfpBt:0.0},
+  {day:4, alw:119, dailyBt:0.4722, cummBt:1.4, cbcBt:0.4722, bscBt:0.0, bfpBt:0.0},
+  {day:5, alw:145, dailyBt:0.5278, cummBt:2.0, cbcBt:0.5278, bscBt:0.0, bfpBt:0.0},
+  {day:6, alw:175, dailyBt:0.6111, cummBt:2.6, cbcBt:0.6111, bscBt:0.0, bfpBt:0.0},
+  {day:7, alw:208, dailyBt:0.6944, cummBt:3.3, cbcBt:0.6944, bscBt:0.0, bfpBt:0.0},
+  {day:8, alw:245, dailyBt:0.7778, cummBt:4.1, cbcBt:0.7778, bscBt:0.0, bfpBt:0.0},
+  {day:9, alw:286, dailyBt:0.8889, cummBt:4.9, cbcBt:0.8889, bscBt:0.0, bfpBt:0.0},
+  {day:10, alw:330, dailyBt:0.9722, cummBt:5.9, cbcBt:0.9722, bscBt:0.0, bfpBt:0.0},
+  {day:11, alw:379, dailyBt:1.0833, cummBt:7.0, cbcBt:1.0833, bscBt:0.0, bfpBt:0.0},
+  {day:12, alw:433, dailyBt:1.2222, cummBt:8.2, cbcBt:1.2222, bscBt:0.0, bfpBt:0.0},
+  {day:13, alw:490, dailyBt:1.3611, cummBt:9.6, cbcBt:1.3611, bscBt:0.0, bfpBt:0.0},
+  {day:14, alw:552, dailyBt:1.4722, cummBt:11.1, cbcBt:1.1111, bscBt:0.3611, bfpBt:0.0},
+  {day:15, alw:616, dailyBt:1.5556, cummBt:12.6, cbcBt:0.7778, bscBt:0.7778, bfpBt:0.0},
+  {day:16, alw:683, dailyBt:1.6667, cummBt:14.3, cbcBt:0.6389, bscBt:1.0278, bfpBt:0.0},
+  {day:17, alw:753, dailyBt:1.8056, cummBt:16.1, cbcBt:0.3889, bscBt:1.4167, bfpBt:0.0},
+  {day:18, alw:827, dailyBt:1.9167, cummBt:18.0, cbcBt:0.0, bscBt:1.9167, bfpBt:0.0},
+  {day:19, alw:903, dailyBt:2.0556, cummBt:20.1, cbcBt:0.0, bscBt:2.0556, bfpBt:0.0},
+  {day:20, alw:982, dailyBt:2.1667, cummBt:22.2, cbcBt:0.0, bscBt:1.6111, bfpBt:0.5556},
+  {day:21, alw:1064, dailyBt:2.3056, cummBt:24.5, cbcBt:0.0, bscBt:1.4444, bfpBt:0.8611},
+  {day:22, alw:1149, dailyBt:2.4167, cummBt:26.9, cbcBt:0.0, bscBt:1.2778, bfpBt:1.1389},
+  {day:23, alw:1235, dailyBt:2.5278, cummBt:29.5, cbcBt:0.0, bscBt:0.6111, bfpBt:1.9167},
+  {day:24, alw:1324, dailyBt:2.6389, cummBt:32.1, cbcBt:0.0, bscBt:0.0, bfpBt:2.6389},
+  {day:25, alw:1416, dailyBt:2.7778, cummBt:34.9, cbcBt:0.0, bscBt:0.0, bfpBt:2.7778},
+  {day:26, alw:1509, dailyBt:2.8889, cummBt:37.8, cbcBt:0.0, bscBt:0.0, bfpBt:2.8889},
+  {day:27, alw:1603, dailyBt:3.0, cummBt:40.8, cbcBt:0.0, bscBt:0.0, bfpBt:3.0},
+  {day:28, alw:1700, dailyBt:3.1111, cummBt:43.9, cbcBt:0.0, bscBt:0.0, bfpBt:3.1111},
+  {day:29, alw:1798, dailyBt:3.1944, cummBt:47.1, cbcBt:0.0, bscBt:0.0, bfpBt:3.1944},
+  {day:30, alw:1897, dailyBt:3.3056, cummBt:50.4, cbcBt:0.0, bscBt:0.0, bfpBt:3.3056},
+  {day:31, alw:1998, dailyBt:3.3889, cummBt:53.8, cbcBt:0.0, bscBt:0.0, bfpBt:3.3889},
+  {day:32, alw:2100, dailyBt:3.5, cummBt:57.3, cbcBt:0.0, bscBt:0.0, bfpBt:3.5},
+  {day:33, alw:2202, dailyBt:3.5833, cummBt:60.9, cbcBt:0.0, bscBt:0.0, bfpBt:3.5833},
 ];
 
 // ─── LIGHTING PROGRAM (default) ────────────────────────────────────────────
@@ -1082,6 +1081,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const [editingLightIdx, setEditingLightIdx] = useState(null);
   const [lightDraft, setLightDraft] = useState(null);
   const [feedingGuide, setFeedingGuide] = useSyncedConfig("feedingGuide", FEEDING_GUIDE_DEFAULT, houseId, userId, isOnline, syncTick);
+  // One-time: load the updated feeding-guide values over any older stored copy.
+  const [feedGuideVer, setFeedGuideVer] = useLocalStorage("feedGuideVer", "");
+  React.useEffect(function(){ if(feedGuideVer!=="2026-11-bags36"){ setFeedingGuide(FEEDING_GUIDE_DEFAULT); setFeedGuideVer("2026-11-bags36"); } }, [feedGuideVer]);
   const [editingFeedIdx, setEditingFeedIdx] = useState(null);
   const [feedDraft, setFeedDraft] = useState(null);
   const [cycleHistory, setCycleHistory] = useLocalStorage("cycleHistory", []);
@@ -3270,53 +3272,6 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   const scale = feedBasisBirds/1000;
                   const todayBags = row ? (row.dailyBt*scale) : null;
                   return <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Today's target: <strong style={{color:"#2E7D52"}}>{todayBags!==null?todayBags.toFixed(0):"—"}</strong> bags (Day {currentDay})</div>;
-                })()}
-                {(function(){
-                  const scale = feedBasisBirds/1000;
-                  // Feed order = cumulative feed to the day the flock reaches target weight.
-                  // Each phase (CBC/BSC/BFP) summed only up to that harvest day, so a lower target orders less feed.
-                  const targetG = (cycleConfig && cycleConfig.harvestTargetG) || 2100;
-                  const harvestRow = feedingGuide.find(r=>r.alw>=targetG) || feedingGuide[feedingGuide.length-1];
-                  const rows = feedingGuide.filter(r=>r.day<=harvestRow.day);
-                  const cbcBt = rows.reduce((s,r)=>s+(r.cbcBt||0),0);
-                  const bscBt = rows.reduce((s,r)=>s+(r.bscBt||0),0);
-                  const bfpBt = rows.reduce((s,r)=>s+(r.bfpBt||0),0);
-                  const totCbc = cbcBt*scale;
-                  const totBsc = bscBt*scale;
-                  const totBfp = bfpBt*scale;
-                  const totBt = cbcBt + bscBt + bfpBt;
-                  const totBags = totBt*scale;
-                  return (
-                    <div>
-                      <div style={{background:"#2E7D5212",border:"1px solid #2E7D5230",borderRadius:8,padding:"10px 12px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                        <div>
-                          <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>TOTAL FEED ORDER</div>
-                          <div style={{fontSize:10,color:"#64748B"}}>{totBt.toFixed(1)} BT · {(feedBasisBirds/1000).toFixed(0)}k birds · to {(targetG/1000).toFixed(1)}kg (D{harvestRow.day})</div>
-                        </div>
-                        <div style={{textAlign:"right"}}>
-                          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:22,color:"#2E7D52"}}>{Math.ceil(totBags)}</div>
-                          <div style={{fontSize:9,color:"#94A3B8"}}>bags total</div>
-                        </div>
-                      </div>
-                      <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
-                        <div style={{flex:1,minWidth:90,background:"#E5B80B15",border:"1px solid #E5B80B40",borderRadius:8,padding:"8px 10px"}}>
-                          <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>CBC TOTAL</div>
-                          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#B8940B"}}>{Math.ceil(totCbc)}</div>
-                          <div style={{fontSize:9,color:"#94A3B8"}}>bags · to D16</div>
-                        </div>
-                        <div style={{flex:1,minWidth:90,background:"#D4652A15",border:"1px solid #D4652A40",borderRadius:8,padding:"8px 10px"}}>
-                          <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>BSC TOTAL</div>
-                          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#D4652A"}}>{Math.ceil(totBsc)}</div>
-                          <div style={{fontSize:9,color:"#94A3B8"}}>bags · D14–22</div>
-                        </div>
-                        <div style={{flex:1,minWidth:90,background:"#5B86E515",border:"1px solid #5B86E540",borderRadius:8,padding:"8px 10px"}}>
-                          <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1}}>BFP TOTAL</div>
-                          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,color:"#5B86E5"}}>{Math.ceil(totBfp)}</div>
-                          <div style={{fontSize:9,color:"#94A3B8"}}>bags · D20–harvest</div>
-                        </div>
-                      </div>
-                    </div>
-                  );
                 })()}
                 <div style={{overflowX:"auto"}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,minWidth:580}}>

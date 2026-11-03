@@ -1321,6 +1321,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   // Crate weighing for chick ALW
   const [crateWeight, setCrateWeight] = useLocalStorage("crateWeight", "1.8");   // kg per crate (tare)
   const [chicksPerCrate, setChicksPerCrate] = useLocalStorage("chicksPerCrate", "100");
+  const [incentivePeople, setIncentivePeople] = useLocalStorage("incentivePeople", String((house.flockman_names||[]).length || 1)); // headcount receiving the incentive
   const [crateEntries, setCrateEntries] = useSyncedLog("crateEntries", houseId, userId, isOnline, syncTick);
   const [newCrate, setNewCrate] = useState({ grossWeight:"", numCrates:"3", notes:"" });
   const grossRef = React.useRef(null);
@@ -1807,7 +1808,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   })();
   // Incentive earned this grow — shared by the Incentive sub-tab and auto-logged to Direct Cost.
   const incentiveData = incentiveResult({ shiftLogs, harvestTrucks, feedDeliveries, surplusFeedBags, netPlacedBirds, currentDay });
-  const incentiveEarned = incentiveData.totalEarned;
+  const incentivePeopleN = Math.max(0, parseInt(incentivePeople) || 0);
+  const incentiveEarned = incentiveData.totalEarned * incentivePeopleN; // total payout across all people (auto-logs to Direct Cost)
   // Placement totals
   const totalHeads  = placementTrucks.reduce((s,t)=>s+t.qty, 0);
   const totalDOA    = placementTrucks.reduce((s,t)=>s+t.doa, 0);
@@ -4334,13 +4336,22 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               return (
                 <div>
                   {/* Total earned */}
-                  <div style={{background:"#2E7D5210",border:"1px solid #2E7D5230",borderLeft:"3px solid #2E7D52",borderRadius:8,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <div>
-                      <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1,fontWeight:700}}>TOTAL INCENTIVE EARNED</div>
-                      <div style={{fontSize:10,color:"#64748B",marginTop:2}}>milestones ₱{money(milestoneEarned)} + harvest ₱{money(harvestEarned)} · of ₱{money(maxMs+maxHv)} possible</div>
+                  {(function(){ var ppl=Math.max(0,parseInt(incentivePeople)||0); var payout=totalEarned*ppl; return (
+                  <div style={{background:"#2E7D5210",border:"1px solid #2E7D5230",borderLeft:"3px solid #2E7D52",borderRadius:8,padding:"14px 16px",marginBottom:16}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+                      <div>
+                        <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1,fontWeight:700}}>TOTAL INCENTIVE PAYOUT</div>
+                        <div style={{fontSize:10,color:"#64748B",marginTop:2}}>₱{money(totalEarned)}/person · milestones ₱{money(milestoneEarned)} + harvest ₱{money(harvestEarned)} · of ₱{money(maxMs+maxHv)} possible each</div>
+                      </div>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:26,color:"#2E7D52"}}>₱{money(payout)}</div>
                     </div>
-                    <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:26,color:"#2E7D52"}}>₱{money(totalEarned)}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginTop:12,paddingTop:10,borderTop:"1px solid #2E7D5230"}}>
+                      <span style={{fontSize:10,color:"#64748B",fontWeight:600}}>PEOPLE RECEIVING</span>
+                      <input type="number" min="0" value={incentivePeople} onChange={function(e){setIncentivePeople(e.target.value);}} style={{width:70,background:"#FFFFFF",border:"1px solid #2E7D5240",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,padding:"6px 10px",outline:"none",borderRadius:6,textAlign:"center"}} />
+                      <span style={{fontSize:11,color:"#64748B"}}>× ₱{money(totalEarned)} = <strong style={{color:"#2E7D52"}}>₱{money(payout)}</strong> <span style={{color:"#94A3B8"}}>→ auto-logs to Direct Cost</span></span>
+                    </div>
                   </div>
+                  ); })()}
 
                   {/* Growth milestones */}
                   <div style={{fontSize:10,color:"#C4960C",letterSpacing:1.5,fontWeight:700,marginBottom:8}}>GROWTH MILESTONES · ALW by day</div>

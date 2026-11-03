@@ -723,7 +723,6 @@ const TABS = [
   { id:"fieldguide", label:"FIELD GUIDE"  },
   { id:"harvest",    label:"HARVEST"      },
   { id:"reports",    label:"FINANCIAL"    },
-  { id:"admin",      label:"ADMIN"        },
   { id:"history",    label:"HISTORY"      },
 ];
 // ─── FEEDING GUIDE ────────────────────────────────────────────────────────────
@@ -3753,7 +3752,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
             <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Financial</div>
             <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Income statement · billing · payments</div>
             <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-              {[["financial","FINANCIAL"],["billing","BILLING"],["payments","PAYMENTS"]].map(function(s){
+              {[["financial","DIRECT COST"],["billing","BILLING"],["payments","PAYMENTS"],["overhead","OVERHEAD"]].map(function(s){
                 var id=s[0], lbl=s[1], on=reportSection===id;
                 return <button key={id} onClick={function(){setReportSection(id);}} style={{background:on?"#2E7D5220":"none",border:on?"1px solid #2E7D5260":"1px solid #CBD5E1",color:on?"#2E7D52":"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,letterSpacing:.8,padding:"6px 16px",cursor:"pointer",borderRadius:4,fontWeight:on?600:400}}>{lbl}</button>;
               })}
@@ -3805,7 +3804,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 html+="<h3 class=sec>REVENUE</h3><table>"+revRows+"<tr class=tot><td>Total Revenue</td><td class=r>"+m2(totalRevenue)+"</td></tr></table>";
                 html+="<h3 class='sec exp'>DIRECT · production (chicks, feed, meds)</h3><table>"+expHead+expRows+"<tr class=tot><td>Total Expenses</td><td></td><td></td><td></td><td class=r>"+m2(productionExpense)+"</td></tr></table>";
                 html+="<table><tr class=net><td>NET INCOME</td><td class=r>"+m2(netIncome)+"</td></tr></table>";
-                html+="<p style='font-size:11px;color:#64748B'>Margin: "+margin.toFixed(1)+"% &nbsp;·&nbsp; Admin / overhead is tracked separately on the Admin tab (annual).</p>";
+                html+="<p style='font-size:11px;color:#64748B'>Margin: "+margin.toFixed(1)+"% &nbsp;·&nbsp; Overhead is tracked on the Overhead sub-tab (annual).</p>";
                 if(prodHeads>0 || prodKg>0){
                   html+="<h3 style='color:#64748B'>UNIT ECONOMICS</h3><table>";
                   html+="<tr><td></td><td class=r style='font-weight:700'>PER BIRD</td><td class=r style='font-weight:700'>PER KG</td></tr>";
@@ -4214,9 +4213,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 </div>
               );
             })()}
-          </div>
-        )}
-        {activeTab==="admin" && (function(){
+        {reportSection==="overhead" && (function(){
           function money(n){ return n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
           function yrOf(d){ return d ? String(d).slice(0,4) : String(new Date().getFullYear()); }
           var yearStr = String(adminYear);
@@ -4243,11 +4240,11 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
             function m2(n){ return "PHP "+n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
             var cyRows = yearCycles.map(function(c){ return "<tr><td>Cycle "+c.cycleNumber+" ("+c.placementDate+" → "+c.endDate+")</td><td class=r>"+m2(c.finance.revenue||0)+"</td><td class=r>"+m2(c.finance.production||0)+"</td><td class=r>"+m2((c.finance.revenue||0)-(c.finance.production||0))+"</td></tr>"; }).join("") || "<tr><td colspan=4 style='color:#94A3B8'>No grows closed in "+yearStr+".</td></tr>";
             var byCat={}; yearAdmin.forEach(function(e){ var k=e.category||"Other"; byCat[k]=(byCat[k]||0)+(parseFloat(e.amount)||0); });
-            var adRows = Object.keys(byCat).sort().map(function(k){ return "<tr><td>"+k+"</td><td class=r>"+m2(byCat[k])+"</td></tr>"; }).join("") || "<tr><td colspan=2 style='color:#94A3B8'>No admin costs logged in "+yearStr+".</td></tr>";
+            var adRows = Object.keys(byCat).sort().map(function(k){ return "<tr><td>"+k+"</td><td class=r>"+m2(byCat[k])+"</td></tr>"; }).join("") || "<tr><td colspan=2 style='color:#94A3B8'>No overhead costs logged in "+yearStr+".</td></tr>";
             var html="<html><head><title>Annual Income Statement "+yearStr+" - Beracah</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#1E293B}h1{font-size:18px;margin:0}h2{font-size:13px;color:#64748B;font-weight:400;margin:2px 0 16px}h3{font-size:11px;letter-spacing:1px;margin:18px 0 4px}table{width:100%;border-collapse:collapse;font-size:12px}td{padding:6px 10px;border-bottom:1px solid #E2E8F0}.r{text-align:right}.sec{color:#2E7D52}.sec.exp{color:#C0392B}.tot td{font-weight:700;border-top:2px solid #333}.net td{font-weight:800;font-size:15px;border-top:2px solid #333;padding-top:10px}</style></head><body>";
             html+="<h1>Beracah Poultry Farm</h1><h2>Annual Income Statement · "+yearStr+"</h2>";
             html+="<h3 class=sec>GROWS CLOSED THIS YEAR</h3><table><tr><td></td><td class=r style='color:#94A3B8;font-size:10px'>REVENUE</td><td class=r style='color:#94A3B8;font-size:10px'>PRODUCTION</td><td class=r style='color:#94A3B8;font-size:10px'>CONTRIBUTION</td></tr>"+cyRows+"<tr class=tot><td>Totals ("+yearCycles.length+" grows)</td><td class=r>"+m2(yRev)+"</td><td class=r>"+m2(yProd)+"</td><td class=r>"+m2(yContribution)+"</td></tr></table>";
-            html+="<h3 class='sec exp'>ADMIN / OVERHEAD · "+yearStr+"</h3><table>"+adRows+"<tr class=tot><td>Total admin</td><td class=r>"+m2(adminTotal)+"</td></tr></table>";
+            html+="<h3 class='sec exp'>OVERHEAD · "+yearStr+"</h3><table>"+adRows+"<tr class=tot><td>Total overhead</td><td class=r>"+m2(adminTotal)+"</td></tr></table>";
             html+="<table><tr class=net><td>NET INCOME "+yearStr+"</td><td class=r>"+m2(yNet)+"</td></tr></table>";
             html+="<p style='font-size:11px;color:#64748B'>Margin: "+yMargin.toFixed(1)+"%"+(yKg>0?" &nbsp;·&nbsp; Net/kg: "+m2(yNetKg):"")+(yBirds>0?" &nbsp;·&nbsp; Net/bird: "+m2(yNetBird):"")+"</p>";
             html+="<p style='font-size:10px;color:#94A3B8'>Based on grows CLOSED in "+yearStr+" ("+yBirds.toLocaleString()+" birds · "+yKg.toLocaleString(undefined,{maximumFractionDigits:0})+" kg). A grow still in progress is included once you End Cycle.</p>";
@@ -4255,10 +4252,10 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
             var w=window.open("","_blank"); if(!w){alert("Enable pop-ups to print.");return;} w.document.write(html); w.document.close(); w.focus(); setTimeout(function(){try{w.print();}catch(e){}},300);
           }
           return (
-          <div className="su">
+          <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
               <div>
-                <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16}}>Admin & Annual</div>
+                <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16}}>Overhead</div>
                 <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Calendar-year overhead ledger · annual income statement</div>
               </div>
               <select value={adminYear} onChange={function(e){setAdminYear(parseInt(e.target.value));}} style={{background:"#F5F7FA",border:"1px solid #CBD5E1",color:"#1E293B",fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:13,padding:"8px 12px",borderRadius:6,cursor:"pointer"}}>
@@ -4278,7 +4275,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   {r("Revenue · "+yearCycles.length+" grow"+(yearCycles.length===1?"":"s")+" closed", yRev, "#2E7D52")}
                   {r("Production costs (direct)", yProd, "#C0392B")}
                   <div style={{borderTop:"1px solid #E2E8F0",marginTop:3,paddingTop:3}}>{r("Gross margin (before admin)", yContribution, null, true)}</div>
-                  {r("Admin / overhead · "+yearStr, adminTotal, "#E91E63")}
+                  {r("Overhead · "+yearStr, adminTotal, "#E91E63")}
                   <div style={{borderTop:"2px solid #1E293B",marginTop:6,paddingTop:8,display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
                     <span style={{fontSize:13,fontWeight:800,color:"#1E293B"}}>NET INCOME {yearStr}</span>
                     <span style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:18,color:yNet>=0?"#2E7D52":"#E91E63"}}>₱{money(yNet)}</span>
@@ -4292,11 +4289,11 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
             {/* Admin ledger */}
             <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16,marginBottom:16}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#1E293B"}}>Admin Ledger · {yearStr}</div>
+                <div style={{fontSize:13,fontWeight:700,color:"#1E293B"}}>Overhead Ledger · {yearStr}</div>
                 <div style={{fontSize:11,fontFamily:"'Inter',sans-serif",fontWeight:700,color:"#E91E63"}}>₱{money(adminTotal)}</div>
               </div>
               {(function(){
-                if(!yearAdmin.length) return <div style={{fontSize:11,color:"#94A3B8",padding:"6px 0"}}>No admin costs logged for {yearStr} yet.</div>;
+                if(!yearAdmin.length) return <div style={{fontSize:11,color:"#94A3B8",padding:"6px 0"}}>No overhead costs logged for {yearStr} yet.</div>;
                 var byCat={}; yearAdmin.forEach(function(e){ (byCat[e.category||"Other"]=byCat[e.category||"Other"]||[]).push(e); });
                 var GC="2.2fr 1fr 1.1fr 20px"; var IF={fontFamily:"'Inter',sans-serif"};
                 return (<div>
@@ -4324,7 +4321,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
 
             {/* Add admin cost */}
             <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:16}}>
-              <div style={{fontSize:10,color:"#E91E63",letterSpacing:1.5,fontWeight:600,marginBottom:10}}>ADD ADMIN COST <span style={{color:"#94A3B8",letterSpacing:0,fontWeight:400,textTransform:"none"}}>· electricity, salary, fuel, water, internet, repairs — logged to the year, not any cycle</span></div>
+              <div style={{fontSize:10,color:"#E91E63",letterSpacing:1.5,fontWeight:600,marginBottom:10}}>ADD OVERHEAD COST <span style={{color:"#94A3B8",letterSpacing:0,fontWeight:400,textTransform:"none"}}>· electricity, salary, fuel, water, internet, repairs — logged to the year, not any cycle</span></div>
               <datalist id="admCats2">{adminCats.map(function(c){return <option key={c} value={c}/>;})}</datalist>
               <div style={{display:"grid",gridTemplateColumns:"1.1fr 1.5fr 0.9fr 0.6fr 1fr auto",gap:8,alignItems:"end"}}>
                 <div><label style={LBL}>CATEGORY</label><input list="admCats2" value={newAdmin.category} onChange={function(e){setNewAdmin(function(p){return {...p,category:e.target.value};});}} placeholder="pick or type" style={{...INP,width:"100%"}} /></div>
@@ -4339,6 +4336,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
           </div>
           );
         })()}
+          </div>
+        )}
         {activeTab==="history" && (
           <div className="su">
             <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Grow Cycle History</div>

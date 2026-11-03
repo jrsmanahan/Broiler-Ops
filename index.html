@@ -604,6 +604,49 @@ function incentiveFor(value, m) {
   }
   return { peso:0, tierIdx:-1 };
 }
+// Shared incentive computation — used by the Incentive sub-tab AND the Direct Cost auto-log.
+function incentiveResult(ctx) {
+  var shiftLogs=ctx.shiftLogs, harvestTrucks=ctx.harvestTrucks, feedDeliveries=ctx.feedDeliveries;
+  var surplusFeedBags=ctx.surplusFeedBags||0, netPlacedBirds=ctx.netPlacedBirds||0, currentDay=ctx.currentDay||0;
+  function alwPointsG(){
+    var byDay={};
+    shiftLogs.filter(function(l){return l.alw;}).forEach(function(l){ byDay[l.day]=Math.round(l.alw*1000); });
+    var hb={}; harvestTrucks.forEach(function(t){ if((t.heads||0)>=2000){ if(!hb[t.day])hb[t.day]={kg:0,heads:0}; hb[t.day].kg+=(t.kg||0); hb[t.day].heads+=(t.heads||0); } });
+    Object.keys(hb).forEach(function(d){ var h=hb[d]; if(h.heads>0) byDay[+d]=Math.round(h.kg/h.heads*1000); });
+    return Object.keys(byDay).map(function(d){return {day:+d,g:byDay[d]};}).sort(function(a,b){return a.day-b.day;});
+  }
+  function alwAtDay(D){
+    var pts=alwPointsG();
+    var exact=pts.filter(function(p){return p.day===D;})[0];
+    if(exact) return {g:exact.g, src:"weighed"};
+    if(D>currentDay) return {g:null, src:"pending"};
+    var std=ALW_STANDARD.filter(function(r){return r.day===D;})[0];
+    if(!pts.length) return {g:std?std.std:null, src:"standard"};
+    var before=pts.filter(function(p){return p.day<D;}), after=pts.filter(function(p){return p.day>D;});
+    if(before.length && after.length){ var b=before[before.length-1], a=after[0]; return {g:Math.round(b.g+(a.g-b.g)*(D-b.day)/(a.day-b.day)), src:"interpolated"}; }
+    if(before.length>=2){ var b2=before[before.length-2], b1=before[before.length-1]; var sl=(b1.g-b2.g)/(b1.day-b2.day); return {g:Math.round(b1.g+sl*(D-b1.day)), src:"projected"}; }
+    if(before.length===1){ var p0=before[0]; var sp=ALW_STANDARD.filter(function(r){return r.day===p0.day;})[0]; if(sp&&sp.std>0&&std) return {g:Math.round(std.std*(p0.g/sp.std)), src:"projected"}; return {g:p0.g, src:"projected"}; }
+    return {g:std?std.std:null, src:"standard"};
+  }
+  var totHeads = harvestTrucks.reduce(function(s,t){return s+(t.heads||0);},0);
+  var totKg = harvestTrucks.reduce(function(s,t){return s+(t.kg||0);},0);
+  var feedBags = feedDeliveries.reduce(function(s,d){return s+(d.qty||0);},0);
+  var netFeedKg = (feedBags-surplusFeedBags)*50;
+  var actuals = {
+    alw: totHeads>0 ? totKg/totHeads : null,
+    fcr: totKg>0 ? netFeedKg/totKg : null,
+    hr:  (netPlacedBirds>0 && totHeads>0) ? (totHeads/netPlacedBirds*100) : null,
+    age: totHeads>0 ? harvestTrucks.reduce(function(s,t){return s+((t.day||0)*(t.heads||0));},0)/totHeads : null,
+  };
+  var order = ["alw","fcr","hr","age"];
+  var milestoneEarned = 0;
+  INCENTIVE_MILESTONES.forEach(function(ms){ var a=alwAtDay(ms.day); milestoneEarned += incentiveFor(a.g, {better:"higher", tiers:ms.tiers}).peso; });
+  var harvestEarned = 0;
+  order.forEach(function(k){ harvestEarned += incentiveFor(actuals[k], INCENTIVE_MATRIX[k]).peso; });
+  var maxMs = INCENTIVE_MILESTONES.reduce(function(s,ms){return s+ms.tiers[0].peso;},0);
+  var maxHv = order.reduce(function(s,k){return s+INCENTIVE_MATRIX[k].tiers[0].peso;},0);
+  return { alwAtDay:alwAtDay, actuals:actuals, order:order, milestoneEarned:milestoneEarned, harvestEarned:harvestEarned, totalEarned:milestoneEarned+harvestEarned, maxMs:maxMs, maxHv:maxHv };
+}
 // Status of a value vs the user's target / minimum. lowerBetter for FCR & age.
 function perfStatus(v, target, min, lowerBetter) {
   if (v == null || v === undefined || isNaN(v)) return { color:"#94A3B8", label:"—" };
@@ -1192,7 +1235,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
       const fRevenue = fHarvestSales + fOtherRev;
       const fMed = medInventoryLog.filter(function(e){return e.type==="delivery";}).reduce(function(s,e){return s+(e.cost!=null?e.cost:(e.qty||0)*(e.unitPrice||0));},0);
       const fManual = expenses.reduce(function(s,e){return s+(parseFloat(e.amount)||0);},0);
-      const fProduction = fManual + fMed;   // direct only; admin is a separate annual ledger
+      const fProduction = fManual + fMed + (incentiveEarned||0);   // direct only; overhead is a separate annual ledger; incentive auto-logs here
       const fMaxHDay = harvestTrucks.reduce(function(m,t){return Math.max(m,t.day||0);},0);
       const fGrowDays = fMaxHDay>0 ? fMaxHDay : currentDay;
       const fTotalExp = fProduction;
@@ -1762,6 +1805,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
     const totalBirds = entries.reduce((s,e)=>s+(e.numCrates*perCrate),0);
     return totalBirds>0 ? (totalNetKg/totalBirds*1000) : null; // grams
   })();
+  // Incentive earned this grow — shared by the Incentive sub-tab and auto-logged to Direct Cost.
+  const incentiveData = incentiveResult({ shiftLogs, harvestTrucks, feedDeliveries, surplusFeedBags, netPlacedBirds, currentDay });
+  const incentiveEarned = incentiveData.totalEarned;
   // Placement totals
   const totalHeads  = placementTrucks.reduce((s,t)=>s+t.qty, 0);
   const totalDOA    = placementTrucks.reduce((s,t)=>s+t.doa, 0);
@@ -3318,11 +3364,11 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
         {activeTab==="harvest" && (
           <div className="su">
             <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Harvest</div>
-            <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Log harvest trucks · uniformity · incentives</div>
+            <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Log harvest trucks · uniformity</div>
 
             {/* ── SUB-TABS ── */}
             <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-              {[["harvest","HARVEST"],["uniformity","UNIFORMITY"],["incentive","INCENTIVE"]].map(function(s){
+              {[["harvest","HARVEST"],["uniformity","UNIFORMITY"]].map(function(s){
                 var id=s[0], lbl=s[1], on=hSection===id;
                 return <button key={id} onClick={function(){setHSection(id);}} style={{background:on?"#2E7D5220":"none",border:on?"1px solid #2E7D5260":"1px solid #CBD5E1",color:on?"#2E7D52":"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,letterSpacing:.8,padding:"6px 16px",cursor:"pointer",borderRadius:4,fontWeight:on?600:400}}>{lbl}</button>;
               })}
@@ -3648,103 +3694,6 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               );
             })()}
 
-            {hSection==="incentive" && (function(){
-              function money(n){ return n.toLocaleString(undefined,{maximumFractionDigits:0}); }
-              // ALW (g) at a specific day: actual weigh-in if present, else projected/interpolated.
-              function alwPointsG(){
-                var byDay={};
-                shiftLogs.filter(function(l){return l.alw;}).forEach(function(l){ byDay[l.day]=Math.round(l.alw*1000); });
-                var hb={}; harvestTrucks.forEach(function(t){ if((t.heads||0)>=2000){ if(!hb[t.day])hb[t.day]={kg:0,heads:0}; hb[t.day].kg+=(t.kg||0); hb[t.day].heads+=(t.heads||0); } });
-                Object.keys(hb).forEach(function(d){ var h=hb[d]; if(h.heads>0) byDay[+d]=Math.round(h.kg/h.heads*1000); });
-                return Object.keys(byDay).map(function(d){return {day:+d,g:byDay[d]};}).sort(function(a,b){return a.day-b.day;});
-              }
-              function alwAtDay(D){
-                var pts=alwPointsG();
-                var exact=pts.filter(function(p){return p.day===D;})[0];
-                if(exact) return {g:exact.g, src:"weighed"};
-                if(D>currentDay) return {g:null, src:"pending"};
-                var std=ALW_STANDARD.filter(function(r){return r.day===D;})[0];
-                if(!pts.length) return {g:std?std.std:null, src:"standard"};
-                var before=pts.filter(function(p){return p.day<D;}), after=pts.filter(function(p){return p.day>D;});
-                if(before.length && after.length){ var b=before[before.length-1], a=after[0]; return {g:Math.round(b.g+(a.g-b.g)*(D-b.day)/(a.day-b.day)), src:"interpolated"}; }
-                if(before.length>=2){ var b2=before[before.length-2], b1=before[before.length-1]; var sl=(b1.g-b2.g)/(b1.day-b2.day); return {g:Math.round(b1.g+sl*(D-b1.day)), src:"projected"}; }
-                if(before.length===1){ var p0=before[0]; var sp=ALW_STANDARD.filter(function(r){return r.day===p0.day;})[0]; if(sp&&sp.std>0&&std) return {g:Math.round(std.std*(p0.g/sp.std)), src:"projected"}; return {g:p0.g, src:"projected"}; }
-                return {g:std?std.std:null, src:"standard"};
-              }
-              // Harvest-performance actuals
-              var totHeads = harvestTrucks.reduce(function(s,t){return s+(t.heads||0);},0);
-              var totKg = harvestTrucks.reduce(function(s,t){return s+(t.kg||0);},0);
-              var feedBags = feedDeliveries.reduce(function(s,d){return s+(d.qty||0);},0);
-              var netFeedKg = (feedBags-(surplusFeedBags||0))*50;
-              var actuals = {
-                alw: totHeads>0 ? totKg/totHeads : null,
-                fcr: totKg>0 ? netFeedKg/totKg : null,
-                hr:  (netPlacedBirds>0 && totHeads>0) ? (totHeads/netPlacedBirds*100) : null, // harvest recovery = harvested / placed
-                age: totHeads>0 ? harvestTrucks.reduce(function(s,t){return s+((t.day||0)*(t.heads||0));},0)/totHeads : null,
-              };
-              var order = ["alw","fcr","hr","age"];
-              var milestoneEarned = 0;
-              INCENTIVE_MILESTONES.forEach(function(ms){ var a=alwAtDay(ms.day); milestoneEarned += incentiveFor(a.g, {better:"higher", tiers:ms.tiers}).peso; });
-              var harvestEarned = 0;
-              order.forEach(function(k){ harvestEarned += incentiveFor(actuals[k], INCENTIVE_MATRIX[k]).peso; });
-              var totalEarned = milestoneEarned + harvestEarned;
-              var maxMs = INCENTIVE_MILESTONES.reduce(function(s,ms){return s+ms.tiers[0].peso;},0);
-              var maxHv = order.reduce(function(s,k){return s+INCENTIVE_MATRIX[k].tiers[0].peso;},0);
-              return (
-                <div>
-                  {/* Total earned */}
-                  <div style={{background:"#2E7D5210",border:"1px solid #2E7D5230",borderLeft:"3px solid #2E7D52",borderRadius:8,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <div>
-                      <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1,fontWeight:700}}>TOTAL INCENTIVE EARNED</div>
-                      <div style={{fontSize:10,color:"#64748B",marginTop:2}}>milestones ₱{money(milestoneEarned)} + harvest ₱{money(harvestEarned)} · of ₱{money(maxMs+maxHv)} possible</div>
-                    </div>
-                    <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:26,color:"#2E7D52"}}>₱{money(totalEarned)}</div>
-                  </div>
-
-                  {/* Growth milestones */}
-                  <div style={{fontSize:10,color:"#C4960C",letterSpacing:1.5,fontWeight:700,marginBottom:8}}>GROWTH MILESTONES · ALW by day</div>
-                  <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto",marginBottom:18}}>
-                    <div style={{display:"grid",gridTemplateColumns:"70px 1fr 1fr 1fr 110px 80px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:540}}>
-                      <div>DAY</div><div style={{textAlign:"center"}}>₱500</div><div style={{textAlign:"center"}}>₱350</div><div style={{textAlign:"center"}}>₱200</div><div style={{textAlign:"right"}}>ACTUAL ALW</div><div style={{textAlign:"right"}}>EARNED</div>
-                    </div>
-                    {INCENTIVE_MILESTONES.map(function(ms){
-                      var a=alwAtDay(ms.day); var inc=incentiveFor(a.g,{better:"higher",tiers:ms.tiers});
-                      var actCol = a.g==null ? "#94A3B8" : inc.tierIdx===0 ? "#2E7D52" : inc.tierIdx>=0 ? "#C4960C" : "#E91E63";
-                      return (
-                        <div key={ms.day} style={{display:"grid",gridTemplateColumns:"70px 1fr 1fr 1fr 110px 80px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:540}}>
-                          <div style={{fontWeight:700,color:"#1E293B"}}>Day {ms.day}</div>
-                          {ms.tiers.map(function(t,i){ var hit=inc.tierIdx===i; return <div key={i} style={{textAlign:"center",color:hit?"#2E7D52":"#64748B",fontWeight:hit?700:400,background:hit?"#2E7D5214":"transparent",borderRadius:4,padding:"3px 0"}}>≥{t.th}g</div>; })}
-                          <div style={{textAlign:"right",color:actCol,fontWeight:700}}>{a.g!=null?a.g+"g":"—"}<span style={{display:"block",fontSize:8,color:"#94A3B8",fontWeight:400}}>{a.src}</span></div>
-                          <div style={{textAlign:"right",fontWeight:700,color:inc.peso>0?"#2E7D52":"#94A3B8"}}>₱{money(inc.peso)}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Harvest performance */}
-                  <div style={{fontSize:10,color:"#2E7D52",letterSpacing:1.5,fontWeight:700,marginBottom:8}}>HARVEST PERFORMANCE · final flock</div>
-                  <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto"}}>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 80px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:560}}>
-                      <div>METRIC</div><div style={{textAlign:"center"}}>₱1,000</div><div style={{textAlign:"center"}}>₱750</div><div style={{textAlign:"center"}}>₱500</div><div style={{textAlign:"right"}}>ACTUAL</div><div style={{textAlign:"right"}}>EARNED</div>
-                    </div>
-                    {order.map(function(k){
-                      var m=INCENTIVE_MATRIX[k]; var val=actuals[k]; var inc=incentiveFor(val,m);
-                      var op = m.better==="higher" ? "≥" : "≤";
-                      var actCol = val==null ? "#94A3B8" : inc.tierIdx===0 ? "#2E7D52" : inc.tierIdx>=0 ? "#C4960C" : "#E91E63";
-                      return (
-                        <div key={k} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 80px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:560}}>
-                          <div style={{fontWeight:600,color:"#1E293B"}}>{m.label}</div>
-                          {m.tiers.map(function(t,i){ var hit=inc.tierIdx===i; return <div key={i} style={{textAlign:"center",color:hit?"#2E7D52":"#64748B",fontWeight:hit?700:400,background:hit?"#2E7D5214":"transparent",borderRadius:4,padding:"3px 0"}}>{op}{t.th}</div>; })}
-                          <div style={{textAlign:"right",color:actCol,fontWeight:700}}>{val!=null?m.fmt(val):"—"}</div>
-                          <div style={{textAlign:"right",fontWeight:700,color:inc.peso>0?"#2E7D52":"#94A3B8"}}>₱{money(inc.peso)}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div style={{fontSize:9,color:"#94A3B8",marginTop:10}}>Milestone ALW uses the weigh-in for that day, or the projected ALW when a day wasn't weighed. Harvest metrics use the cycle's final figures.</div>
-                </div>
-              );
-            })()}
           </div>
         )}
         {activeTab==="reports" && (
@@ -3752,7 +3701,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
             <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:16,marginBottom:4}}>Financial</div>
             <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Income statement · billing · payments</div>
             <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-              {[["financial","DIRECT COST"],["billing","BILLING"],["payments","PAYMENTS"],["overhead","OVERHEAD"]].map(function(s){
+              {[["financial","DIRECT COST"],["overhead","OVERHEAD"],["billing","BILLING"],["payments","PAYMENTS"],["incentive","INCENTIVE"]].map(function(s){
                 var id=s[0], lbl=s[1], on=reportSection===id;
                 return <button key={id} onClick={function(){setReportSection(id);}} style={{background:on?"#2E7D5220":"none",border:on?"1px solid #2E7D5260":"1px solid #CBD5E1",color:on?"#2E7D52":"#64748B",fontFamily:"'Inter',sans-serif",fontSize:9,letterSpacing:.8,padding:"6px 16px",cursor:"pointer",borderRadius:4,fontWeight:on?600:400}}>{lbl}</button>;
               })}
@@ -3766,8 +3715,10 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               // Medicine purchased this grow auto-feeds expenses (delivery cost).
               var medExpense = medInventoryLog.filter(function(e){return e.type==="delivery";}).reduce(function(s,e){return s+(e.cost!=null?e.cost:(e.qty||0)*(e.unitPrice||0));},0);
               var manualExpenses = expenses.reduce(function(s,e){return s+(parseFloat(e.amount)||0);},0);
-              // Admin is a separate calendar-year ledger (Admin tab) — it does NOT touch the cycle statement.
-              var productionExpense = manualExpenses + medExpense;   // direct, scales with flock
+              // Overhead is a separate calendar-year ledger — it does NOT touch the cycle statement.
+              // Performance incentive auto-logs here as flock labor (updates as milestones/harvest results land).
+              var incentiveExpense = incentiveEarned || 0;
+              var productionExpense = manualExpenses + medExpense + incentiveExpense;   // direct, scales with flock
               var totalExpenses = productionExpense;
               var netIncome = totalRevenue - totalExpenses;
               var margin = totalRevenue>0 ? netIncome/totalRevenue*100 : 0;
@@ -3787,6 +3738,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 function n2(n){ return n!=null?Number(n).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2}):""; }
                 var expItems=[];
                 if(medExpense>0) expItems.push({cat:"Medicine / Vet", desc:"auto from med log", qty:null, unitPrice:null, amt:medExpense});
+                if(incentiveExpense>0) expItems.push({cat:"Performance Incentive", desc:"auto from incentive tab", qty:null, unitPrice:null, amt:incentiveExpense});
                 expenses.forEach(function(e){ expItems.push({cat:e.category||"Other", desc:e.desc?e.desc:"-", qty:(e.qty!=null&&e.qty!=="")?Number(e.qty):null, unitPrice:(e.unitPrice!=null&&e.unitPrice!=="")?Number(e.unitPrice):null, amt:parseFloat(e.amount)||0}); });
                 var expRows="";
                 if(!expItems.length){ expRows="<tr><td colspan=5 style='color:#94A3B8'>No expenses entered.</td></tr>"; }
@@ -3871,6 +3823,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                     {(function(){
                       var items=[];
                       if(medExpense>0) items.push({cat:"Medicine / Vet", desc:"auto from med log", qty:null, unitPrice:null, amt:medExpense, auto:true});
+                      if(incentiveExpense>0) items.push({cat:"Performance Incentive", desc:"auto from incentive tab", qty:null, unitPrice:null, amt:incentiveExpense, auto:true});
                       expenses.forEach(function(e){ items.push({cat:e.category||"Other", desc:e.desc?e.desc:"—", qty:(e.qty!=null&&e.qty!=="")?Number(e.qty):null, unitPrice:(e.unitPrice!=null&&e.unitPrice!=="")?Number(e.unitPrice):null, amt:parseFloat(e.amount)||0, id:e.id}); });
                       if(!items.length) return <div style={{fontSize:11,color:"#94A3B8",padding:"6px 0"}}>No expenses entered yet.</div>;
                       var byCat={}; items.forEach(function(it){ (byCat[it.cat]=byCat[it.cat]||[]).push(it); });
@@ -4336,6 +4289,103 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
           </div>
           );
         })()}
+            {reportSection==="incentive" && (function(){
+              function money(n){ return n.toLocaleString(undefined,{maximumFractionDigits:0}); }
+              // ALW (g) at a specific day: actual weigh-in if present, else projected/interpolated.
+              function alwPointsG(){
+                var byDay={};
+                shiftLogs.filter(function(l){return l.alw;}).forEach(function(l){ byDay[l.day]=Math.round(l.alw*1000); });
+                var hb={}; harvestTrucks.forEach(function(t){ if((t.heads||0)>=2000){ if(!hb[t.day])hb[t.day]={kg:0,heads:0}; hb[t.day].kg+=(t.kg||0); hb[t.day].heads+=(t.heads||0); } });
+                Object.keys(hb).forEach(function(d){ var h=hb[d]; if(h.heads>0) byDay[+d]=Math.round(h.kg/h.heads*1000); });
+                return Object.keys(byDay).map(function(d){return {day:+d,g:byDay[d]};}).sort(function(a,b){return a.day-b.day;});
+              }
+              function alwAtDay(D){
+                var pts=alwPointsG();
+                var exact=pts.filter(function(p){return p.day===D;})[0];
+                if(exact) return {g:exact.g, src:"weighed"};
+                if(D>currentDay) return {g:null, src:"pending"};
+                var std=ALW_STANDARD.filter(function(r){return r.day===D;})[0];
+                if(!pts.length) return {g:std?std.std:null, src:"standard"};
+                var before=pts.filter(function(p){return p.day<D;}), after=pts.filter(function(p){return p.day>D;});
+                if(before.length && after.length){ var b=before[before.length-1], a=after[0]; return {g:Math.round(b.g+(a.g-b.g)*(D-b.day)/(a.day-b.day)), src:"interpolated"}; }
+                if(before.length>=2){ var b2=before[before.length-2], b1=before[before.length-1]; var sl=(b1.g-b2.g)/(b1.day-b2.day); return {g:Math.round(b1.g+sl*(D-b1.day)), src:"projected"}; }
+                if(before.length===1){ var p0=before[0]; var sp=ALW_STANDARD.filter(function(r){return r.day===p0.day;})[0]; if(sp&&sp.std>0&&std) return {g:Math.round(std.std*(p0.g/sp.std)), src:"projected"}; return {g:p0.g, src:"projected"}; }
+                return {g:std?std.std:null, src:"standard"};
+              }
+              // Harvest-performance actuals
+              var totHeads = harvestTrucks.reduce(function(s,t){return s+(t.heads||0);},0);
+              var totKg = harvestTrucks.reduce(function(s,t){return s+(t.kg||0);},0);
+              var feedBags = feedDeliveries.reduce(function(s,d){return s+(d.qty||0);},0);
+              var netFeedKg = (feedBags-(surplusFeedBags||0))*50;
+              var actuals = {
+                alw: totHeads>0 ? totKg/totHeads : null,
+                fcr: totKg>0 ? netFeedKg/totKg : null,
+                hr:  (netPlacedBirds>0 && totHeads>0) ? (totHeads/netPlacedBirds*100) : null, // harvest recovery = harvested / placed
+                age: totHeads>0 ? harvestTrucks.reduce(function(s,t){return s+((t.day||0)*(t.heads||0));},0)/totHeads : null,
+              };
+              var order = ["alw","fcr","hr","age"];
+              var milestoneEarned = 0;
+              INCENTIVE_MILESTONES.forEach(function(ms){ var a=alwAtDay(ms.day); milestoneEarned += incentiveFor(a.g, {better:"higher", tiers:ms.tiers}).peso; });
+              var harvestEarned = 0;
+              order.forEach(function(k){ harvestEarned += incentiveFor(actuals[k], INCENTIVE_MATRIX[k]).peso; });
+              var totalEarned = milestoneEarned + harvestEarned;
+              var maxMs = INCENTIVE_MILESTONES.reduce(function(s,ms){return s+ms.tiers[0].peso;},0);
+              var maxHv = order.reduce(function(s,k){return s+INCENTIVE_MATRIX[k].tiers[0].peso;},0);
+              return (
+                <div>
+                  {/* Total earned */}
+                  <div style={{background:"#2E7D5210",border:"1px solid #2E7D5230",borderLeft:"3px solid #2E7D52",borderRadius:8,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1,fontWeight:700}}>TOTAL INCENTIVE EARNED</div>
+                      <div style={{fontSize:10,color:"#64748B",marginTop:2}}>milestones ₱{money(milestoneEarned)} + harvest ₱{money(harvestEarned)} · of ₱{money(maxMs+maxHv)} possible</div>
+                    </div>
+                    <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:26,color:"#2E7D52"}}>₱{money(totalEarned)}</div>
+                  </div>
+
+                  {/* Growth milestones */}
+                  <div style={{fontSize:10,color:"#C4960C",letterSpacing:1.5,fontWeight:700,marginBottom:8}}>GROWTH MILESTONES · ALW by day</div>
+                  <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto",marginBottom:18}}>
+                    <div style={{display:"grid",gridTemplateColumns:"70px 1fr 1fr 1fr 110px 80px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:540}}>
+                      <div>DAY</div><div style={{textAlign:"center"}}>₱500</div><div style={{textAlign:"center"}}>₱350</div><div style={{textAlign:"center"}}>₱200</div><div style={{textAlign:"right"}}>ACTUAL ALW</div><div style={{textAlign:"right"}}>EARNED</div>
+                    </div>
+                    {INCENTIVE_MILESTONES.map(function(ms){
+                      var a=alwAtDay(ms.day); var inc=incentiveFor(a.g,{better:"higher",tiers:ms.tiers});
+                      var actCol = a.g==null ? "#94A3B8" : inc.tierIdx===0 ? "#2E7D52" : inc.tierIdx>=0 ? "#C4960C" : "#E91E63";
+                      return (
+                        <div key={ms.day} style={{display:"grid",gridTemplateColumns:"70px 1fr 1fr 1fr 110px 80px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:540}}>
+                          <div style={{fontWeight:700,color:"#1E293B"}}>Day {ms.day}</div>
+                          {ms.tiers.map(function(t,i){ var hit=inc.tierIdx===i; return <div key={i} style={{textAlign:"center",color:hit?"#2E7D52":"#64748B",fontWeight:hit?700:400,background:hit?"#2E7D5214":"transparent",borderRadius:4,padding:"3px 0"}}>≥{t.th}g</div>; })}
+                          <div style={{textAlign:"right",color:actCol,fontWeight:700}}>{a.g!=null?a.g+"g":"—"}<span style={{display:"block",fontSize:8,color:"#94A3B8",fontWeight:400}}>{a.src}</span></div>
+                          <div style={{textAlign:"right",fontWeight:700,color:inc.peso>0?"#2E7D52":"#94A3B8"}}>₱{money(inc.peso)}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Harvest performance */}
+                  <div style={{fontSize:10,color:"#2E7D52",letterSpacing:1.5,fontWeight:700,marginBottom:8}}>HARVEST PERFORMANCE · final flock</div>
+                  <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto"}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 80px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:560}}>
+                      <div>METRIC</div><div style={{textAlign:"center"}}>₱1,000</div><div style={{textAlign:"center"}}>₱750</div><div style={{textAlign:"center"}}>₱500</div><div style={{textAlign:"right"}}>ACTUAL</div><div style={{textAlign:"right"}}>EARNED</div>
+                    </div>
+                    {order.map(function(k){
+                      var m=INCENTIVE_MATRIX[k]; var val=actuals[k]; var inc=incentiveFor(val,m);
+                      var op = m.better==="higher" ? "≥" : "≤";
+                      var actCol = val==null ? "#94A3B8" : inc.tierIdx===0 ? "#2E7D52" : inc.tierIdx>=0 ? "#C4960C" : "#E91E63";
+                      return (
+                        <div key={k} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 80px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:560}}>
+                          <div style={{fontWeight:600,color:"#1E293B"}}>{m.label}</div>
+                          {m.tiers.map(function(t,i){ var hit=inc.tierIdx===i; return <div key={i} style={{textAlign:"center",color:hit?"#2E7D52":"#64748B",fontWeight:hit?700:400,background:hit?"#2E7D5214":"transparent",borderRadius:4,padding:"3px 0"}}>{op}{t.th}</div>; })}
+                          <div style={{textAlign:"right",color:actCol,fontWeight:700}}>{val!=null?m.fmt(val):"—"}</div>
+                          <div style={{textAlign:"right",fontWeight:700,color:inc.peso>0?"#2E7D52":"#94A3B8"}}>₱{money(inc.peso)}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{fontSize:9,color:"#94A3B8",marginTop:10}}>Milestone ALW uses the weigh-in for that day, or the projected ALW when a day wasn't weighed. Harvest metrics use the cycle's final figures.</div>
+                </div>
+              );
+            })()}
           </div>
         )}
         {activeTab==="history" && (
@@ -4513,7 +4563,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                 var fOR = otherRevenue.reduce(function(s,r){return s+(parseFloat(r.amount)||0);},0);
                 var fRev = fHS + fOR;
                 var fMed = medInventoryLog.filter(function(e){return e.type==="delivery";}).reduce(function(s,e){return s+(e.cost!=null?e.cost:(e.qty||0)*(e.unitPrice||0));},0);
-                var fProd = expenses.reduce(function(s,e){return s+(parseFloat(e.amount)||0);},0) + fMed;
+                var fProd = expenses.reduce(function(s,e){return s+(parseFloat(e.amount)||0);},0) + fMed + (incentiveEarned||0);
                 var fTE = fProd;   // admin is a separate annual ledger, not in the cycle
                 var fNet = fRev - fTE;
                 cur.netIncome=fNet; cur.revenue=fRev; cur.totalExp=fTE;

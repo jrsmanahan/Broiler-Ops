@@ -1556,7 +1556,8 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   // Single source of truth for "today's" projected weight, used by BOTH the phase
   // banner and the ALW card so the two never disagree. Mirrors the harvest projection:
   // ≥2 weigh-ins → flock's own regression gain projected forward at a constant rate
-  // (no guide-based taper); 1 → standard gains from that anchor; 0 → standard curve.
+  // (no guide-based taper), then blended 65/35 with the feed/FCR estimate so feed
+  // consumption nudges ALW between weigh-ins; 1 → standard gains; 0 → standard curve.
   const trendProj = (() => {
     const HARVEST_TARGET_G = (cycleConfig && cycleConfig.harvestTargetG) || 2100;
     function stdGain(d){
@@ -1633,6 +1634,11 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
       var w2 = anchorW, dd = anchorDay, gg = obsGain;
       while (dd < currentDay) { dd++; if (obsGain!==null){ w2 += gg; } else { w2 += stdGain(dd); } }
       wToday = Math.round(w2);
+      // Nudge by feed consumption: blend the weigh-in trend (65%) with the feed/FCR
+      // estimate (35%) so logging feed moves ALW between weigh-ins. Anchored on weigh-ins.
+      if (obsGain!==null && projectedALW && projectedALW.feedProjG) {
+        wToday = Math.max(anchorW, Math.round(wToday*0.65 + projectedALW.feedProjG*0.35));
+      }
     }
     // Harvest timing: once bulk harvest is underway we're already harvesting.
     var atTarget = anchorW >= HARVEST_TARGET_G;

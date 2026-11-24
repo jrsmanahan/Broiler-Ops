@@ -4349,20 +4349,22 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
 
                   {/* Growth milestones */}
                   <div style={{fontSize:10,color:"#C4960C",letterSpacing:1.5,fontWeight:700,marginBottom:4}}>GROWTH MILESTONES · ×multiplier from {W0}g start</div>
-                  <div style={{fontSize:10,color:"#64748B",marginBottom:8}}>Each week the flock should multiply from placement. Rungs are −5% / on-target / +5% of the milestone target weight.</div>
+                  <div style={{fontSize:10,color:"#64748B",marginBottom:8,lineHeight:1.5}}>Each week the flock should multiply from placement. The ladder pays by how close actual weight lands to the week's target: <strong style={{color:"#2E7D52"}}>+5% or better → ₱500</strong> · <strong style={{color:"#2E7D52"}}>on target → ₱350</strong> · <strong style={{color:"#C4960C"}}>within −5% → ₱200</strong> · <span style={{color:"#E91E63"}}>below −5% → nothing</span>.</div>
                   <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto",marginBottom:18}}>
-                    <div style={{display:"grid",gridTemplateColumns:"88px 1fr 1fr 1fr 120px 70px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:560}}>
-                      <div>DAY · ×TGT</div><div style={{textAlign:"center"}}>₱500</div><div style={{textAlign:"center"}}>₱350</div><div style={{textAlign:"center"}}>₱200</div><div style={{textAlign:"right"}}>ACTUAL</div><div style={{textAlign:"right"}}>EARNED</div>
+                    <div style={{display:"grid",gridTemplateColumns:"74px 1fr 120px 92px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:440}}>
+                      <div>DAY</div><div>TARGET<span style={{color:"#CBD5E1"}}> · −5% / +5% band</span></div><div style={{textAlign:"right"}}>ACTUAL</div><div style={{textAlign:"right"}}>EARNED</div>
                     </div>
                     {milestoneRows.map(function(r){
-                      var actCol = r.actualG==null ? "#94A3B8" : r.tier===0 ? "#2E7D52" : r.tier>=0 ? "#C4960C" : "#E91E63";
-                      var rung=function(i,w){ var hit=r.tier===i; return <div style={{textAlign:"center",color:hit?"#2E7D52":"#64748B",fontWeight:hit?700:400,background:hit?"#2E7D5214":"transparent",borderRadius:4,padding:"3px 0"}}>≥{w}g</div>; };
+                      var st = r.actualG==null ? {c:"#CBD5E1",word:""} : r.tier===0 ? {c:"#2E7D52",word:"top rung"} : r.tier===1 ? {c:"#2E7D52",word:"on-target"} : r.tier===2 ? {c:"#C4960C",word:"floor"} : {c:"#E91E63",word:""};
+                      var actCol = r.actualG==null ? "#94A3B8" : st.c;
+                      var gap = r.actualG!=null ? r.actualG - r.targetW : null;
+                      var gapTxt = gap==null ? "" : (gap===0 ? "on target" : (gap>0?"+":"−")+Math.abs(gap)+"g vs target");
                       return (
-                        <div key={r.day} style={{display:"grid",gridTemplateColumns:"88px 1fr 1fr 1fr 120px 70px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:560}}>
+                        <div key={r.day} style={{display:"grid",gridTemplateColumns:"74px 1fr 120px 92px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:440,borderLeft:"3px solid "+st.c}}>
                           <div style={{fontWeight:700,color:"#1E293B"}}>Day {r.day}<span style={{display:"block",fontSize:8,color:"#94A3B8",fontWeight:400}}>×{r.mult.toFixed(2)}</span></div>
-                          {rung(0,r.topW)}{rung(1,r.targetW)}{rung(2,r.floorW)}
-                          <div style={{textAlign:"right",color:actCol,fontWeight:700}}>{r.actualG!=null?r.actualG+"g":"—"}<span style={{display:"block",fontSize:8,color:"#94A3B8",fontWeight:400}}>{r.achievedMult!=null?"×"+r.achievedMult.toFixed(2)+" · "+r.src:r.src}</span></div>
-                          <div style={{textAlign:"right",fontWeight:700,color:r.peso>0?"#2E7D52":"#94A3B8"}}>₱{money(r.peso)}</div>
+                          <div><span style={{fontWeight:700,color:"#1E293B"}}>{r.targetW}g</span><span style={{display:"block",fontSize:8,color:"#94A3B8",fontWeight:400}}>{r.floorW} – {r.topW}g</span></div>
+                          <div style={{textAlign:"right"}}><span style={{color:actCol,fontWeight:700}}>{r.actualG!=null?r.actualG+"g":"—"}</span><span style={{display:"block",fontSize:8,color:actCol,fontWeight:600}}>{gapTxt}</span><span style={{display:"block",fontSize:8,color:"#94A3B8",fontWeight:400}}>{r.actualG!=null?r.src:""}</span></div>
+                          <div style={{textAlign:"right",fontWeight:700,color:r.peso>0?"#2E7D52":"#94A3B8"}}>₱{money(r.peso)}<span style={{display:"block",fontSize:8,color:"#94A3B8",fontWeight:400}}>{st.word}</span></div>
                         </div>
                       );
                     })}
@@ -4379,7 +4381,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                       var op = m.better==="higher" ? "≥" : "≤";
                       var actCol = val==null ? "#94A3B8" : inc.tierIdx===0 ? "#2E7D52" : inc.tierIdx>=0 ? "#C4960C" : "#E91E63";
                       return (
-                        <div key={k} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 80px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:560}}>
+                        <div key={k} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 80px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:560,borderLeft:"3px solid "+(val==null?"#CBD5E1":actCol)}}>
                           <div style={{fontWeight:600,color:"#1E293B"}}>{m.label}</div>
                           {m.tiers.map(function(t,i){ var hit=inc.tierIdx===i; return <div key={i} style={{textAlign:"center",color:hit?"#2E7D52":"#64748B",fontWeight:hit?700:400,background:hit?"#2E7D5214":"transparent",borderRadius:4,padding:"3px 0"}}>{op}{t.th}</div>; })}
                           <div style={{textAlign:"right",color:actCol,fontWeight:700}}>{val!=null?m.fmt(val):"—"}</div>

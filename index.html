@@ -684,7 +684,7 @@ function incentiveResult(ctx) {
   for (var i=1;i<mts.length;i++){
     var gm = GROWTH_MULT[i-1];
     var baseW = mts[i-1].w;           // previous cumulative TARGET weight
-    var topW = baseW*(gm.mult+INCENTIVE_BAND), midW = baseW*gm.mult, floorW = baseW*(gm.mult-INCENTIVE_BAND);
+    var midW = baseW*gm.mult, topW = midW*(1+INCENTIVE_BAND), floorW = midW*(1-INCENTIVE_BAND); // band is ±5% of the target weight
     var a = alwAtDay(gm.day);
     var peso=0, tier=-1;
     if (a.g!=null){ if (a.g>=topW){peso=MPESO[0];tier=0;} else if (a.g>=midW){peso=MPESO[1];tier=1;} else if (a.g>=floorW){peso=MPESO[2];tier=2;} }
@@ -4349,7 +4349,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
 
                   {/* Growth milestones */}
                   <div style={{fontSize:10,color:"#C4960C",letterSpacing:1.5,fontWeight:700,marginBottom:4}}>GROWTH MILESTONES · ×multiplier from {W0}g start</div>
-                  <div style={{fontSize:10,color:"#64748B",marginBottom:8}}>Each week the flock should multiply from placement. Rungs are the week's target multiplier −0.05 / on-target / +0.05.</div>
+                  <div style={{fontSize:10,color:"#64748B",marginBottom:8}}>Each week the flock should multiply from placement. Rungs are −5% / on-target / +5% of the milestone target weight.</div>
                   <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto",marginBottom:18}}>
                     <div style={{display:"grid",gridTemplateColumns:"88px 1fr 1fr 1fr 120px 70px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:560}}>
                       <div>DAY · ×TGT</div><div style={{textAlign:"center"}}>₱500</div><div style={{textAlign:"center"}}>₱350</div><div style={{textAlign:"center"}}>₱200</div><div style={{textAlign:"right"}}>ACTUAL</div><div style={{textAlign:"right"}}>EARNED</div>
@@ -4388,7 +4388,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                       );
                     })}
                   </div>
-                  <div style={{fontSize:9,color:"#94A3B8",marginTop:10}}>Milestone targets scale from the {W0}g starting weight: each week's target = previous milestone × the multiplier, with ±0.05 setting the ₱200/₱350/₱500 rungs. Actual uses the weigh-in for that day, or the projected ALW when a day wasn't weighed. Set the starting weight in ⚙ Menu → Edit Cycle.</div>
+                  <div style={{fontSize:9,color:"#94A3B8",marginTop:10}}>Milestone targets scale from the {W0}g starting weight: each week's target = previous milestone × the multiplier, with ±5% of that target setting the ₱200/₱350/₱500 rungs. Actual uses the weigh-in for that day, or the projected ALW when a day wasn't weighed. Set the starting weight in ⚙ Menu → Edit Cycle.</div>
                 </div>
               );
             })()}

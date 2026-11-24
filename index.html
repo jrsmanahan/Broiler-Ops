@@ -1454,6 +1454,24 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   // Starting (DOC) weight drives the benchmark: the whole target curve scales to it.
   const startWeightG   = (cycleConfig && cycleConfig.startWeightG > 0) ? cycleConfig.startWeightG : 40;
   const ALW_STD        = useMemo(() => buildStandardCurve(startWeightG), [startWeightG]);
+  // Feeding guide scales to the actual DOC/starting weight. The default guide's ALW
+  // column is itself built on the growth multipliers from a 43g reference start, so a
+  // lighter/heavier start shifts both the expected weight and the feed proportionally.
+  const REF_START_G    = 43;
+  const feedScale      = (startWeightG > 0 ? startWeightG : REF_START_G) / REF_START_G;
+  const guide          = useMemo(function(){
+    return feedingGuide.map(function(r){
+      return {
+        day: r.day,
+        alw: Math.round((r.alw||0) * feedScale),
+        dailyBt: (r.dailyBt||0) * feedScale,
+        cummBt: (r.cummBt||0) * feedScale,
+        cbcBt: (r.cbcBt||0) * feedScale,
+        bscBt: (r.bscBt||0) * feedScale,
+        bfpBt: (r.bfpBt||0) * feedScale,
+      };
+    });
+  }, [feedingGuide, feedScale]);
   // Target ALW from the starting-weight-scaled curve for the current day
   const alwStdToday    = ALW_STD.find(r => r.day === currentDay);
   const targetALW      = alwStdToday ? alwStdToday.std : null; // grams — these ARE the targets
@@ -1461,7 +1479,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   // Feed is planned against the ORDERED quantity (contract), not delivered heads.
   // Hatcheries give ~2% free extra birds that aren't part of the feed plan.
   const feedBasisBirds = (cycleConfig && cycleConfig.flockSize) ? cycleConfig.flockSize : netPlacedBirds;
-  const todayFC = (function(){ const r = feedingGuide.find(r => r.day === currentDay); return r ? Math.round((r.dailyBt||0) * (feedBasisBirds/1000)) : null; })();
+  const todayFC = (function(){ const r = guide.find(r => r.day === currentDay); return r ? Math.round((r.dailyBt||0) * (feedBasisBirds/1000)) : null; })();
   const medStockMap = (() => {
     const map = {};
     medInventoryLog.forEach(function(e) {
@@ -1752,7 +1770,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   const mortRate       = totalMort > 0 ? (totalMort / daysElapsed).toFixed(1) : "0.0";
   const runningHR      = netPlacedBirds > 0 ? (((netPlacedBirds - totalMort) / netPlacedBirds) * 100).toFixed(1) : null;
   const cumFeedConsumed= shiftLogs.reduce((s,l) => s + l.feedsConsumed, 0);
-  const cumFCTarget    = Math.round(feedingGuide.filter(r => r.day <= currentDay).reduce((s,r) => s + (r.dailyBt||0), 0) * (feedBasisBirds/1000));
+  const cumFCTarget    = Math.round(guide.filter(r => r.day <= currentDay).reduce((s,r) => s + (r.dailyBt||0), 0) * (feedBasisBirds/1000));
   const fcDiff         = cumFeedConsumed - cumFCTarget;
   const btActual       = feedBasisBirds > 0 ? (cumFeedConsumed / (feedBasisBirds / 1000)).toFixed(2) : null;
   const runningFCR     = (() => {
@@ -1768,7 +1786,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
   // Standard FCR from the feeding guide at the current day:
   // cumulative feed per bird (cummBt bags/1000 × 50kg = cummBt×0.05 kg) ÷ standard ALW (alw/1000 kg)
   const standardFCR = (() => {
-    const gr = feedingGuide.find(r => r.day === currentDay);
+    const gr = guide.find(r => r.day === currentDay);
     if (!gr || !gr.alw || gr.alw <= 0 || gr.cummBt == null) return null;
     return (gr.cummBt * 50 / gr.alw).toFixed(3);
   })();
@@ -3335,9 +3353,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
             )}
             {fgSection==="feeding" && (
               <div>
-                <div style={{fontSize:11,color:"#64748B",marginBottom:4}}>Daily feeding guide · scaled to {(feedBasisBirds/1000).toFixed(0)}k ordered birds · BT = bags per 1,000</div>
+                <div style={{fontSize:11,color:"#64748B",marginBottom:4}}>Daily feeding guide · scaled to {(feedBasisBirds/1000).toFixed(0)}k ordered birds · {startWeightG}g DOC start{feedScale!==1?" ("+(feedScale>=1?"+":"")+Math.round((feedScale-1)*100)+"% vs 43g ref)":""} · BT = bags per 1,000</div>
                 {(function(){
-                  const row = feedingGuide.find(x=>x.day===currentDay);
+                  const row = guide.find(x=>x.day===currentDay);
                   const scale = feedBasisBirds/1000;
                   const todayBags = row ? (row.dailyBt*scale) : null;
                   return <div style={{fontSize:11,color:"#64748B",marginBottom:12}}>Today's target: <strong style={{color:"#2E7D52"}}>{todayBags!==null?todayBags.toFixed(0):"—"}</strong> bags (Day {currentDay})</div>;
@@ -3355,9 +3373,9 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                       {(function(){
                         const scale = feedBasisBirds/1000;
                         const targetG = (cycleConfig && cycleConfig.harvestTargetG) || 2100;
-                        const hRow = feedingGuide.find(r=>r.alw>=targetG) || feedingGuide[feedingGuide.length-1];
+                        const hRow = guide.find(r=>r.alw>=targetG) || guide[guide.length-1];
                         let cumm = 0;
-                        return feedingGuide.filter(r=>r.day<=hRow.day).map((r,i)=>{
+                        return guide.filter(r=>r.day<=hRow.day).map((r,i)=>{
                           const isToday=r.day===currentDay;
                           const dailyBags = (r.dailyBt||0)*scale;
                           cumm += dailyBags;

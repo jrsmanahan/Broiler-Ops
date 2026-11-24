@@ -624,12 +624,34 @@ var INCENTIVE_MILESTONES = [
   { day:28, tiers:[{th:1860,peso:500},{th:1780,peso:350},{th:1700,peso:200}] },
 ];
 // Harvest-performance matrix — final-flock metrics earn the peso amount (tiers best→worst).
-var INCENTIVE_MATRIX = {
-  alw: { label:"ALW", better:"higher", fmt:function(v){return v.toFixed(3)+" kg";}, tiers:[{th:2.1,peso:1000},{th:2.0,peso:750},{th:1.9,peso:500}] },
-  fcr: { label:"FCR", better:"lower",  fmt:function(v){return v.toFixed(3);},       tiers:[{th:1.45,peso:1000},{th:1.5,peso:750},{th:1.55,peso:500}] },
-  hr:  { label:"Harvest recovery", better:"higher", fmt:function(v){return v.toFixed(2)+"%";}, tiers:[{th:97.5,peso:1000},{th:96,peso:750},{th:94.5,peso:500}] },
-  age: { label:"Harvest age", better:"lower", fmt:function(v){return v.toFixed(1)+" d";}, tiers:[{th:33,peso:1000},{th:34.5,peso:750},{th:36,peso:500}] },
-};
+// Harvest-performance incentive keys off the cycle's TARGET weight, not a fixed figure.
+// Each metric has a target and a ± band; beating target by the band earns ₱1,000, hitting
+// target earns ₱750, landing within the band earns ₱500. ALW target follows the cycle; the
+// rest are tuned to a ~1.8 kg / 32.5-day grow.
+function buildHarvestMatrix(targetKg){
+  var T = (targetKg > 0 ? targetKg : 1.8);
+  function rnd(x){ return Math.round(x*1000)/1000; }
+  function mk(target, band, better){
+    var best  = better==="higher" ? target+band : target-band;
+    var worst = better==="higher" ? target-band : target+band;
+    return [{th:rnd(best),peso:1000},{th:rnd(target),peso:750},{th:rnd(worst),peso:500}];
+  }
+  // Two target profiles. The heavier ~2.1 kg commercial grow allows a looser FCR/age and a
+  // heavier ALW; the ~1.8 kg grow is tighter. Nearest target weight (cut at 1.95 kg) picks it.
+  // Each entry is [target, band].
+  var heavy = T >= 1.95;
+  var P = heavy
+    ? { alw:[2.0,0.1], fcr:[1.5,0.05], hr:[96,1.5], age:[34.5,1.5] }
+    : { alw:[1.8,0.1], fcr:[1.4,0.05], hr:[97,1.5], age:[32.5,1.5] };
+  return {
+    profile: heavy ? "2.1kg" : "1.8kg",
+    alw: { label:"ALW", better:"higher", target:P.alw[0], band:P.alw[1], fmt:function(v){return v.toFixed(3)+" kg";}, tiers:mk(P.alw[0],P.alw[1],"higher") },
+    fcr: { label:"FCR", better:"lower",  target:P.fcr[0], band:P.fcr[1], fmt:function(v){return v.toFixed(3);},       tiers:mk(P.fcr[0],P.fcr[1],"lower") },
+    hr:  { label:"Harvest recovery", better:"higher", target:P.hr[0], band:P.hr[1], fmt:function(v){return v.toFixed(2)+"%";}, tiers:mk(P.hr[0],P.hr[1],"higher") },
+    age: { label:"Harvest age", better:"lower", target:P.age[0], band:P.age[1], fmt:function(v){return v.toFixed(1)+" d";}, tiers:mk(P.age[0],P.age[1],"lower") },
+  };
+}
+var INCENTIVE_MATRIX = buildHarvestMatrix(1.8);
 function incentiveFor(value, m) {
   if (value == null || isNaN(value)) return { peso:0, tierIdx:-1 };
   for (var i=0;i<m.tiers.length;i++) {
@@ -677,6 +699,7 @@ function incentiveResult(ctx) {
     age: totHeads>0 ? harvestTrucks.reduce(function(s,t){return s+((t.day||0)*(t.heads||0));},0)/totHeads : null,
   };
   var order = ["alw","fcr","hr","age"];
+  var HM = buildHarvestMatrix(ctx.harvestTargetKg);   // harvest matrix scaled to the cycle target weight
   // Milestone incentive — cumulative multiplier (actual ÷ starting weight) vs the stacked
   // target, with the week's multiplier ±0.05 forming the three peso rungs.
   var mts = milestoneTargets(W0);     // [{day,w,mult}] at 0,7,14,21,28,35
@@ -693,10 +716,10 @@ function incentiveResult(ctx) {
       actualG:a.g, src:a.src, achievedMult:(a.g!=null?a.g/W0:null), targetCumMult:midW/W0, peso:peso, tier:tier, pesos:MPESO });
   }
   var harvestEarned = 0;
-  order.forEach(function(k){ harvestEarned += incentiveFor(actuals[k], INCENTIVE_MATRIX[k]).peso; });
+  order.forEach(function(k){ harvestEarned += incentiveFor(actuals[k], HM[k]).peso; });
   var maxMs = GROWTH_MULT.length*MPESO[0];
-  var maxHv = order.reduce(function(s,k){return s+INCENTIVE_MATRIX[k].tiers[0].peso;},0);
-  return { alwAtDay:alwAtDay, actuals:actuals, order:order, milestoneRows:milestoneRows, milestoneEarned:milestoneEarned, harvestEarned:harvestEarned, totalEarned:milestoneEarned+harvestEarned, maxMs:maxMs, maxHv:maxHv, startWeightG:W0 };
+  var maxHv = order.reduce(function(s,k){return s+HM[k].tiers[0].peso;},0);
+  return { alwAtDay:alwAtDay, actuals:actuals, order:order, milestoneRows:milestoneRows, milestoneEarned:milestoneEarned, harvestEarned:harvestEarned, totalEarned:milestoneEarned+harvestEarned, maxMs:maxMs, maxHv:maxHv, startWeightG:W0, harvestMatrix:HM };
 }
 // Status of a value vs the user's target / minimum. lowerBetter for FCR & age.
 function perfStatus(v, target, min, lowerBetter) {
@@ -1889,7 +1912,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
     return totalBirds>0 ? (totalNetKg/totalBirds*1000) : null; // grams
   })();
   // Incentive earned this grow — shared by the Incentive sub-tab and auto-logged to Direct Cost.
-  const incentiveData = incentiveResult({ shiftLogs, harvestTrucks, feedDeliveries, surplusFeedBags, netPlacedBirds, currentDay, std: ALW_STD, startWeightG });
+  const incentiveData = incentiveResult({ shiftLogs, harvestTrucks, feedDeliveries, surplusFeedBags, netPlacedBirds, currentDay, std: ALW_STD, startWeightG, harvestTargetKg: ((cycleConfig && cycleConfig.harvestTargetG) ? cycleConfig.harvestTargetG/1000 : 1.8) });
   const incentivePeopleN = Math.max(0, parseInt(incentivePeople) || 0);
   const incentiveEarned = incentiveData.totalEarned * incentivePeopleN; // total payout across all people (auto-logs to Direct Cost)
   // Placement totals
@@ -4345,6 +4368,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
               var maxMs = incentiveData.maxMs;
               var maxHv = incentiveData.maxHv;
               var W0 = incentiveData.startWeightG;
+              var harvestMatrix = incentiveData.harvestMatrix;
               return (
                 <div>
                   {/* Total earned */}
@@ -4389,13 +4413,14 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                   </div>
 
                   {/* Harvest performance */}
-                  <div style={{fontSize:10,color:"#2E7D52",letterSpacing:1.5,fontWeight:700,marginBottom:8}}>HARVEST PERFORMANCE · final flock</div>
+                  <div style={{fontSize:10,color:"#2E7D52",letterSpacing:1.5,fontWeight:700,marginBottom:4}}>HARVEST PERFORMANCE · final flock</div>
+                  <div style={{fontSize:10,color:"#64748B",marginBottom:8}}>{harvestMatrix.profile} profile · ALW {harvestMatrix.alw.target.toFixed(2)}kg (±{harvestMatrix.alw.band}) · FCR {harvestMatrix.fcr.target.toFixed(2)} (±{harvestMatrix.fcr.band}) · age {harvestMatrix.age.target.toFixed(1)}d (±{harvestMatrix.age.band}) · recovery {harvestMatrix.hr.target.toFixed(0)}% (±{harvestMatrix.hr.band}). Beat target by the band → ₱1,000 · hit target → ₱750 · within band → ₱500.</div>
                   <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto"}}>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 80px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:560}}>
                       <div>METRIC</div><div style={{textAlign:"center"}}>₱1,000</div><div style={{textAlign:"center"}}>₱750</div><div style={{textAlign:"center"}}>₱500</div><div style={{textAlign:"right"}}>ACTUAL</div><div style={{textAlign:"right"}}>EARNED</div>
                     </div>
                     {order.map(function(k){
-                      var m=INCENTIVE_MATRIX[k]; var val=actuals[k]; var inc=incentiveFor(val,m);
+                      var m=harvestMatrix[k]; var val=actuals[k]; var inc=incentiveFor(val,m);
                       var op = m.better==="higher" ? "≥" : "≤";
                       var actCol = val==null ? "#94A3B8" : inc.tierIdx===0 ? "#2E7D52" : inc.tierIdx>=0 ? "#C4960C" : "#E91E63";
                       return (
@@ -4408,7 +4433,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                       );
                     })}
                   </div>
-                  <div style={{fontSize:9,color:"#94A3B8",marginTop:10}}>Milestone targets scale from the {W0}g starting weight: each week's target = previous milestone × the multiplier, with ±5% of that target setting the ₱200/₱350/₱500 rungs. Actual uses the weigh-in for that day, or the projected ALW when a day wasn't weighed. Set the starting weight in ⚙ Menu → Edit Cycle.</div>
+                  <div style={{fontSize:9,color:"#94A3B8",marginTop:10}}>Milestone targets scale from the {W0}g starting weight (each week × the multiplier, ±5% of target = the ₱200/₱350/₱500 rungs); actual uses that day's weigh-in, or the projected ALW when not weighed. Harvest ALW target follows the cycle's harvest weight — set both the starting and target weight in ⚙ Menu → Edit Cycle.</div>
                 </div>
               );
             })()}

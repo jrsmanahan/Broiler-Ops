@@ -642,7 +642,7 @@ function buildHarvestMatrix(targetKg){
   var heavy = T >= 1.95;
   var P = heavy
     ? { alw:[2.0,0.1], fcr:[1.5,0.05], hr:[96,1.5], age:[34.5,1.5] }
-    : { alw:[1.8,0.1], fcr:[1.4,0.05], hr:[97,1.5], age:[32.5,1.5] };
+    : { alw:[1.8,0.1], fcr:[1.4,0.05], hr:[96.5,1.5], age:[32.5,1.5] };
   return {
     profile: heavy ? "2.1kg" : "1.8kg",
     alw: { label:"ALW", better:"higher", target:P.alw[0], band:P.alw[1], fmt:function(v){return v.toFixed(3)+" kg";}, tiers:mk(P.alw[0],P.alw[1],"higher") },

@@ -631,24 +631,42 @@ var INCENTIVE_MILESTONES = [
 function buildHarvestMatrix(targetKg){
   var T = (targetKg > 0 ? targetKg : 1.8);
   function rnd(x){ return Math.round(x*1000)/1000; }
-  function mk(target, band, better){
+  // One-directional ladder: beat the target by the band = ₱1,000, hit target = ₱750, within band = ₱500.
+  function dir(target, band, better){
     var best  = better==="higher" ? target+band : target-band;
     var worst = better==="higher" ? target-band : target+band;
-    return [{th:rnd(best),peso:1000},{th:rnd(target),peso:750},{th:rnd(worst),peso:500}];
+    var op = better==="higher" ? "≥" : "≤";
+    return [
+      {peso:1000, th:rnd(best),   disp:op+rnd(best)},
+      {peso:750,  th:rnd(target), disp:op+rnd(target)},
+      {peso:500,  th:rnd(worst),  disp:op+rnd(worst)},
+    ];
   }
-  // Two target profiles. The heavier ~2.1 kg commercial grow allows a looser FCR/age and a
-  // heavier ALW; the ~1.8 kg grow is tighter. Nearest target weight (cut at 1.95 kg) picks it.
-  // Each entry is [target, band].
+  // Two-sided bullseye: landing ON the target pays most; over- OR under-shooting by more than
+  // each band drops the rung. Used for ALW so the crew is not rewarded for overgrowing.
+  function bull(target, b1, b2, b3, fmt){
+    function rng(b){ return fmt(rnd(target-b))+"–"+fmt(rnd(target+b)); }
+    return [
+      {peso:1000, lo:rnd(target-b1), hi:rnd(target+b1), disp:rng(b1)},
+      {peso:750,  lo:rnd(target-b2), hi:rnd(target+b2), disp:rng(b2)},
+      {peso:500,  lo:rnd(target-b3), hi:rnd(target+b3), disp:rng(b3)},
+    ];
+  }
   var heavy = T >= 1.95;
   var P = heavy
-    ? { alw:[2.0,0.1], fcr:[1.5,0.05], hr:[96,1.5], age:[34.5,1.5] }
-    : { alw:[1.8,0.1], fcr:[1.4,0.05], hr:[96.5,1.5], age:[32.5,1.5] };
+    ? { fcr:[1.5,0.05], hr:[96,1.5], age:[34.5,1.5] }
+    : { fcr:[1.4,0.05], hr:[96.5,1.5], age:[32.5,1.5] };
+  var kg2 = function(v){ return (Math.round(v*1000)/1000).toString(); };
+  // ALW: 1.8 kg grow uses a bullseye on 1.80 kg (don't overgrow); 2.1 kg grow stays "heavier = better".
+  var alw = heavy
+    ? { label:"ALW", mode:"target", target:2.1, band:0.1, fmt:function(v){return v.toFixed(3)+" kg";}, tiers:bull(2.1,0.025,0.05,0.1,kg2) }
+    : { label:"ALW", mode:"target", target:1.8, band:0.1, fmt:function(v){return v.toFixed(3)+" kg";}, tiers:bull(1.8,0.025,0.05,0.1,kg2) };
   return {
     profile: heavy ? "2.1kg" : "1.8kg",
-    alw: { label:"ALW", better:"higher", target:P.alw[0], band:P.alw[1], fmt:function(v){return v.toFixed(3)+" kg";}, tiers:mk(P.alw[0],P.alw[1],"higher") },
-    fcr: { label:"FCR", better:"lower",  target:P.fcr[0], band:P.fcr[1], fmt:function(v){return v.toFixed(3);},       tiers:mk(P.fcr[0],P.fcr[1],"lower") },
-    hr:  { label:"Harvest recovery", better:"higher", target:P.hr[0], band:P.hr[1], fmt:function(v){return v.toFixed(2)+"%";}, tiers:mk(P.hr[0],P.hr[1],"higher") },
-    age: { label:"Harvest age", better:"lower", target:P.age[0], band:P.age[1], fmt:function(v){return v.toFixed(1)+" d";}, tiers:mk(P.age[0],P.age[1],"lower") },
+    alw: alw,
+    fcr: { label:"FCR", mode:"dir", better:"lower",  target:P.fcr[0], band:P.fcr[1], fmt:function(v){return v.toFixed(3);}, tiers:dir(P.fcr[0],P.fcr[1],"lower") },
+    hr:  { label:"Harvest recovery", mode:"dir", better:"higher", target:P.hr[0], band:P.hr[1], fmt:function(v){return v.toFixed(2)+"%";}, tiers:dir(P.hr[0],P.hr[1],"higher") },
+    age: { label:"Harvest age", mode:"dir", better:"lower", target:P.age[0], band:P.age[1], fmt:function(v){return v.toFixed(1)+" d";}, tiers:dir(P.age[0],P.age[1],"lower") },
   };
 }
 var INCENTIVE_MATRIX = buildHarvestMatrix(1.8);
@@ -656,7 +674,8 @@ function incentiveFor(value, m) {
   if (value == null || isNaN(value)) return { peso:0, tierIdx:-1 };
   for (var i=0;i<m.tiers.length;i++) {
     var t=m.tiers[i];
-    var met = m.better==="higher" ? value>=t.th : value<=t.th;
+    var met = (m.mode==="target") ? (value>=t.lo && value<=t.hi)
+                                  : (m.better==="higher" ? value>=t.th : value<=t.th);
     if (met) return { peso:t.peso, tierIdx:i };
   }
   return { peso:0, tierIdx:-1 };
@@ -4414,7 +4433,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
 
                   {/* Harvest performance */}
                   <div style={{fontSize:10,color:"#2E7D52",letterSpacing:1.5,fontWeight:700,marginBottom:4}}>HARVEST PERFORMANCE · final flock</div>
-                  <div style={{fontSize:10,color:"#64748B",marginBottom:8}}>{harvestMatrix.profile} profile · ALW {harvestMatrix.alw.target.toFixed(2)}kg (±{harvestMatrix.alw.band}) · FCR {harvestMatrix.fcr.target.toFixed(2)} (±{harvestMatrix.fcr.band}) · age {harvestMatrix.age.target.toFixed(1)}d (±{harvestMatrix.age.band}) · recovery {harvestMatrix.hr.target.toFixed(0)}% (±{harvestMatrix.hr.band}). Beat target by the band → ₱1,000 · hit target → ₱750 · within band → ₱500.</div>
+                  <div style={{fontSize:10,color:"#64748B",marginBottom:8}}>{harvestMatrix.profile} profile · ALW {harvestMatrix.alw.mode==="target" ? "hit "+harvestMatrix.alw.target.toFixed(2)+"kg (over- or under-grown both cost you)" : "≥"+harvestMatrix.alw.target.toFixed(2)+"kg"} · FCR {harvestMatrix.fcr.target.toFixed(2)} (±{harvestMatrix.fcr.band}) · age {harvestMatrix.age.target.toFixed(1)}d (±{harvestMatrix.age.band}) · recovery {harvestMatrix.hr.target.toFixed(0)}% (±{harvestMatrix.hr.band}). ₱1,000 tightest → ₱500 widest.</div>
                   <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,overflowX:"auto"}}>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 80px",padding:"8px 14px",background:"#F5F7FA",fontSize:8,color:"#94A3B8",letterSpacing:1,minWidth:560}}>
                       <div>METRIC</div><div style={{textAlign:"center"}}>₱1,000</div><div style={{textAlign:"center"}}>₱750</div><div style={{textAlign:"center"}}>₱500</div><div style={{textAlign:"right"}}>ACTUAL</div><div style={{textAlign:"right"}}>EARNED</div>
@@ -4426,7 +4445,7 @@ function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick })
                       return (
                         <div key={k} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 90px 80px",padding:"10px 14px",borderBottom:"1px solid #F0F2F5",fontSize:11,alignItems:"center",minWidth:560,borderLeft:"3px solid "+(val==null?"#CBD5E1":actCol)}}>
                           <div style={{fontWeight:600,color:"#1E293B"}}>{m.label}</div>
-                          {m.tiers.map(function(t,i){ var hit=inc.tierIdx===i; return <div key={i} style={{textAlign:"center",color:hit?"#2E7D52":"#64748B",fontWeight:hit?700:400,background:hit?"#2E7D5214":"transparent",borderRadius:4,padding:"3px 0"}}>{op}{t.th}</div>; })}
+                          {m.tiers.map(function(t,i){ var hit=inc.tierIdx===i; return <div key={i} style={{textAlign:"center",color:hit?"#2E7D52":"#64748B",fontWeight:hit?700:400,background:hit?"#2E7D5214":"transparent",borderRadius:4,padding:"3px 0"}}>{t.disp}</div>; })}
                           <div style={{textAlign:"right",color:actCol,fontWeight:700}}>{val!=null?m.fmt(val):"—"}</div>
                           <div style={{textAlign:"right",fontWeight:700,color:inc.peso>0?"#2E7D52":"#94A3B8"}}>₱{money(inc.peso)}</div>
                         </div>

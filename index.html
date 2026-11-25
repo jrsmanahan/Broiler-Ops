@@ -2028,6 +2028,10 @@ function GrowApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick }) {
         @keyframes slideUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
         .su{animation:slideUp .2s ease;}
         .pill{display:inline-flex;align-items:center;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;letter-spacing:.5px;}
+        .brandmark{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;flex:1;min-width:0;padding:0 12px;pointer-events:none;}
+        @media (max-width:720px){.brandmark{display:none;}}
+        .brandmark-m{display:none;}
+        @media (max-width:720px){.brandmark-m{display:flex;align-items:center;justify-content:center;gap:6px;background:#FFFFFF;border-bottom:1px solid #E2E8F0;padding:5px 12px;position:sticky;top:49px;z-index:49;}}
       `}</style>
       {/* ── HEADER ── */}
       <div style={{ background:"#FFFFFF", borderBottom:"1px solid #E2E8F0", padding:"10px 14px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:50 }}>
@@ -2046,6 +2050,10 @@ function GrowApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick }) {
             <button onClick={onSwitchHouse} style={{ background:"none", border:"1px solid #CBD5E1", color:"#64748B", fontFamily:"'Inter',sans-serif", fontSize:9, padding:"4px 8px", cursor:"pointer", borderRadius:5, whiteSpace:"nowrap" }}>⇄ SWITCH</button>
             {syncStatus && <span style={{ fontSize:9, color:syncStatus==="online"?"#2E7D52":"#D4652A", border:"1px solid "+(syncStatus==="online"?"#2E7D52":"#D4652A")+"40", padding:"3px 7px", borderRadius:5, textAlign:"center" }}>{syncStatus==="online"?"● ONLINE":"○ OFFLINE"}</span>}
           </div>
+        </div>
+        <div className="brandmark" aria-hidden="true">
+          <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:800, fontSize:16, letterSpacing:.3, color:"#1E293B", whiteSpace:"nowrap" }}>TVE <span style={{ color:"#2E7D52" }}>Grow</span></div>
+          <div style={{ fontSize:9, color:"#94A3B8", letterSpacing:.4, marginTop:1, whiteSpace:"nowrap" }}>by Tunnel Vent Experts</div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:12 }}>
           <div style={{ textAlign:"right" }}>
@@ -2111,6 +2119,10 @@ function GrowApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick }) {
             )}
           </div>
         </div>
+      </div>
+      <div className="brandmark-m" aria-hidden="true">
+        <span style={{ fontFamily:"'Inter',sans-serif", fontWeight:800, fontSize:13, letterSpacing:.3, color:"#1E293B" }}>TVE <span style={{ color:"#2E7D52" }}>Grow</span></span>
+        <span style={{ fontSize:9, color:"#94A3B8" }}>· by Tunnel Vent Experts</span>
       </div>
       {/* ── START CYCLE MODAL ── */}
       {showStartCycle && (

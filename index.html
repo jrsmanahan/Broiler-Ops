@@ -922,8 +922,6 @@ const TABS = [
   { id:"placement",  label:"DELIVERIES"   },
   { id:"fieldguide", label:"FIELD GUIDE"  },
   { id:"harvest",    label:"HARVEST"      },
-  { id:"reports",    label:"FINANCIAL"    },
-  { id:"history",    label:"HISTORY"      },
 ];
 // ─── FEEDING GUIDE ────────────────────────────────────────────────────────────
 const FEEDING_GUIDE_DEFAULT = [
@@ -1134,7 +1132,7 @@ function DailyLogRows({ logs, currentDay, getPhase, placementDate, FEED_FC, netP
   return rows;
 }
 // ═════════════════════════════════════════════════════════════════════════════
-function GrowApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick, renewDays }) {
+function GrowApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick, renewDays, ownerView }) {
   const isOnline = syncStatus === "online";
   const houseId = house.id;
   const userId = house.user_id;
@@ -1147,7 +1145,7 @@ function GrowApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick, renewDa
     flockman: { names: house.flockman_names || [] },
     openingFloorStock: 20, // bags CBC placed before chicks arrived
   };
-  const [activeTab, setActiveTab]   = useState("today");
+  const [activeTab, setActiveTab]   = useState(ownerView==="financial" ? "reports" : ownerView==="history" ? "history" : "today");
   const [dayOverride, setDayOverride] = useLocalStorage("dayOverride_legacy", 0); // kept for migration only
   const [dayAnchor] = useLocalStorage("dayAnchor_legacy", null); // kept for migration only
   const activePlacementDate = cycleConfig ? cycleConfig.placementDate : house.placement_date;
@@ -2272,6 +2270,7 @@ function GrowApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick, renewDa
         </div>
       )}
       {/* ── TAB BAR ── */}
+      {!ownerView && (
       <div style={{ background:"#EDF0F4", borderBottom:"1px solid #E2E8F0", display:"flex", overflowX:"auto", flexShrink:0, scrollbarWidth:"none" }}>
         {TABS.map(t => (
           <button key={t.id} className="tab-btn" onClick={() => setActiveTab(t.id)} style={{
@@ -2282,6 +2281,7 @@ function GrowApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick, renewDa
           </button>
         ))}
       </div>
+      )}
       {/* ── CONTENT ── */}
       <div style={{ flex:1, overflow:"auto", padding:20 }}>
         {/* ═══════════════════ TODAY ═══════════════════ */}
@@ -4863,6 +4863,7 @@ function AppShell() {
   const [editHouseDraft, setEditHouseDraft] = useState(null);
   const [farmData, setFarmData] = useState({}); // house_id -> { cfg, logs } for the farm overview
   const [ownerTab, setOwnerTab] = useState("dashboard"); // owner shell: dashboard | financial | history
+  const [ownerDrill, setOwnerDrill] = useState(null); // {view:"financial"|"history", houseId} — owner viewing a house's financials/history
   useEffect(function(){
     if (!session || !houses || houses.length===0) return;
     const sb = getSupabaseClient(); if (!sb) return;
@@ -5206,6 +5207,14 @@ function AppShell() {
     );
   }
 
+  // ── Owner drilled into a house's Financial / History (owner level only) ──
+  if (ownerDrill && fullAccess) {
+    const dh = houses.find(function(h){ return h.id===ownerDrill.houseId; });
+    if (dh) {
+      setActiveNamespace("beracah_house_" + dh.id + "_");
+      return <ErrorBoundary><GrowApp house={dh} ownerView={ownerDrill.view} onSwitchHouse={function(){setOwnerDrill(null);}} onLogout={handleLogout} syncStatus={isOnline?"online":"offline"} syncTick={syncTick} renewDays={null} /></ErrorBoundary>;
+    }
+  }
   // ── Setup form (first house, or adding another) ──
   if (!readOnly && (showSetupForm || houses.length === 0)) {
     return (
@@ -5342,15 +5351,35 @@ function AppShell() {
           {!readOnly && <button onClick={function(){setShowSetupForm(true);}} style={{...BTN2, background:"none", border:"1px solid #2E7D52", color:"#2E7D52"}}>+ ADD ANOTHER HOUSE</button>}
           </React.Fragment>)}
           {ownerTab==="financial" && (
-            <div style={{background:"#F5F7FA",border:"1px solid #E2E8F0",borderRadius:10,padding:"22px 16px",textAlign:"center"}}>
-              <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:15,color:"#1E293B",marginBottom:6}}>Farm Financial</div>
-              <div style={{fontSize:12,color:"#64748B",lineHeight:1.6}}>Consolidated P&amp;L across every house, the farm overhead ledger, and each cycle's direct cost, billing, payments and incentive — all managed here at the owner level. Building this next.</div>
+            <div>
+              <div style={{fontSize:11,color:"#64748B",marginBottom:14}}>Open a house to manage its financials — direct cost, overhead, billing, payments and incentive.</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:10}}>
+                {houses.map(function(h){ return (
+                  <div key={h.id} onClick={readOnly?undefined:function(){setActiveNamespace("beracah_house_"+h.id+"_");setOwnerDrill({view:"financial",houseId:h.id});}} style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:readOnly?"default":"pointer"}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:14,color:"#1E293B"}}>{h.building_name}</div>
+                      <div style={{fontSize:11,color:"#64748B",marginTop:2}}>Direct cost · overhead · billing · payments · incentive</div>
+                    </div>
+                    {!readOnly && <span style={{color:"#2E7D52",fontSize:16,marginLeft:10}}>→</span>}
+                  </div>
+                ); })}
+              </div>
             </div>
           )}
           {ownerTab==="history" && (
-            <div style={{background:"#F5F7FA",border:"1px solid #E2E8F0",borderRadius:10,padding:"22px 16px",textAlign:"center"}}>
-              <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:15,color:"#1E293B",marginBottom:6}}>Farm History</div>
-              <div style={{fontSize:12,color:"#64748B",lineHeight:1.6}}>Every completed cycle across all houses, side by side — compare performance, costs and incentive across grows. Building this next.</div>
+            <div>
+              <div style={{fontSize:11,color:"#64748B",marginBottom:14}}>Open a house to review its completed grow cycles.</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:10}}>
+                {houses.map(function(h){ return (
+                  <div key={h.id} onClick={readOnly?undefined:function(){setActiveNamespace("beracah_house_"+h.id+"_");setOwnerDrill({view:"history",houseId:h.id});}} style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:readOnly?"default":"pointer"}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:14,color:"#1E293B"}}>{h.building_name}</div>
+                      <div style={{fontSize:11,color:"#64748B",marginTop:2}}>Completed cycles · performance across grows</div>
+                    </div>
+                    {!readOnly && <span style={{color:"#2E7D52",fontSize:16,marginLeft:10}}>→</span>}
+                  </div>
+                ); })}
+              </div>
             </div>
           )}
         </div>

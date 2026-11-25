@@ -618,6 +618,13 @@ function acceptCumMortRate(day) {
   for (var d = 1; d <= day; d++) r += acceptDailyMortRate(d);
   return r;
 }
+// Add N calendar days to a YYYY-MM-DD date (PHT), returning YYYY-MM-DD.
+function addDaysISO(dateStr, n){
+  var d = new Date(dateStr + "T00:00:00+08:00");
+  d.setDate(d.getDate() + n);
+  var y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), dd=String(d.getDate()).padStart(2,"0");
+  return y+"-"+m+"-"+dd;
+}
 // Farm overview status color per house status bucket.
 function statusColor(st){ return st==="warn"?"#E91E63":st==="harvest"?"#5C4F8A":st==="idle"?"#94A3B8":"#2E7D52"; }
 // Compute a house's at-a-glance status from its synced cycleConfig + shiftLogs.
@@ -649,9 +656,29 @@ function houseOverview(h, st){
   else if (day!=null && day>45) status = "harvest";
   else if (overToday) status = "warn";
   else status = "ok";
+  // Harvest projection: scaled standard curve anchored to the latest actual weigh.
+  var W0h = (cfg && cfg.startWeightG>0) ? cfg.startWeightG : 40;
+  var target = (cfg && cfg.harvestTargetG) ? cfg.harvestTargetG : 2100;
+  var curve = buildStandardCurve(W0h);
+  var fac = 1;
+  if (la && la.day!=null){ var sAt = null; for (var ci=0;ci<curve.length;ci++){ if(curve[ci].day===la.day){ sAt=curve[ci]; break; } } if (sAt && sAt.std>0) fac = (la.alw*1000)/sAt.std; }
+  var harvestDay = null;
+  for (var cj=0;cj<curve.length;cj++){ if (curve[cj].std*fac >= target){ harvestDay = curve[cj].day; break; } }
+  var daysToHarvest = (harvestDay!=null && day!=null) ? (harvestDay - day) : null;
+  var harvestDate = (harvestDay!=null && placement) ? addDaysISO(placement, harvestDay) : null;
+  // Feed status: latest bags on hand vs guide consumption at current day.
+  var fb = null;
+  logs.slice().sort(function(a,b){ return (b.day-a.day) || ((b.shift==="PM"?1:0)-(a.shift==="PM"?1:0)); })
+      .some(function(l){ if (l.feedBalance!=null && l.feedBalance!==undefined){ fb=l.feedBalance; return true; } return false; });
+  var gRow = null; if (day!=null){ for (var gi=0;gi<FEEDING_GUIDE_DEFAULT.length;gi++){ if(FEEDING_GUIDE_DEFAULT[gi].day===day){ gRow=FEEDING_GUIDE_DEFAULT[gi]; break; } } }
+  var dailyBags = (gRow && flock>0) ? gRow.dailyBt * (flock/1000) * (W0h/43) : null;
+  var feedDaysLeft = (fb!=null && dailyBags>0) ? (fb/dailyBags) : null;
+  var orderFeed = feedDaysLeft!=null && feedDaysLeft < 4 && status==="ok";
   return { active:(status!=="idle"), day:day, flock:flock, live:live, total:total,
            todayMort:todayMort, acceptToday:acceptToday, overToday:overToday,
-           latestAlw:la, phase:phase, status:status };
+           latestAlw:la, phase:phase, status:status, target:target,
+           harvestDay:harvestDay, daysToHarvest:daysToHarvest, harvestDate:harvestDate,
+           feedBags:fb, feedDaysLeft:feedDaysLeft, orderFeed:orderFeed };
 }
 // Growth-milestone incentives — ALW (grams) at each weigh day earns a peso amount.
 var INCENTIVE_MILESTONES = [
@@ -4835,6 +4862,7 @@ function AppShell() {
   const [editingHouseId, setEditingHouseId] = useState(null);
   const [editHouseDraft, setEditHouseDraft] = useState(null);
   const [farmData, setFarmData] = useState({}); // house_id -> { cfg, logs } for the farm overview
+  const [ownerTab, setOwnerTab] = useState("dashboard"); // owner shell: dashboard | financial | history
   useEffect(function(){
     if (!session || !houses || houses.length===0) return;
     const sb = getSupabaseClient(); if (!sb) return;
@@ -5222,7 +5250,7 @@ function AppShell() {
       <div style={PAGE}>
         <div style={{...CARD, maxWidth:460}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
-            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:18,color:"#1E293B"}}>Your Houses</div>
+            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:18,color:"#1E293B"}}>Farm Dashboard</div>
             <button onClick={handleLogout} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:11,padding:"5px 10px",cursor:"pointer",borderRadius:6}}>LOG OUT</button>
           </div>
           {readOnly && (
@@ -5237,6 +5265,13 @@ function AppShell() {
             <span style={{fontSize:11,color:"#64748B"}}> · ₱1,500/month · contact TVE to renew</span>
           </div>
           )}
+          <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+            {[["dashboard","DASHBOARD"],["financial","FINANCIAL"],["history","HISTORY"]].map(function(t){
+              var on = ownerTab===t[0];
+              return <button key={t[0]} onClick={function(){setOwnerTab(t[0]);}} style={{background:on?"#2E7D5220":"none",border:on?"1px solid #2E7D5260":"1px solid #CBD5E1",color:on?"#2E7D52":"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,letterSpacing:.8,padding:"7px 16px",cursor:"pointer",borderRadius:5,fontWeight:on?700:500}}>{t[1]}</button>;
+            })}
+          </div>
+          {ownerTab==="dashboard" && (<React.Fragment>
           {houses.length > 1 && (
           <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
             <div style={{fontSize:9,color:"#94A3B8",letterSpacing:1.2,fontWeight:700,marginBottom:10}}>FARM OVERVIEW</div>
@@ -5248,6 +5283,20 @@ function AppShell() {
             </div>
           </div>
           )}
+          {(function(){
+            var feedA = ov.filter(function(x){return x.o.orderFeed;});
+            var mortA = ov.filter(function(x){return x.o.status==="warn";});
+            var harvA = ov.filter(function(x){return x.o.daysToHarvest!=null && x.o.daysToHarvest>=0 && x.o.daysToHarvest<=3;});
+            if (!feedA.length && !mortA.length && !harvA.length) return null;
+            return (
+              <div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderLeft:"3px solid #E91E63",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+                <div style={{fontSize:9,color:"#E91E63",letterSpacing:1.2,fontWeight:700,marginBottom:8}}>NEEDS ATTENTION</div>
+                {mortA.map(function(x){return <div key={"m"+x.h.id} style={{fontSize:11,color:"#334155",marginBottom:4}}>🔴 <strong>{x.h.building_name}</strong> over daily mortality — {x.o.todayMort} today</div>;})}
+                {feedA.map(function(x){return <div key={"f"+x.h.id} style={{fontSize:11,color:"#334155",marginBottom:4}}>🟠 <strong>{x.h.building_name}</strong> low on feed — ~{Math.round(x.o.feedDaysLeft)}d left, order soon</div>;})}
+                {harvA.map(function(x){return <div key={"h"+x.h.id} style={{fontSize:11,color:"#334155",marginBottom:4}}>🏁 <strong>{x.h.building_name}</strong> harvest in {x.o.daysToHarvest===0?"now":x.o.daysToHarvest+"d"} (D{x.o.harvestDay})</div>;})}
+              </div>
+            );
+          })()}
           <div style={{display:"grid",gap:8,marginBottom:14}}>
             {houses.map(function(h) {
               const editing = editingHouseId===h.id;
@@ -5277,6 +5326,10 @@ function AppShell() {
                       {o.status==="harvest" && <span style={{fontSize:9,fontWeight:700,color:"#5C4F8A",background:"#5C4F8A14",borderRadius:3,padding:"1px 6px"}}>HARVEST / CLEANOUT</span>}
                     </div>
                     <div style={{fontSize:11,color:"#64748B",marginTop:3}}>{o.live.toLocaleString()} live · <span style={{color:o.overToday?"#E91E63":"#64748B",fontWeight:o.overToday?700:400}}>{o.todayMort} dead today{o.acceptToday!=null?" / "+o.acceptToday+" ok":""}</span>{o.latestAlw?" · ALW "+o.latestAlw.alw.toFixed(3)+"kg (D"+o.latestAlw.day+")":""}</div>
+                    {(o.daysToHarvest!=null || o.feedDaysLeft!=null) && <div style={{fontSize:10,marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>
+                      {o.daysToHarvest!=null && o.daysToHarvest>=0 && o.status!=="harvest" && <span style={{color:"#5C4F8A"}}>🏁 harvest {o.daysToHarvest===0?"ready":"~"+o.daysToHarvest+"d (D"+o.harvestDay+")"}</span>}
+                      {o.feedDaysLeft!=null && <span style={{color:o.orderFeed?"#E91E63":"#94A3B8",fontWeight:o.orderFeed?700:400}}>{o.orderFeed?"⚠ ORDER FEED":"feed"} · {o.feedBags} bags (~{Math.round(o.feedDaysLeft)}d)</span>}
+                    </div>}
                   </div>
                   {!readOnly && <button onClick={function(e){e.stopPropagation();setEditingHouseId(h.id);setEditHouseDraft({building_name:h.building_name,breed:h.breed,flock_size:String(h.flock_size),placement_date:h.placement_date||todayPHT()});}} style={{background:"none",border:"1px solid #CBD5E1",color:"#64748B",fontFamily:"'Inter',sans-serif",fontSize:10,width:28,height:28,cursor:"pointer",borderRadius:6,padding:0,flexShrink:0,marginLeft:10}}>✎</button>}
                 </div>
@@ -5284,6 +5337,19 @@ function AppShell() {
             })}
           </div>
           {!readOnly && <button onClick={function(){setShowSetupForm(true);}} style={{...BTN2, background:"none", border:"1px solid #2E7D52", color:"#2E7D52"}}>+ ADD ANOTHER HOUSE</button>}
+          </React.Fragment>)}
+          {ownerTab==="financial" && (
+            <div style={{background:"#F5F7FA",border:"1px solid #E2E8F0",borderRadius:10,padding:"22px 16px",textAlign:"center"}}>
+              <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:15,color:"#1E293B",marginBottom:6}}>Farm Financial</div>
+              <div style={{fontSize:12,color:"#64748B",lineHeight:1.6}}>Consolidated P&amp;L across every house, the farm overhead ledger, and each cycle's direct cost, billing, payments and incentive — all managed here at the owner level. Building this next.</div>
+            </div>
+          )}
+          {ownerTab==="history" && (
+            <div style={{background:"#F5F7FA",border:"1px solid #E2E8F0",borderRadius:10,padding:"22px 16px",textAlign:"center"}}>
+              <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:15,color:"#1E293B",marginBottom:6}}>Farm History</div>
+              <div style={{fontSize:12,color:"#64748B",lineHeight:1.6}}>Every completed cycle across all houses, side by side — compare performance, costs and incentive across grows. Building this next.</div>
+            </div>
+          )}
         </div>
       </div>
     );

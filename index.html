@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BroilerOps</title>
+<title>TVE Grow</title>
+<meta name="application-name" content="TVE Grow">
+<meta name="apple-mobile-web-app-title" content="TVE Grow">
 <meta name="theme-color" content="#F5F7FA">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -134,7 +136,7 @@ function useLocalStorage(key, initialValue) {
   };
   return [value, setPersistedValue];
 }
-// ─── CYCLE CONFIG is now built per-house inside SupervisorApp from the `house` prop ──
+// ─── CYCLE CONFIG is now built per-house inside GrowApp from the `house` prop ──
 // ─── MULTI-DEVICE LOG SYNC ────────────────────────────────────────────────────
 // Each array-type log (shiftLogs, tunnelLogs, etc.) is synced entry-by-entry to
 // Supabase's `sync_entries` table, keyed by (house_id, data_type, local_id).
@@ -1070,7 +1072,7 @@ function DailyLogRows({ logs, currentDay, getPhase, placementDate, FEED_FC, netP
   return rows;
 }
 // ═════════════════════════════════════════════════════════════════════════════
-function SupervisorApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick }) {
+function GrowApp({ house, onSwitchHouse, onLogout, syncStatus, syncTick }) {
   const isOnline = syncStatus === "online";
   const houseId = house.id;
   const userId = house.user_id;
@@ -4951,7 +4953,7 @@ function AppShell() {
       });
     }
     // If placement date changed, correct the stored cycleConfig for this house directly
-    // in localStorage (cycleConfig React state lives in SupervisorApp, not here).
+    // in localStorage (cycleConfig React state lives in GrowApp, not here).
     if (original.placement_date !== editHouseDraft.placement_date) {
       try {
         const ns = "beracah_house_" + editingHouseId + "_";
@@ -5028,8 +5030,8 @@ function AppShell() {
       <div style={PAGE}>
         <div style={CARD}>
           <img src={TVE_LOGO} alt="Tunnel Vent Experts" style={{height:40,marginBottom:16,display:"block"}} />
-          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:20,color:"#1E293B",marginBottom:4}}>BroilerOps</div>
-          <div style={{fontSize:12,color:"#64748B",marginBottom:4}}>made by Tunnel Vent Experts</div>
+          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:800,fontSize:20,color:"#1E293B",marginBottom:4}}>TVE Grow</div>
+          <div style={{fontSize:12,color:"#64748B",marginBottom:4}}>by Tunnel Vent Experts</div>
           <div style={{background:"#2E7D5212",border:"1px solid #2E7D5230",borderRadius:6,padding:"8px 12px",marginBottom:20,textAlign:"center"}}>
             <span style={{fontSize:12,color:"#2E7D52",fontWeight:600}}>45-day free trial</span>
             <span style={{fontSize:11,color:"#64748B"}}> · starts on your first log entry · no credit card required</span>
@@ -5190,7 +5192,7 @@ function AppShell() {
   const house = houses.find(function(h){return h.id===selectedHouseId;});
   if (!house) return <div style={PAGE}><div style={{color:"#64748B"}}>House not found.</div></div>;
   setActiveNamespace("beracah_house_" + house.id + "_");
-  return <ErrorBoundary><SupervisorApp house={house} onSwitchHouse={function(){selectHouse(null);}} onLogout={handleLogout} syncStatus={isOnline?"online":"offline"} syncTick={syncTick} /></ErrorBoundary>;
+  return <ErrorBoundary><GrowApp house={house} onSwitchHouse={function(){selectHouse(null);}} onLogout={handleLogout} syncStatus={isOnline?"online":"offline"} syncTick={syncTick} /></ErrorBoundary>;
 }
 
 </script>
